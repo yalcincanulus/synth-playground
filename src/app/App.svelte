@@ -39,6 +39,18 @@
       .catch(() => {});
   });
 
+  // What each pad does while Shift is held. Arp, Pad and Prog are handled inside the MiniLab itself.
+  const SHIFT_PADS = [
+    { label: "Arp", deviceOnly: true },
+    { label: "Pad bank", deviceOnly: true },
+    { label: "Program", deviceOnly: true },
+    { label: "⟲ Clear loop", deviceOnly: false },
+    { label: "■ Stop", deviceOnly: false },
+    { label: "▶ Play", deviceOnly: false },
+    { label: "● Record", deviceOnly: false },
+    { label: "Tap tempo", deviceOnly: false },
+  ];
+
   const MIDI_TEXT = {
     idle: "",
     unsupported: "This browser has no Web MIDI. Use a Chromium browser (Chrome, Brave, Edge).",
@@ -57,6 +69,7 @@
     <div class="midi">
       {#if pg.midiStatus === "connected"}
         <span class="pill ok">● {pg.deviceName}{pg.program ? ` · ${pg.program === "daw" ? "DAW" : "Arturia"} mode` : ""}</span>
+        <span class="shift" class:on={pg.shift} title="Shift button on the MiniLab">Shift</span>
         {#if pg.program === "arturia"}
           <span class="hint">Pad lights and the screen need DAW mode: hold Shift and tap Prog.</span>
         {/if}
@@ -100,7 +113,7 @@
       <div class="tabs">
         <button class:active={pg.vizMode === "scope"} onclick={() => (pg.vizMode = "scope")}>Waveform</button>
         <button class:active={pg.vizMode === "spectrum"} onclick={() => (pg.vizMode = "spectrum")}>Spectrum</button>
-        <span class="hint">Shift + encoder switches view</span>
+        <span class="hint" class:shifted={pg.shift}>Shift + encoder switches view</span>
       </div>
       <div class="canvas">
         {#if pg.vizMode === "scope"}
@@ -158,17 +171,21 @@
 
   <section class="bottom">
     <div class="panel pads-panel">
-      <div class="title">Pads · bank A: drums · bank B: presets 1–8</div>
+      <div class="title">
+        {#if pg.shift}<span class="shifted">Shift held · pads are transport controls</span>{:else}Pads · bank A: drums · bank B: presets 1–8{/if}
+      </div>
       <div class="pads">
         {#each pg.padLevels as level, i}
           <button
             class="pad"
+            class:shifted={pg.shift}
+            class:device-only={pg.shift && SHIFT_PADS[i].deviceOnly}
             style:--level={level}
             onpointerdown={() => pg.hitPad(i, 100)}
             onpointerup={() => pg.releasePad(i)}
             onpointerleave={() => pg.releasePad(i)}
           >
-            {pg.drumName(i)}
+            {pg.shift ? SHIFT_PADS[i].label : pg.drumName(i)}
           </button>
         {/each}
       </div>
@@ -251,6 +268,11 @@
     box-shadow: 0 0 calc(var(--level) * 24px) var(--accent), inset 0 0 calc(var(--level) * 40px) var(--accent);
     transition: box-shadow 0.12s;
   }
+  .pad.shifted { border-style: dashed; color: var(--accent); }
+  .pad.device-only { opacity: 0.45; }
+  .shift { border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px; font-size: 12px; color: var(--dim); transition: all 0.08s; }
+  .shift.on { background: var(--accent); border-color: var(--accent); color: #0b1314; font-weight: 600; box-shadow: 0 0 12px var(--accent); }
+  .shifted { color: var(--accent); }
 
   footer { color: var(--dim); font-size: 12px; text-align: center; }
 
