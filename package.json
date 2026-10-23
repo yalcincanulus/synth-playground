@@ -1,0 +1,18 @@
+{
+  "name": "minilab3-playground",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "svelte-check --tsgo && vite build",
+    "typecheck": "svelte-check --tsgo"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@typescript/native": "npm:typescript@7",
+    "svelte": "^5.57.2",
+    "svelte-check": "^4.7.7",
+    "typescript": "~6",
+    "vite": "^8.3.5"
+  }
+}

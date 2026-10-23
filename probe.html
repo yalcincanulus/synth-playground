@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MiniLab 3 Probe</title>
+    <link rel="stylesheet" href="/src/probe/probe.css" />
+  </head>
+  <body>
+    <header>
+      <h1>MiniLab 3 <span>probe</span></h1>
+      <button id="connect" class="primary">Connect MIDI</button>
+      <label>In <select id="in-port"></select></label>
+      <label>Out <select id="out-port"></select></label>
+      <div id="status" class="status">Not connected</div>
+    </header>
+
+    <main>
+      <section id="device" class="device"></section>
+
+      <aside class="tools">
+        <fieldset>
+          <legend>Handshake</legend>
+          <div class="row">
+            <button data-action="hello">Hello (DAW connect)</button>
+            <button data-action="goodbye">Goodbye</button>
+            <button data-action="request-program">Request program</button>
+            <button data-action="identity">Identity</button>
+          </div>
+          <label class="row">Send gap <input id="gap" type="range" min="0" max="100" value="15" /> <output id="gap-out">15 ms</output></label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Display</legend>
+          <div class="row">
+            <input id="line1" maxlength="10" value="MiniLab 3" placeholder="Line 1 (10)" />
+            <input id="line2" maxlength="18" value="Hello, browser" placeholder="Line 2 (18)" />
+          </div>
+          <div class="row">
+            <select id="icon-transport"><option value="none">no icon</option><option>play</option><option>record</option></select>
+            <label><input id="icon-arm" type="checkbox" /> arm</label>
+            <label><input id="icon-arp" type="checkbox" /> arp</label>
+            <button data-action="display">Send screen</button>
+            <button data-action="param">Send as popup</button>
+          </div>
+          <label class="row"><input id="echo-knobs" type="checkbox" checked /> Echo knob/fader moves to OLED</label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Pad LEDs</legend>
+          <div id="led-grid" class="led-grid"></div>
+          <div class="row">
+            <button data-action="rainbow">Rainbow</button>
+            <button data-action="leds-off">All off</button>
+            <label><input id="flash-pads" type="checkbox" checked /> Flash on hit</label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>LED ID scanner</legend>
+          <div class="row">
+            <button data-action="scan-prev">◀</button>
+            <input id="scan-id" value="30" size="4" title="hex" />
+            <button data-action="scan-next">▶</button>
+            <input id="scan-color" type="color" value="#ff00ff" />
+            <button data-action="scan-send">Light</button>
+            <label><input id="scan-clear" type="checkbox" checked /> clear previous</label>
+          </div>
+          <p class="hint">Each step shows the ID on the OLED, so you can watch the device while stepping.</p>
+        </fieldset>
+
+        <fieldset>
+          <legend>Knob realign (DAW program)</legend>
+          <div class="row">
+            Knob <select id="realign-knob"></select>
+            <input id="realign-value" type="range" min="0" max="127" value="64" />
+            <button data-action="realign">Set</button>
+          </div>
+          <p class="hint">Sets the device's stored knob value. Turn the knob after: it should continue from here.</p>
+        </fieldset>
+      </aside>
+    </main>
+
+    <section class="log-panel">
+      <div class="row">
+        <strong>MIDI log</strong>
+        <label><input id="log-out" type="checkbox" checked /> outgoing</label>
+        <label><input id="log-continuous" type="checkbox" /> continuous (bend/mod/pressure)</label>
+        <button data-action="log-clear">Clear</button>
+        <button data-action="log-download">Download</button>
+      </div>
+      <ol id="log" class="log"></ol>
+    </section>
+
+    <script type="module" src="/src/probe/main.ts"></script>
+  </body>
+</html>
