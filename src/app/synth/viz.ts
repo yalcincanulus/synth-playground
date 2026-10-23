@@ -4,7 +4,7 @@
 import { envelopeAt, type Adsr, type EnvPoint } from "../../audio/envelope";
 import { Engine, LFO_FILTER_CENTS } from "../../audio/engine";
 import { biquadMagnitude } from "../../audio/filterResponse";
-import { DELAY_DIV_BEATS, DELAY_DIVS, toControl, WAVES, type ParamValues } from "../../audio/params";
+import { DELAY_DIV_BEATS, DELAY_DIVS, LFO_SYNCS, toControl, WAVES, type ParamValues } from "../../audio/params";
 import { filterBase } from "../../audio/voice";
 import { freqX, FREQ_GRID, grid, xFreq, type Surface } from "../components/canvas";
 
@@ -158,7 +158,7 @@ const filterEnvShape = (p: ParamValues): Adsr => ({
   attack: p.filterAttack,
   decay: p.filterDecay,
   sustain: p.filterSustain,
-  release: p.release, // the filter envelope releases with the amp envelope
+  release: p.filterRelease,
 });
 
 /** The cutoff the filter is actually at right now: knob + key tracking + envelope + LFO. */
@@ -171,7 +171,7 @@ export function liveCutoff(engine: Engine): number {
     const vel = latest.voice.velocity / 127;
     octaves += p.filterEnvAmt * (0.5 + 0.5 * (p.velocity > 0 ? vel : 1)) * latest.point.level;
   }
-  octaves += (engine.lfoDepths()[1] * LFO_FILTER_CENTS) / 1200 * engine.lfoValue();
+  engine.lfos.forEach((lfo, i) => (octaves += ((engine.lfoDepths(i)[1] * LFO_FILTER_CENTS) / 1200) * lfo.value()));
   return Math.min(20000, filterBase(p, note) * Math.pow(2, octaves));
 }
 
@@ -235,7 +235,7 @@ export function filter(engine: Engine, color: () => string): Draw {
 
 // ---------------------------------------------------------------- envelopes
 
-const seg = (id: "attack" | "decay" | "release" | "filterAttack" | "filterDecay", v: number) => 0.05 + 0.24 * toControl(id, v);
+const seg = (id: "attack" | "decay" | "release" | "filterAttack" | "filterDecay" | "filterRelease", v: number) => 0.05 + 0.24 * toControl(id, v);
 const SUSTAIN_W = 0.18;
 
 /** Envelope shape plus a dot for every sounding note, showing where it is right now. */
@@ -247,7 +247,7 @@ export function envelope(engine: Engine, kind: "amp" | "filter", color: () => st
       : filterEnvShape(p);
     const aW = seg(kind === "amp" ? "attack" : "filterAttack", env.attack);
     const dW = seg(kind === "amp" ? "decay" : "filterDecay", env.decay);
-    const rW = seg("release", env.release);
+    const rW = seg(kind === "amp" ? "release" : "filterRelease", env.release);
     const pad = 6;
     const W = w - pad * 2;
     const top = 14;
@@ -305,33 +305,71 @@ export function envelope(engine: Engine, kind: "amp" | "filter", color: () => st
 
 // ---------------------------------------------------------------- LFO
 
-export function lfo(engine: Engine, color: () => string): Draw {
+export function lfo(engine: Engine, index: number, color: () => string): Draw {
   return ({ g, w, h }) => {
     grid(g, w, h, [], [h / 2]);
-    const p = engine.params;
-    const depth = Math.max(...engine.lfoDepths());
-    const shape = (phase: number) => (engine.lfoShape === "sine" ? Math.sin(2 * Math.PI * phase) : idealWave(1)(phase));
-    const amp = (h / 2 - 8) * Math.max(0.15, depth);
+    const unit = engine.lfos[index];
+    const depth = Math.max(...engine.lfoDepths(index));
+    const amp = (h / 2 - 10) * Math.max(0.15, depth);
+    const Y = (v: number) => h / 2 - v * amp;
     g.strokeStyle = depth > 0 ? color() : DIM;
     g.lineWidth = 2;
     g.beginPath();
-    for (let x = 0; x <= w; x++) {
-      const y = h / 2 - shape(x / w) * amp;
-      if (x === 0) g.moveTo(x, y);
-      else g.lineTo(x, y);
+    let dotX: number;
+    let dotY: number;
+    if (unit.shape === "random") {
+      // The last few held values as a staircase, scrolling left; the newest step is on the right.
+      const now = engine.ctx.currentTime;
+      const span = Math.min(30, 4 / unit.rate);
+      const X = (t: number) => ((t - (now - span)) / span) * w;
+      const steps = unit.history;
+      let started = false;
+      steps.forEach(([time, value], i) => {
+        const next = steps[i + 1]?.[0] ?? now;
+        if (next < now - span || time > now) return;
+        const x0 = Math.max(0, X(time));
+        const x1 = Math.min(w, X(Math.min(next, now)));
+        if (!started) g.moveTo(x0, Y(value));
+        else g.lineTo(x0, Y(value));
+        g.lineTo(x1, Y(value));
+        started = true;
+      });
+      dotX = w;
+      dotY = Y(unit.value());
+    } else {
+      for (let x = 0; x <= w; x++) {
+        // One cycle of the shape, drawn with a tiny offset so square/saw jumps are vertical lines.
+        const phase = Math.min(0.9999, x / w);
+        const y = Y(shapeAt(unit.shape, phase));
+        if (x === 0) g.moveTo(x, y);
+        else g.lineTo(x, y);
+      }
+      dotX = unit.phase() * w;
+      dotY = Y(unit.value());
     }
     g.stroke();
-    const phase = engine.lfoPhase();
     g.fillStyle = "#fff";
     g.shadowColor = color();
     g.shadowBlur = 10;
     g.beginPath();
-    g.arc(phase * w, h / 2 - shape(phase) * amp, 4.5, 0, Math.PI * 2);
+    g.arc(dotX, dotY, 4.5, 0, Math.PI * 2);
     g.fill();
     g.shadowBlur = 0;
-    label(g, `${p.lfoRate.toFixed(p.lfoRate < 1 ? 2 : 1)} Hz · ${engine.lfoShape}`, 4, 11);
-    if (depth === 0) label(g, "Depth is 0: no effect", w / 2, h - 6, "#ffffff70", "center");
+    const p = engine.params;
+    const sync = index === 0 ? p.lfoSync : p.lfo2Sync;
+    const rate = unit.rate;
+    label(g, `${rate.toFixed(rate < 1 ? 2 : 1)} Hz${sync ? ` · synced ${LFO_SYNCS[sync]}` : ""}`, 4, 11);
+    if (depth === 0) label(g, "Depth is 0: no effect", w / 2, h - 5, "#ffffff70", "center");
   };
+}
+
+function shapeAt(shape: string, p: number) {
+  switch (shape) {
+    case "sine": return Math.sin(2 * Math.PI * p);
+    case "triangle": return p < 0.25 ? 4 * p : p < 0.75 ? 2 - 4 * p : 4 * p - 4;
+    case "saw": return p < 0.5 ? 2 * p : 2 * p - 2;
+    default: return p < 0.5 ? 1 : -1;
+  }
 }
 
 // ---------------------------------------------------------------- effects

@@ -255,7 +255,7 @@
   </section>
 
   <footer>
-    Keys: computer keyboard A–' plays notes, Z / X shifts octave · Encoder: browse presets, click to load, hold for Dice ·
+    Keys: computer keyboard A–' plays notes, Z / X shifts octave · Encoder: browse presets, click to load, hold for Dice (Synth view: knob pages, click to listen) ·
     Shift + encoder click: step edit (turn to pick the drum) ·
     Shift + pads: ▶ play, ■ stop, ● record, ⟲ clear loop, Tap tempo · Double-click a knob to reset it
   </footer>

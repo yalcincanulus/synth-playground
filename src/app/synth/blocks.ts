@@ -1,9 +1,10 @@
+import type { ListenTap } from "../../audio/engine";
 import type { ParamId } from "../../audio/params";
 
 export type BlockId =
   | "osc1" | "osc2" | "subNoise" | "mixer" | "drive" | "filter" | "amp"
   | "chorus" | "delay" | "reverb" | "output"
-  | "lfo" | "filterEnv" | "ampEnv" | "perf";
+  | "lfo" | "lfo2" | "filterEnv" | "ampEnv" | "perf";
 
 export interface BlockDef {
   title: string;
@@ -96,18 +97,25 @@ export const BLOCKS: Record<BlockId, BlockDef> = {
     params: ["volume"],
   },
   lfo: {
-    title: "LFO",
+    title: "LFO 1",
     short: "A slow wave that moves another setting automatically.",
-    explain: "A slow, repeating wave that moves another setting up and down automatically. On pitch: vibrato. On filter: wobble. On amp: tremolo.",
-    tryThis: "Set Target to filter, Depth to 50%, then change Rate while holding a note.",
-    params: ["lfoTarget", "lfoRate", "lfoDepth"],
+    explain: "A slow, repeating wave that moves another setting up and down automatically. On pitch: vibrato. On filter: wobble. On amp: tremolo. The shape sets how it moves: sine and triangle glide smoothly, saw ramps up then drops, square jumps between two values, and random picks a new value every cycle ('sample & hold'). Sync locks its speed to the tempo. The mod strip adds depth to this LFO.",
+    tryThis: "Set To: Filter, Depth 50%, Sync 1/8, then start the drum loop: the wobble now lands on the beat. Then try the random shape.",
+    params: ["lfoTarget", "lfoWave", "lfoSync", "lfoRate", "lfoDepth"],
+  },
+  lfo2: {
+    title: "LFO 2",
+    short: "A second LFO, so two things can move at once.",
+    explain: "Works like LFO 1, with its own target, shape and speed. With two LFOs you can have vibrato on the pitch while the filter slowly sweeps, or two movements at different speeds on the same target.",
+    tryThis: "Leave LFO 1 on pitch for vibrato, then set LFO 2 to Filter with a slow sine (0.2 Hz) and 40% Depth: a slow sweep under the vibrato.",
+    params: ["lfo2Target", "lfo2Wave", "lfo2Sync", "lfo2Rate", "lfo2Depth"],
   },
   filterEnv: {
     title: "Filter Envelope",
     short: "Moves the filter's cutoff during each note.",
-    explain: "Moves the filter's cutoff during each note. Amount sets how far (negative moves it down). Its release follows the Amp Envelope's release.",
+    explain: "Moves the filter's cutoff during each note, with its own Attack, Decay, Sustain and Release. Amount sets how far (negative moves it down). Release sets how fast the cutoff falls back after you let go of the key.",
     tryThis: "With a low Cutoff, set Amount high and Decay short: every note starts bright and quickly darkens, like a pluck.",
-    params: ["filterEnvAmt", "filterAttack", "filterDecay", "filterSustain"],
+    params: ["filterEnvAmt", "filterAttack", "filterDecay", "filterSustain", "filterRelease"],
   },
   ampEnv: {
     title: "Amp Envelope",
@@ -146,13 +154,23 @@ export const KNOB_PAGES: KnobPage[] = [
   },
   {
     name: "Envelopes",
-    knobs: ["attack", "decay", "sustain", "release", "filterEnvAmt", "filterAttack", "filterDecay", "filterSustain"],
+    knobs: ["attack", "decay", "sustain", "release", "filterAttack", "filterDecay", "filterSustain", "filterRelease"],
     blocks: ["amp", "ampEnv", "filterEnv"],
   },
   {
-    name: "Modulation",
-    knobs: ["lfoRate", "lfoDepth", "lfoTarget", "modTarget", "velocity", "glide", "mono", "keyTrack"],
-    blocks: ["lfo", "perf"],
+    name: "LFO 1",
+    knobs: ["lfoRate", "lfoDepth", "lfoTarget", "lfoWave", "lfoSync", "modTarget", null, null],
+    blocks: ["lfo"],
+  },
+  {
+    name: "LFO 2",
+    knobs: ["lfo2Rate", "lfo2Depth", "lfo2Target", "lfo2Wave", "lfo2Sync", null, null, null],
+    blocks: ["lfo2"],
+  },
+  {
+    name: "Playing",
+    knobs: ["velocity", "glide", "mono", "unison", "keyTrack", "modTarget", null, null],
+    blocks: ["perf"],
   },
   {
     name: "Effects",
@@ -162,3 +180,22 @@ export const KNOB_PAGES: KnobPage[] = [
 ];
 
 export const pageOf = (block: BlockId) => KNOB_PAGES.findIndex((p) => p.blocks.includes(block));
+
+/** The signal tap each block can be listened to at ("Listen here"). */
+export const BLOCK_TAPS: Partial<Record<BlockId, ListenTap>> = {
+  osc1: "osc1",
+  osc2: "osc2",
+  mixer: "mix",
+  drive: "drive",
+  filter: "filter",
+  amp: "amp",
+  chorus: "chorus",
+  delay: "delay",
+  reverb: "reverb",
+};
+
+/** Names for the OLED and the listening banner. */
+export const TAP_NAMES: Record<ListenTap, string> = {
+  osc1: "Oscillator 1", osc2: "Oscillator 2", sub: "Sub", noise: "Noise", mix: "Mixer", drive: "Drive",
+  filter: "Filter", amp: "Amp", chorus: "Chorus", delay: "Delay (echoes)", reverb: "Reverb (tail)",
+};

@@ -29,13 +29,14 @@ Pad lights and the screen need the device in **DAW mode** (Shift + Prog).
 ### Synth view
 
 The **Synth** tab draws the whole synth as blocks in signal order (oscillators → mixer → drive → filter →
-amp → effects → output), with the modulators below (playing, LFO, filter and amp envelopes). Every block
-shows its live signal and all its controls, and coloured cables show what modulates what. Short
-explanations are on each block; the selected block's full explanation and a "Try this" are in the corner.
+amp → effects → output), with the modulators below (playing, two LFOs, filter and amp envelopes). Every
+block shows its live signal and all its controls, and coloured cables show what modulates what. Short
+explanations are on each block; the selected block's full explanation and a "Try this" are in the strip
+at the top. The 🎧 button on a block (or an encoder click) lets you hear the sound at that point only.
 
 In this view the MiniLab knobs follow the selected block: click a block, or turn the encoder to step
-through the five knob pages (Sources, Filter, Envelopes, Modulation, Effects). Shift + encoder switches
-between the playground's waveform, spectrum and the Synth view.
+through the knob pages (Sources, Filter, Envelopes, LFO 1, LFO 2, Playing, Effects). Shift + encoder
+switches between the playground's waveform, spectrum and the Synth view.
 
 Without a MiniLab, the computer keyboard plays notes (A row; Z/X change octave), and every control works with the mouse.
 

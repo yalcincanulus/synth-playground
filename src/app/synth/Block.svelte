@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import type { Playground } from "../playground.svelte";
-  import { BLOCKS, KNOB_PAGES, type BlockId } from "./blocks";
+  import { BLOCK_TAPS, BLOCKS, KNOB_PAGES, type BlockId } from "./blocks";
   import ParamControl from "./ParamControl.svelte";
 
   interface Props {
@@ -16,15 +16,29 @@
   let def = $derived(BLOCKS[id]);
   let focused = $derived(pg.focusBlock === id);
   let onPage = $derived(KNOB_PAGES[pg.focusPage].blocks.includes(id));
+  let tap = $derived(BLOCK_TAPS[id]);
+  let listening = $derived(!!tap && pg.listening === tap);
 </script>
 
 <!-- Clicking anywhere on a block points the MiniLab knobs at its page. -->
 <!-- Keyboard users reach the block's own controls; the click is a shortcut for focusing the knobs. -->
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-<section role="group" aria-label={def.title} class="block" class:focused class:on-page={onPage} class:inactive={!!inactive} data-block={id} onclick={() => pg.focus(id)}>
+<section role="group" aria-label={def.title} class="block" class:listening class:focused class:on-page={onPage} class:inactive={!!inactive} data-block={id} onclick={() => pg.focus(id)}>
   <header>
     <h3>{def.title}</h3>
     {#if inactive}<span class="note">{inactive}</span>{/if}
+    {#if tap}
+      <button
+        class="listen"
+        class:on={listening}
+        title={listening ? "Back to the full sound" : "Listen here: hear the sound at this point only"}
+        onclick={(e) => {
+          e.stopPropagation();
+          pg.focus(id);
+          pg.listenTo(tap);
+        }}>🎧</button
+      >
+    {/if}
   </header>
   {#if pg.explain}<p class="explain">{def.short}</p>{/if}
   {@render children()}
@@ -45,8 +59,13 @@
   .block:hover { border-color: #3a454b; }
   .block.on-page { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
   .block.focused { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 0 18px color-mix(in srgb, var(--accent) 25%, transparent); }
-  .block.inactive { opacity: 0.55; }
+  /* Dim the contents, not the block: a see-through block would show the cables behind it. */
+  .block.inactive > * { opacity: 0.55; }
   header { display: flex; align-items: baseline; gap: 8px; }
+  .listen { margin-left: auto; padding: 0 5px; font-size: 12px; line-height: 18px; border-radius: 4px; opacity: 0.55; background: none; }
+  .listen:hover { opacity: 1; }
+  .listen.on { opacity: 1; background: #ffcc33; border-color: #ffcc33; }
+  .block.listening { border-color: #ffcc33; box-shadow: 0 0 0 1px #ffcc33, 0 0 22px #ffcc3355; }
   h3 { margin: 0; font-size: 13px; font-weight: 600; }
   .note { font-size: 10px; color: var(--dim); }
   .explain { margin: 0; font-size: 11.5px; line-height: 1.35; color: #a9b6ba; }

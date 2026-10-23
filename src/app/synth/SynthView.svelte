@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { formatValue, PARAMS } from "../../audio/params";
+  import { formatValue, LFO_SYNC_BEATS, PARAMS } from "../../audio/params";
   import type { Playground } from "../playground.svelte";
   import Block from "./Block.svelte";
-  import { BLOCKS, KNOB_PAGES } from "./blocks";
+  import { BLOCKS, KNOB_PAGES, TAP_NAMES } from "./blocks";
   import Cables, { type Cable } from "./Cables.svelte";
   import LiveCanvas from "./LiveCanvas.svelte";
   import * as viz from "./viz";
@@ -17,6 +17,7 @@
 
   // Modulation colours, shared by cables, legend and block visuals.
   const LFO = "#ffcc33";
+  const LFO2 = "#ff9f43";
   const FENV = "#ff7ab6";
   const AENV = "#7ab8ff";
   const PLAY = "#b388ff";
@@ -44,14 +45,20 @@
       audio("reverb", "output", "l", "r", "Reverb tail"),
     ];
 
-    // LFO: depth per target, including what the mod strip adds.
-    const depth = (target: number) => Math.min(1, (v.lfoTarget === target ? v.lfoDepth : 0) + (v.modTarget === target ? pg.mod : 0));
-    const period = Math.min(8, Math.max(0.15, 1 / v.lfoRate));
+    // LFOs: depth per target (the mod strip adds to LFO 1's mod target); dash speed follows the LFO.
     const lfoTargets: [number, string, Cable["toSide"], string][] = [[0, "osc2", "r", "pitch"], [1, "filter", "b", "filter cutoff"], [2, "amp", "l", "volume"]];
-    for (const [target, to, toSide, what] of lfoTargets) {
-      const d = depth(target);
-      if (d > 0 || v.lfoTarget === target)
-        list.push({ from: "lfo", to, fromSide: "t", toSide, kind: "mod", color: LFO, width: 1.5 + d * 5, period, idle: d === 0, label: `LFO → ${what}` });
+    const lfoSetups = [
+      { from: "lfo", color: LFO, target: v.lfoTarget, depth: v.lfoDepth, rate: v.lfoRate, sync: v.lfoSync, mod: true },
+      { from: "lfo2", color: LFO2, target: v.lfo2Target, depth: v.lfo2Depth, rate: v.lfo2Rate, sync: v.lfo2Sync, mod: false },
+    ];
+    for (const lfo of lfoSetups) {
+      const hz = lfo.sync ? pg.bpm / 60 / LFO_SYNC_BEATS[lfo.sync] : lfo.rate;
+      const period = Math.min(8, Math.max(0.15, 1 / hz));
+      for (const [target, to, toSide, what] of lfoTargets) {
+        const d = Math.min(1, (lfo.target === target ? lfo.depth : 0) + (lfo.mod && v.modTarget === target ? pg.mod : 0));
+        if (d > 0 || lfo.target === target)
+          list.push({ from: lfo.from, to, fromSide: "t", toSide, kind: "mod", color: lfo.color, width: 1.5 + d * 5, period, idle: d === 0, label: `${lfo.from === "lfo" ? "LFO 1" : "LFO 2"} → ${what}` });
+      }
     }
     const envAmt = Math.abs(v.filterEnvAmt);
     list.push({ from: "filterEnv", to: "filter", fromSide: "t", toSide: "b", kind: "mod", color: FENV, width: 1.5 + Math.min(1, envAmt / 4) * 5, idle: envAmt < 0.05, label: "Filter envelope → cutoff" });
@@ -69,14 +76,40 @@
   <div class="bar">
     <div class="legend">
       <span><i style:background={accent}></i>sound</span>
-      <span><i class="dash" style:color={LFO}></i>LFO</span>
+      <span><i class="dash" style:color={LFO}></i>LFO 1</span>
+      <span><i class="dash" style:color={LFO2}></i>LFO 2</span>
       <span><i class="dash" style:color={FENV}></i>filter envelope</span>
       <span><i class="dash" style:color={AENV}></i>amp envelope</span>
       <span><i class="dash" style:color={PLAY}></i>your playing</span>
     </div>
-    <span class="hint">Click a block to put the MiniLab knobs on it · encoder switches knob pages</span>
+    {#if pg.listening}
+      <button class="listening" onclick={() => pg.listenTo(null)}>
+        🎧 Listening to <strong>{TAP_NAMES[pg.listening]}</strong> only · click (or the encoder) for the full sound
+      </button>
+    {:else}
+      <span class="hint">Click a block to put the MiniLab knobs on it · encoder switches knob pages · 🎧 or encoder click: listen at that point</span>
+    {/if}
     <label class="explain-toggle"><input type="checkbox" checked={pg.explain} onchange={(e) => pg.setExplain(e.currentTarget.checked)} /> Explanations</label>
   </div>
+
+  <aside class="detail">
+    <div class="about">
+      <h3>{focusDef.title}</h3>
+      <p>{focusDef.explain}</p>
+    </div>
+    <p class="try"><strong>Try this:</strong> {focusDef.tryThis}</p>
+    <div class="knobmap">
+      <div class="title">MiniLab knobs → {page.name}</div>
+      <ol>
+        {#each page.knobs as id, i (i)}
+          <li class:hot={id && pg.touched?.param === id}>
+            <span class="n">{i + 1}</span>
+            {#if id}{PARAMS[id].label}<span class="v">{formatValue(id, pg.values[id])}</span>{:else}<span class="v">—</span>{/if}
+          </li>
+        {/each}
+      </ol>
+    </div>
+  </aside>
 
   <div class="diagram" bind:this={container}>
     <div class="col">
@@ -86,8 +119,21 @@
       </Block>
       <Block {pg} id="subNoise" inactive={pg.values.subLevel < 0.01 && pg.values.noiseLevel < 0.01 ? "both at 0" : null}>
         <div class="pair">
-          <div class:off={pg.values.subLevel < 0.01}><span>Sub</span><LiveCanvas height={34} draw={viz.scope(() => taps.sub, color, () => viz.idealWave(3))} /></div>
-          <div class:off={pg.values.noiseLevel < 0.01}><span>Noise</span><LiveCanvas height={34} draw={viz.scope(() => taps.noise, color, noise)} /></div>
+          {#each [["sub", "Sub"], ["noise", "Noise"]] as const as [tap, name] (tap)}
+            <div class:off={(tap === "sub" ? pg.values.subLevel : pg.values.noiseLevel) < 0.01}>
+              <span>{name}</span>
+              <button
+                class="listen-mini"
+                class:on={pg.listening === tap}
+                title="Listen to {name} on its own"
+                onclick={(e) => {
+                  e.stopPropagation();
+                  pg.listenTo(tap);
+                }}>🎧</button
+              >
+              <LiveCanvas height={34} draw={viz.scope(() => taps[tap], color, tap === "sub" ? () => viz.idealWave(3) : noise)} />
+            </div>
+          {/each}
         </div>
       </Block>
     </div>
@@ -128,31 +174,17 @@
       <Block {pg} id="perf"><LiveCanvas height={60} draw={viz.playing(engine, () => pg.bend, () => pg.mod, () => PLAY)} /></Block>
     </div>
     <div class="col mods">
-      <Block {pg} id="lfo"><LiveCanvas height={70} draw={viz.lfo(engine, () => LFO)} /></Block>
+      <Block {pg} id="lfo"><LiveCanvas height={56} draw={viz.lfo(engine, 0, () => LFO)} /></Block>
     </div>
     <div class="col mods">
-      <Block {pg} id="filterEnv"><LiveCanvas height={80} draw={viz.envelope(engine, "filter", () => FENV)} /></Block>
+      <Block {pg} id="lfo2"><LiveCanvas height={56} draw={viz.lfo(engine, 1, () => LFO2)} /></Block>
     </div>
     <div class="col mods">
-      <Block {pg} id="ampEnv"><LiveCanvas height={80} draw={viz.envelope(engine, "amp", () => AENV)} /></Block>
+      <Block {pg} id="filterEnv"><LiveCanvas height={70} draw={viz.envelope(engine, "filter", () => FENV)} /></Block>
     </div>
-
-    <aside class="detail">
-      <h3>{focusDef.title}</h3>
-      <p>{focusDef.explain}</p>
-      <p class="try"><strong>Try this:</strong> {focusDef.tryThis}</p>
-      <div class="knobmap">
-        <div class="title">MiniLab knobs → {page.name}</div>
-        <ol>
-          {#each page.knobs as id, i (i)}
-            <li class:hot={id && pg.touched?.param === id}>
-              <span class="n">{i + 1}</span>
-              {#if id}{PARAMS[id].label}<span class="v">{formatValue(id, pg.values[id])}</span>{:else}<span class="v">—</span>{/if}
-            </li>
-          {/each}
-        </ol>
-      </div>
-    </aside>
+    <div class="col mods">
+      <Block {pg} id="ampEnv"><LiveCanvas height={70} draw={viz.envelope(engine, "amp", () => AENV)} /></Block>
+    </div>
 
     {#if container}<Cables {container} {cables} />{/if}
   </div>
@@ -179,16 +211,20 @@
   .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
   .pair span { font-size: 10px; color: var(--dim); }
   .pair .off { opacity: 0.45; }
+  .pair > div { position: relative; }
+  .listen-mini { position: absolute; top: -2px; right: 0; padding: 0 3px; font-size: 10px; line-height: 14px; background: none; opacity: 0.55; }
+  .listen-mini.on { opacity: 1; background: #ffcc33; border-color: #ffcc33; }
+  .listening { flex: 1; text-align: left; background: #ffcc3322; border-color: #ffcc33; color: #ffe08a; font-size: 12px; }
   .mods { grid-row: 2; }
   .detail {
-    grid-row: 2; position: relative; z-index: 1; background: #10171a; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
-    font-size: 12px; line-height: 1.4;
+    display: grid; grid-template-columns: 1.6fr 1fr 1.3fr; gap: 20px; align-items: start;
+    background: #10171a; border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; font-size: 12px; line-height: 1.4;
   }
-  .detail h3 { margin: 0 0 4px; font-size: 14px; color: var(--accent); }
-  .detail p { margin: 0 0 8px; color: #b9c5c8; }
+  .detail h3 { margin: 0 0 2px; font-size: 14px; color: var(--accent); }
+  .detail p { margin: 0; color: #b9c5c8; }
   .try strong { color: var(--text); }
   .knobmap .title { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
-  ol { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 3px 10px; }
+  ol { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; grid-auto-flow: column; grid-template-rows: repeat(4, auto); gap: 2px 14px; }
   li { display: flex; gap: 6px; align-items: baseline; white-space: nowrap; overflow: hidden; }
   li.hot { color: var(--accent); }
   .n { font: 600 10px var(--mono); color: var(--dim); }

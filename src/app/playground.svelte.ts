@@ -1,6 +1,6 @@
 import { SvelteSet } from "svelte/reactivity";
 import { DRUM_NAMES } from "../audio/drums";
-import { Engine } from "../audio/engine";
+import { Engine, type ListenTap } from "../audio/engine";
 import { formatValue, fromControl, PARAMS, toControl, type ParamId, type ParamValues } from "../audio/params";
 import { Sequencer, type Pattern, basicBeat, emptyPattern } from "../audio/sequencer";
 import { findPorts, isMainPort, MiniLab, requestMidi } from "../minilab/device";
@@ -16,7 +16,7 @@ import {
   type Program,
 } from "../minilab/protocol";
 import { rollDice } from "../presets/dice";
-import { KNOB_PAGES, pageOf, type BlockId } from "./synth/blocks";
+import { BLOCK_TAPS, KNOB_PAGES, pageOf, TAP_NAMES, type BlockId } from "./synth/blocks";
 import { FACTORY_PRESETS, FADERS, loadUserPresets, presetValues, saveUserPresets, type Preset, type Rgb } from "../presets/presets";
 
 export type MidiStatus = "idle" | "unsupported" | "denied" | "not-found" | "connected";
@@ -73,6 +73,8 @@ export class Playground {
   view = $state<View>("playground");
   /** Synth view: the block the hardware knobs are focused on. */
   focusBlock = $state<BlockId>("filter");
+  /** Synth view: the signal heard on its own ("Listen here"), or null for the full sound. */
+  listening = $state<ListenTap | null>(null);
   /** Synth view: show plain-English explanations on each block. */
   explain = $state(localStorage.getItem(EXPLAIN_KEY) !== "off");
 
@@ -386,7 +388,15 @@ export class Playground {
   setView(view: View) {
     if (this.view === view) return;
     this.view = view;
+    if (view !== "synth") this.listenTo(null);
     this.realignKnobs();
+  }
+
+  /** Hear one stage on its own; the same stage again (or null) returns to the full sound. */
+  listenTo(tap: ListenTap | null) {
+    this.listening = tap === this.listening ? null : tap;
+    this.engine.listen(this.listening);
+    this.showMessage("Listen", this.listening ? TAP_NAMES[this.listening] : "full sound");
   }
 
   setExplain(on: boolean) {
@@ -566,7 +576,13 @@ export class Playground {
       return;
     }
     clearTimeout(this.longPressTimer);
-    if (!this.longPressFired) this.confirmBrowse();
+    if (this.longPressFired) return;
+    // In the Synth view, a click listens to the selected block (if it has a signal to hear).
+    if (this.view === "synth" && this.browseIndex === null) {
+      this.listenTo(this.listening ? null : (BLOCK_TAPS[this.focusBlock] ?? null));
+      return;
+    }
+    this.confirmBrowse();
   }
 
   private notePrgm(p: Program) {

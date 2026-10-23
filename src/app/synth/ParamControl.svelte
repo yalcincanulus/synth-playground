@@ -16,7 +16,15 @@
   let knob = $derived(pg.knobParams.indexOf(id) + 1);
 </script>
 
-{#if def.options}
+{#if def.options && def.options.length > 4}
+  <!-- Long choice lists as a compact dropdown, so blocks stay short. -->
+  <label class="select" class:hot={pg.touched?.param === id}>
+    <span class="label">{#if knob}<span class="k" title="MiniLab knob {knob}">{knob}</span>{/if}{def.label}</span>
+    <select value={Math.round(pg.values[id])} onchange={(e) => pg.setParam(id, +e.currentTarget.value)} onclick={(e) => e.stopPropagation()}>
+      {#each def.options as option, i}<option value={i}>{SHORT[option] ?? option}</option>{/each}
+    </select>
+  </label>
+{:else if def.options}
   <div class="enum" class:hot={pg.touched?.param === id}>
     <div class="label">{#if knob}<span class="k" title="MiniLab knob {knob}">{knob}</span>{/if}{def.label}</div>
     <div class="options">
@@ -42,6 +50,8 @@
 
 <style>
   .enum { display: flex; flex-direction: column; gap: 3px; grid-column: 1 / -1; }
+  .select { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; }
+  .select select { font-size: 11px; padding: 1px 4px; max-width: 60%; }
   .label { font-size: 11px; color: var(--text); }
   .options { display: flex; flex-wrap: wrap; gap: 2px; }
   .options button { font-size: 11px; padding: 1px 6px; border-radius: 3px; }

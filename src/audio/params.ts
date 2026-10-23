@@ -18,6 +18,10 @@ export interface ParamDef {
 export const WAVES = ["sine", "triangle", "sawtooth", "square"] as const;
 export const FILTER_TYPES = ["lowpass", "highpass", "bandpass"] as const;
 export const LFO_TARGETS = ["pitch", "filter", "amp"] as const;
+export const LFO_WAVES = ["sine", "triangle", "saw", "square", "random"] as const;
+/** LFO tempo sync: "off" uses the Rate knob, otherwise one cycle lasts this many beats. */
+export const LFO_SYNCS = ["off", "2 bars", "1 bar", "1/2", "1/4", "1/8", "1/16"] as const;
+export const LFO_SYNC_BEATS = [0, 8, 4, 2, 1, 0.5, 0.25];
 export const DELAY_DIVS = ["1/16", "1/8", "3/16", "1/4", "3/8", "1/2"] as const;
 export const DELAY_DIV_BEATS = [0.25, 0.5, 0.75, 1, 1.5, 2];
 
@@ -50,6 +54,7 @@ export const PARAMS = {
   filterAttack: { label: "F Attack", min: 0.001, max: 4, curve: "exp", default: 0.005, format: sec },
   filterDecay: { label: "F Decay", min: 0.01, max: 4, curve: "exp", default: 0.4, format: sec },
   filterSustain: { label: "F Sustain", min: 0, max: 1, curve: "lin", default: 0.2, format: pct },
+  filterRelease: { label: "F Release", min: 0.01, max: 8, curve: "exp", default: 0.3, format: sec },
   keyTrack: { label: "Key Track", min: 0, max: 1, curve: "lin", default: 0.5, format: pct },
 
   // Amp envelope (on the faders)
@@ -63,6 +68,13 @@ export const PARAMS = {
   lfoRate: { label: "LFO Rate", min: 0.05, max: 20, curve: "exp", default: 5, format: hz },
   lfoDepth: { label: "LFO Depth", min: 0, max: 1, curve: "lin", default: 0, format: pct },
   lfoTarget: enumParam("LFO To", LFO_TARGETS, 0),
+  lfoWave: enumParam("LFO Shape", LFO_WAVES, 1),
+  lfoSync: enumParam("LFO Sync", LFO_SYNCS, 0),
+  lfo2Rate: { label: "LFO2 Rate", min: 0.05, max: 20, curve: "exp", default: 0.5, format: hz },
+  lfo2Depth: { label: "LFO2 Depth", min: 0, max: 1, curve: "lin", default: 0, format: pct },
+  lfo2Target: enumParam("LFO2 To", LFO_TARGETS, 1),
+  lfo2Wave: enumParam("LFO2 Shape", LFO_WAVES, 0),
+  lfo2Sync: enumParam("LFO2 Sync", LFO_SYNCS, 0),
   modTarget: enumParam("Mod To", LFO_TARGETS, 0),
   glide: { label: "Glide", min: 0, max: 1, curve: "lin", default: 0, format: sec },
   mono: enumParam("Voice", ["poly", "mono"], 0),

@@ -208,7 +208,7 @@ export class Voice {
     hold(this.amp.gain, t);
     this.amp.gain.setTargetAtTime(0, t, p.release / 4);
     hold(this.filter.detune, t);
-    this.filter.detune.setTargetAtTime(0, t, p.release / 4);
+    this.filter.detune.setTargetAtTime(0, t, p.filterRelease / 4);
     return t + p.release * 1.8 + 0.05;
   }
 

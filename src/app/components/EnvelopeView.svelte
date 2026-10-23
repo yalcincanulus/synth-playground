@@ -5,7 +5,7 @@
   let { values, color }: { values: ParamValues; color: string } = $props();
 
   // Segment widths follow the fader/knob position, not raw seconds, so 5 ms and 5 s are both readable.
-  const seg = (id: "attack" | "decay" | "release" | "filterAttack" | "filterDecay", v: number) => 0.04 + 0.22 * toControl(id, v);
+  const seg = (id: "attack" | "decay" | "release" | "filterAttack" | "filterDecay" | "filterRelease", v: number) => 0.04 + 0.22 * toControl(id, v);
   const SUSTAIN_HOLD = 0.2;
 
   function path(g: CanvasRenderingContext2D, w: number, h: number, a: number, d: number, s: number, r: number, scale: number) {
@@ -35,7 +35,7 @@
     // Filter envelope: dashed, scaled by its amount.
     const amount = Math.min(1, Math.abs(v.filterEnvAmt) / 4);
     if (amount > 0.01) {
-      path(g, w, h, seg("filterAttack", v.filterAttack), seg("filterDecay", v.filterDecay), v.filterSustain, seg("release", v.release), amount);
+      path(g, w, h, seg("filterAttack", v.filterAttack), seg("filterDecay", v.filterDecay), v.filterSustain, seg("filterRelease", v.filterRelease), amount);
       g.setLineDash([4, 4]);
       g.strokeStyle = "#ffffff60";
       g.lineWidth = 1.5;
@@ -58,7 +58,7 @@
   }
 
   let key = $derived(
-    `${values.attack}|${values.decay}|${values.sustain}|${values.release}|${values.filterAttack}|${values.filterDecay}|${values.filterSustain}|${values.filterEnvAmt}|${color}`,
+    `${values.attack}|${values.decay}|${values.sustain}|${values.release}|${values.filterAttack}|${values.filterDecay}|${values.filterSustain}|${values.filterRelease}|${values.filterEnvAmt}|${color}`,
   );
 </script>
 

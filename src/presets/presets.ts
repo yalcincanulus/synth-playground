@@ -95,7 +95,7 @@ export const FACTORY_PRESETS: Preset[] = [
     category: "Keys",
     color: [127, 20, 20],
     knobs: ["osc2Semi", "oscMix", "subLevel", "cutoff", "lfoRate", "lfoDepth", "chorus", "drive"],
-    values: { osc1Wave: 3, osc2Wave: 0, osc2Semi: 12, oscMix: 0.5, osc2Detune: 2, subLevel: 0.3, cutoff: 4000, resonance: 0.7, filterEnvAmt: 0, keyTrack: 1, attack: 0.005, decay: 0.1, sustain: 1, release: 0.05, lfoTarget: 2, lfoRate: 6, lfoDepth: 0.35, modTarget: 0, chorus: 0.5, drive: 0.2, reverbMix: 0.2, velocity: 0 },
+    values: { osc1Wave: 3, osc2Wave: 0, osc2Semi: 12, oscMix: 0.5, osc2Detune: 2, subLevel: 0.3, cutoff: 4000, resonance: 0.7, filterEnvAmt: 0, keyTrack: 1, attack: 0.005, decay: 0.1, sustain: 1, release: 0.05, lfoTarget: 2, lfoWave: 0, lfoRate: 6, lfoDepth: 0.35, modTarget: 0, chorus: 0.5, drive: 0.2, reverbMix: 0.2, velocity: 0 },
   },
   {
     name: "Wind Sweep",
@@ -165,7 +165,7 @@ export const FACTORY_PRESETS: Preset[] = [
     category: "Keys",
     color: [127, 60, 20],
     knobs: ["osc2Semi", "oscMix", "cutoff", "filterEnvAmt", "lfoRate", "lfoDepth", "chorus", "reverbMix"],
-    values: { osc1Wave: 0, osc2Wave: 1, osc2Semi: 12, osc2Detune: 3, oscMix: 0.3, cutoff: 2200, resonance: 0.7, filterEnvAmt: 1.5, filterDecay: 0.5, filterSustain: 0.2, keyTrack: 0.8, attack: 0.002, decay: 1.6, sustain: 0.25, release: 0.5, velocity: 0.9, lfoTarget: 2, lfoRate: 4.5, lfoDepth: 0.25, modTarget: 0, chorus: 0.45, reverbMix: 0.2, volume: 0.85 },
+    values: { osc1Wave: 0, osc2Wave: 1, osc2Semi: 12, osc2Detune: 3, oscMix: 0.3, cutoff: 2200, resonance: 0.7, filterEnvAmt: 1.5, filterDecay: 0.5, filterSustain: 0.2, keyTrack: 0.8, attack: 0.002, decay: 1.6, sustain: 0.25, release: 0.5, velocity: 0.9, lfoTarget: 2, lfoWave: 0, lfoRate: 4.5, lfoDepth: 0.25, modTarget: 0, chorus: 0.45, reverbMix: 0.2, volume: 0.85 },
   },
   {
     name: "Mallets",
@@ -198,7 +198,9 @@ export const FACTORY_PRESETS: Preset[] = [
 ];
 
 export function presetValues(p: Preset): ParamValues {
-  return { ...defaultValues(), ...p.values };
+  // Presets made before the filter envelope had its own release used the amp's release for it.
+  const filterRelease = p.values.release ?? defaultValues().release;
+  return { ...defaultValues(), filterRelease, ...p.values };
 }
 
 const USER_KEY = "minilab3.userPresets";

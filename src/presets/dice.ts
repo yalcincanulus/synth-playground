@@ -52,8 +52,15 @@ export function rollDice(): Preset {
     keyTrack: rand(0.2, 0.8),
     velocity: rand(0.3, 0.8),
     lfoTarget: pick([0, 1, 1, 2]),
+    lfoWave: pick([0, 1, 1, 2, 3, 4]),
+    lfoSync: chance(0.3) ? pick([3, 4, 5]) : 0,
     lfoRate: expRand(0.1, 8),
     lfoDepth: chance(0.5) ? rand(0.05, 0.4) : 0,
+    lfo2Target: pick([0, 1, 2]),
+    lfo2Wave: pick([0, 1, 2, 4]),
+    lfo2Sync: 0,
+    lfo2Rate: expRand(0.05, 2),
+    lfo2Depth: chance(0.35) ? rand(0.1, 0.4) : 0,
     modTarget: pick([0, 0, 1]),
     chorus: chance(0.5) ? rand(0.1, 0.7) : 0,
     delayMix: chance(0.45) ? rand(0.1, 0.4) : 0,
@@ -91,6 +98,9 @@ export function rollDice(): Preset {
       });
       break;
   }
+
+  // The filter usually closes a little faster or slower than the volume fades.
+  v.filterRelease = (v.release ?? 0.3) * rand(0.5, 1.5);
 
   // Knobs: the filter core, then four of the parameters this roll actually uses.
   const optional: ParamId[] = ["osc2Detune", "osc2Semi", "oscMix", "lfoRate", "lfoDepth", "drive", "chorus", "delayMix", "reverbMix", "subLevel", "glide"];

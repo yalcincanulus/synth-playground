@@ -82,13 +82,11 @@
   {/each}
 {/snippet}
 
-<svg class="under" width={size.w} height={size.h}>{@render lines(audio)}</svg>
-<svg class="over" width={size.w} height={size.h}>{@render lines(mod)}</svg>
+<!-- Behind the blocks: cables show in the gaps between them and never cover controls. -->
+<svg width={size.w} height={size.h}>{@render lines(audio)}{@render lines(mod)}</svg>
 
 <style>
-  svg { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
-  .under { z-index: 0; }
-  .over { z-index: 2; }
+  svg { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: visible; }
   path { fill: none; stroke-linecap: round; transition: stroke-width 0.15s; }
   .audio { opacity: 0.7; }
   .mod { stroke-dasharray: 6 6; opacity: 0.85; animation: flow var(--period) linear infinite; }

@@ -1,6 +1,7 @@
 import { Drums } from "./drums";
 import { Fx } from "./fx";
-import { DELAY_DIV_BEATS, defaultValues, type ParamId, type ParamValues } from "./params";
+import { Lfo } from "./lfo";
+import { DELAY_DIV_BEATS, LFO_SYNC_BEATS, defaultValues, type ParamId, type ParamValues } from "./params";
 import { Voice, type VoiceContext, type VoiceTaps } from "./voice";
 
 const MAX_VOICES = 10;
@@ -11,6 +12,10 @@ export const LFO_FILTER_CENTS = 3600;
 export const LFO_AMP = 0.5;
 
 export type TapId = keyof VoiceTaps | "amp" | "chorus" | "delay" | "reverb" | "out";
+
+/** Taps you can listen to on their own ("out" is the normal full sound). */
+export type ListenTap = Exclude<TapId, "out">;
+const LISTEN_GAIN = 0.3;
 
 export interface VoiceState {
   note: number;
@@ -35,14 +40,13 @@ export class Engine {
   private held: number[] = [];
 
   private bend: ConstantSourceNode;
-  private lfo: OscillatorNode;
-  private lfoPitch: GainNode;
-  private lfoFilter: GainNode;
-  private lfoAmp: GainNode;
+  /** Two LFOs, each with a gain per target: [pitch, filter, amp]. */
+  readonly lfos: [Lfo, Lfo];
+  private lfoGains: [GainNode, GainNode, GainNode][];
   private tremolo: GainNode;
+  private listenGain: GainNode;
+  private listening: ListenTap | null = null;
   private mod = 0;
-  /** The LFO's phase can't be read from the audio graph, so track it: phase at `time`, moving at `rate`. */
-  private lfoAnchor = { time: 0, phase: 0, rate: 5 };
   readonly taps: Record<TapId, AnalyserNode>;
   private driveCache = new Map<number, Float32Array<ArrayBuffer>>();
 
@@ -61,16 +65,15 @@ export class Engine {
     this.bend = new ConstantSourceNode(ctx, { offset: 0 });
     this.bend.connect(pitchMod);
     this.bend.start();
-    this.lfo = new OscillatorNode(ctx, { frequency: 5 });
-    this.lfoPitch = new GainNode(ctx, { gain: 0 });
-    this.lfoFilter = new GainNode(ctx, { gain: 0 });
-    this.lfoAmp = new GainNode(ctx, { gain: 0 });
-    this.lfo.connect(this.lfoPitch).connect(pitchMod);
-    this.lfo.connect(this.lfoFilter).connect(filterMod);
-    this.lfo.start();
-
     this.tremolo = new GainNode(ctx);
-    this.lfo.connect(this.lfoAmp).connect(this.tremolo.gain);
+    this.lfos = [new Lfo(ctx, 5), new Lfo(ctx, 0.5)];
+    this.lfoGains = this.lfos.map((lfo) => {
+      const gains: [GainNode, GainNode, GainNode] = [new GainNode(ctx, { gain: 0 }), new GainNode(ctx, { gain: 0 }), new GainNode(ctx, { gain: 0 })];
+      lfo.out.connect(gains[0]).connect(pitchMod);
+      lfo.out.connect(gains[1]).connect(filterMod);
+      lfo.out.connect(gains[2]).connect(this.tremolo.gain);
+      return gains;
+    });
     const voiceBus = new GainNode(ctx, { gain: 1 });
     voiceBus.connect(this.tremolo).connect(this.fx.synthIn);
 
@@ -83,6 +86,11 @@ export class Engine {
     this.fx.chorusOut.connect(this.taps.chorus);
     this.fx.delayOut.connect(this.taps.delay);
     this.fx.reverbOut.connect(this.taps.reverb);
+
+    // "Listen here": a tap is routed to its own quiet, limited output while the main output is muted.
+    this.listenGain = new GainNode(ctx, { gain: LISTEN_GAIN });
+    const listenLimiter = new DynamicsCompressorNode(ctx, { threshold: -6, knee: 3, ratio: 20, attack: 0.002, release: 0.15 });
+    this.listenGain.connect(listenLimiter).connect(ctx.destination);
 
     this.vc = {
       ctx,
@@ -158,46 +166,52 @@ export class Engine {
   private applyLfo() {
     const p = this.params;
     const t = this.ctx.currentTime;
-    const [pitch, filter, amp] = this.lfoDepths();
-    if (p.lfoRate !== this.lfoAnchor.rate) this.lfoAnchor = { time: t, phase: this.lfoPhase(t), rate: p.lfoRate };
-    this.lfo.frequency.setTargetAtTime(p.lfoRate, t, 0.02);
-    this.lfo.type = this.lfoShape;
-    this.lfoPitch.gain.setTargetAtTime(pitch * LFO_PITCH_CENTS, t, 0.02);
-    this.lfoFilter.gain.setTargetAtTime(filter * LFO_FILTER_CENTS, t, 0.02);
-    this.lfoAmp.gain.setTargetAtTime(amp * LFO_AMP, t, 0.02);
-    this.tremolo.gain.setTargetAtTime(1 - amp * LFO_AMP, t, 0.02);
+    const waves = [p.lfoWave, p.lfo2Wave];
+    let tremoloDepth = 0;
+    this.lfos.forEach((lfo, i) => {
+      lfo.setWave(waves[i]);
+      lfo.setRate(this.lfoRate(i));
+      const [pitch, filter, amp] = this.lfoDepths(i);
+      const [gPitch, gFilter, gAmp] = this.lfoGains[i];
+      gPitch.gain.setTargetAtTime(pitch * LFO_PITCH_CENTS, t, 0.02);
+      gFilter.gain.setTargetAtTime(filter * LFO_FILTER_CENTS, t, 0.02);
+      gAmp.gain.setTargetAtTime(amp * LFO_AMP, t, 0.02);
+      tremoloDepth += amp * LFO_AMP;
+    });
+    // Tremolo swings the volume around a lowered centre, so it never goes above full.
+    this.tremolo.gain.setTargetAtTime(Math.max(0, 1 - tremoloDepth), t, 0.02);
+  }
+
+  /** Effective LFO speed in Hz: the Rate knob, or the tempo when synced. */
+  lfoRate(i: number) {
+    const p = this.params;
+    const [rate, sync] = i === 0 ? [p.lfoRate, p.lfoSync] : [p.lfo2Rate, p.lfo2Sync];
+    return sync ? this.bpm / 60 / LFO_SYNC_BEATS[sync] : rate;
   }
 
   // --- live state, for visualisation
 
-  /** Sine for tremolo (smoother on volume), triangle for pitch and filter. */
-  get lfoShape(): "sine" | "triangle" {
-    return this.params.lfoTarget === 2 ? "sine" : "triangle";
-  }
-
-  /** LFO cycle position, 0..1. */
-  lfoPhase(t = this.ctx.currentTime) {
-    const a = this.lfoAnchor;
-    return (((a.phase + (t - a.time) * a.rate) % 1) + 1) % 1;
-  }
-
-  /** LFO output -1..1 at a phase (both Web Audio shapes start at 0, rising). */
-  lfoValue(phase = this.lfoPhase()) {
-    if (this.lfoShape === "sine") return Math.sin(2 * Math.PI * phase);
-    if (phase < 0.25) return 4 * phase;
-    if (phase < 0.75) return 2 - 4 * phase;
-    return 4 * phase - 4;
-  }
-
   /**
-   * Effective LFO depth (0..1) per target [pitch, filter, amp]. The LFO's own depth goes
-   * to its target; the mod strip adds depth to the mod target.
+   * Effective depth (0..1) of LFO `i` per target [pitch, filter, amp]. Each LFO's depth
+   * goes to its target; the mod strip adds depth to LFO 1's mod target.
    */
-  lfoDepths(): [number, number, number] {
+  lfoDepths(i: number): [number, number, number] {
     const p = this.params;
-    const depth = (target: number) =>
-      Math.min(1, (p.lfoTarget === target ? p.lfoDepth : 0) + (p.modTarget === target ? this.mod : 0));
-    return [depth(0), depth(1), depth(2)];
+    const [target, depth] = i === 0 ? [p.lfoTarget, p.lfoDepth] : [p.lfo2Target, p.lfo2Depth];
+    const extra = (t: number) => (i === 0 && p.modTarget === t ? this.mod : 0);
+    return [0, 1, 2].map((t) => Math.min(1, (target === t ? depth : 0) + extra(t))) as [number, number, number];
+  }
+
+  /** Where audio is going: null is the normal output, otherwise one tap on its own. */
+  get listeningTo() {
+    return this.listening;
+  }
+
+  listen(tap: ListenTap | null) {
+    if (this.listening) this.taps[this.listening].disconnect(this.listenGain);
+    this.listening = tap;
+    if (tap) this.taps[tap].connect(this.listenGain);
+    this.fx.setMuted(tap !== null);
   }
 
   get modAmount() {

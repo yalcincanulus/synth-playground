@@ -68,7 +68,15 @@ export class Fx {
 
     const limiter = new DynamicsCompressorNode(ctx, { threshold: -6, knee: 3, ratio: 20, attack: 0.002, release: 0.15 });
     this.analyser = new AnalyserNode(ctx, { fftSize: 4096, smoothingTimeConstant: 0.75 });
-    this.master.connect(limiter).connect(this.analyser).connect(ctx.destination);
+    this.mute = new GainNode(ctx);
+    this.master.connect(limiter).connect(this.analyser).connect(this.mute).connect(ctx.destination);
+  }
+
+  private mute: GainNode;
+
+  /** Silence the main output (the output analyser still sees the signal). */
+  setMuted(muted: boolean) {
+    this.mute.gain.setTargetAtTime(muted ? 0 : 1, this.ctx.currentTime, 0.01);
   }
 
   set(opts: {
