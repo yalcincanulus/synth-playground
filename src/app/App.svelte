@@ -21,6 +21,13 @@
     return `rgb(${r} ${g} ${b})`;
   });
 
+  // Dropdown grouped by category; numbers stay the global index used by the encoder and bank B.
+  let presetGroups = $derived.by(() => {
+    const groups = new Map<string, { p: (typeof pg.presets)[number]; i: number }[]>();
+    pg.presets.forEach((p, i) => groups.set(p.category, [...(groups.get(p.category) ?? []), { p, i }]));
+    return [...groups];
+  });
+
   const display = (id: ParamId) => formatValue(id, pg.values[id]);
   const resetParam = (id: ParamId) => pg.setParam(id, pg.preset.values[id] ?? PARAMS[id].default);
 
@@ -94,8 +101,12 @@
   <section class="presets">
     <button onclick={() => pg.loadPreset(pg.presetIndex - 1)} aria-label="Previous preset">◀</button>
     <select value={pg.presetIndex} onchange={(e) => pg.loadPreset(+e.currentTarget.value)}>
-      {#each pg.presets as p, i}
-        <option value={i}>{i + 1}. {p.name} · {p.category}{pg.isUserPreset(i) ? " (user)" : ""}</option>
+      {#each presetGroups as [category, entries] (category)}
+        <optgroup label={category}>
+          {#each entries as { p, i } (i)}
+            <option value={i}>{i + 1}. {p.name}{pg.isUserPreset(i) ? " (user)" : ""}</option>
+          {/each}
+        </optgroup>
       {/each}
     </select>
     <button onclick={() => pg.loadPreset(pg.presetIndex + 1)} aria-label="Next preset">▶</button>

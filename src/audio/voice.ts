@@ -134,7 +134,7 @@ export class Voice {
     this.osc1Gain.gain.setTargetAtTime((1 - p.oscMix) / Math.sqrt(unison), t, 0.01);
     this.osc2Gain.gain.setTargetAtTime(p.oscMix / Math.sqrt(unison), t, 0.01);
     this.subGain.gain.setTargetAtTime(p.subLevel * 0.8, t, 0.01);
-    this.noiseGain.gain.setTargetAtTime(p.noiseLevel * 0.6, t, 0.01);
+    this.noiseGain.gain.setTargetAtTime(p.noiseLevel, t, 0.01);
     this.shaper.curve = this.vc.driveCurve(p.drive);
     this.filter.type = FILTER_TYPES[p.filterType];
     this.filter.Q.setTargetAtTime(filterQ(p.filterType, p.resonance), t, 0.01);
