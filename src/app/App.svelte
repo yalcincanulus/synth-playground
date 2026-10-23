@@ -58,6 +58,9 @@
     { label: "Tap tempo", deviceOnly: false },
   ];
 
+  /** On-screen glow colour for spectrum pads: the same red-to-violet rainbow as the hardware. */
+  const spectrumCss = (band: number) => `hsl(${(band / 8) * 300} 90% 60%)`;
+
   const MIDI_TEXT = {
     idle: "",
     unsupported: "This browser has no Web MIDI. Use a Chromium browser (Chrome, Brave, Edge).",
@@ -100,16 +103,19 @@
 
   <section class="presets">
     <button onclick={() => pg.loadPreset(pg.presetIndex - 1)} aria-label="Previous preset">◀</button>
-    <select value={pg.presetIndex} onchange={(e) => pg.loadPreset(+e.currentTarget.value)}>
+    <!-- `selected` per option rather than select.value: the Dice option appears in the same update that selects it. -->
+    <select onchange={(e) => pg.loadPreset(+e.currentTarget.value)}>
+      {#if pg.dicePreset}<option value={-1} disabled selected>🎲 {pg.dicePreset.name} · {pg.dicePreset.category}</option>{/if}
       {#each presetGroups as [category, entries] (category)}
         <optgroup label={category}>
           {#each entries as { p, i } (i)}
-            <option value={i}>{i + 1}. {p.name}{pg.isUserPreset(i) ? " (user)" : ""}</option>
+            <option value={i} selected={!pg.dicePreset && i === pg.presetIndex}>{i + 1}. {p.name}{pg.isUserPreset(i) ? " (user)" : ""}</option>
           {/each}
         </optgroup>
       {/each}
     </select>
     <button onclick={() => pg.loadPreset(pg.presetIndex + 1)} aria-label="Next preset">▶</button>
+    <button class="dice" onclick={() => pg.dice()} title="Random patch (hold the encoder down)">🎲 Dice</button>
     {#if pg.browseIndex !== null}
       <span class="browse">Encoder: {pg.presets[pg.browseIndex].name}, click to load</span>
     {/if}
@@ -182,28 +188,56 @@
 
   <section class="bottom">
     <div class="panel pads-panel">
-      <div class="title">
-        {#if pg.shift}<span class="shifted">Shift held · pads are transport controls</span>{:else}Pads · bank A: drums · bank B: presets 1–8{/if}
+      <div class="title pads-title">
+        {#if pg.shift}
+          <span class="shifted">Shift held · pads are transport controls</span>
+        {:else if pg.stepMode}
+          <span class="shifted">Step edit · {pg.drumName(pg.stepTrack)} · steps {pg.bank === "A" ? "1–8" : "9–16"}</span>
+        {:else}
+          Pads · bank A: drums · bank B: presets 1–8
+        {/if}
+      </div>
+      <div class="pad-modes">
+        <button class:active={pg.stepMode} onclick={() => pg.toggleStepMode()} title="Shift + encoder click">Step edit</button>
+        {#if pg.stepMode}
+          <button class:active={pg.bank === "A"} onclick={() => (pg.bank = "A")} title="Pad bank A">1–8</button>
+          <button class:active={pg.bank === "B"} onclick={() => (pg.bank = "B")} title="Pad bank B">9–16</button>
+        {:else}
+          <button class:active={pg.spectrumPads} onclick={() => pg.setSpectrumPads(!pg.spectrumPads)} title="Pad lights follow the sound">Spectrum lights</button>
+        {/if}
       </div>
       <div class="pads">
         {#each pg.padLevels as level, i}
+          {@const step = i + (pg.bank === "B" ? 8 : 0)}
+          {@const stepOn = pg.pattern[pg.stepTrack][step] > 0}
           <button
             class="pad"
             class:shifted={pg.shift}
             class:device-only={pg.shift && SHIFT_PADS[i].deviceOnly}
-            style:--level={level}
+            class:step={pg.stepMode && !pg.shift}
+            class:step-on={pg.stepMode && stepOn}
+            class:playhead={pg.stepMode && pg.playStep === step}
+            style:--level={pg.stepMode ? 0 : pg.spectrumPads ? pg.spectrumLevels[i] : level}
+            style:--glow={pg.spectrumPads && !pg.stepMode ? spectrumCss(i) : "var(--accent)"}
             onpointerdown={() => pg.hitPad(i, 100)}
             onpointerup={() => pg.releasePad(i)}
             onpointerleave={() => pg.releasePad(i)}
           >
-            {pg.shift ? SHIFT_PADS[i].label : pg.drumName(i)}
+            {pg.shift ? SHIFT_PADS[i].label : pg.stepMode ? `Step ${step + 1}` : pg.drumName(i)}
           </button>
         {/each}
       </div>
     </div>
     <div class="panel seq-panel">
       <div class="title">Drum loop {pg.recording ? "· recording pad hits" : ""}</div>
-      <SeqGrid pattern={pg.pattern} getStep={() => pg.seq.currentStep} levels={pg.padLevels} ontoggle={(t, s) => pg.toggleStep(t, s)} />
+      <SeqGrid
+        pattern={pg.pattern}
+        getStep={() => pg.seq.currentStep}
+        levels={pg.padLevels}
+        selected={pg.stepMode ? pg.stepTrack : null}
+        ontoggle={(t, s) => pg.toggleStep(t, s)}
+        onselect={(t) => pg.selectTrack(t)}
+      />
     </div>
   </section>
 
@@ -212,7 +246,8 @@
   </section>
 
   <footer>
-    Keys: computer keyboard A–' plays notes, Z / X shifts octave · Encoder: browse presets, click to load ·
+    Keys: computer keyboard A–' plays notes, Z / X shifts octave · Encoder: browse presets, click to load, hold for Dice ·
+    Shift + encoder click: step edit (turn to pick the drum) ·
     Shift + pads: ▶ play, ■ stop, ● record, ⟲ clear loop, Tap tempo · Double-click a knob to reset it
   </footer>
 
@@ -279,7 +314,16 @@
     box-shadow: 0 0 calc(var(--level) * 24px) var(--accent), inset 0 0 calc(var(--level) * 40px) var(--accent);
     transition: box-shadow 0.12s;
   }
+  .pad { box-shadow: 0 0 calc(var(--level) * 24px) var(--glow, var(--accent)), inset 0 0 calc(var(--level) * 40px) var(--glow, var(--accent)); }
   .pad.shifted { border-style: dashed; color: var(--accent); }
+  .pad.step { color: var(--dim); border-color: var(--line); }
+  .pad.step-on { background: var(--accent); color: #0b1314; border-color: var(--accent); }
+  .pad.playhead { outline: 2px solid #fff; outline-offset: 2px; }
+  .pads-title { margin-bottom: 4px; }
+  .pad-modes { display: flex; gap: 4px; margin-bottom: 8px; }
+  .pad-modes button { font-size: 12px; padding: 2px 10px; }
+  .pad-modes .active { border-color: var(--accent); color: var(--accent); }
+  .dice { margin-left: 6px; }
   .pad.device-only { opacity: 0.45; }
   .shift { border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px; font-size: 12px; color: var(--dim); transition: all 0.08s; }
   .shift.on { background: var(--accent); border-color: var(--accent); color: #0b1314; font-weight: 600; box-shadow: 0 0 12px var(--accent); }

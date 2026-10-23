@@ -7,9 +7,12 @@
     pattern: Pattern;
     getStep: () => number;
     levels: number[];
+    /** Track being step-edited on the pads, if any. */
+    selected?: number | null;
     ontoggle: (track: number, step: number) => void;
+    onselect?: (track: number) => void;
   }
-  let { pattern, getStep, levels, ontoggle }: Props = $props();
+  let { pattern, getStep, levels, selected = null, ontoggle, onselect }: Props = $props();
 
   let step = $state(-1);
   onMount(() => {
@@ -25,7 +28,9 @@
 
 <div class="seq">
   {#each pattern as row, track}
-    <div class="name" style:--level={levels[track]}>{DRUM_NAMES[track]}</div>
+    <button class="name" class:selected={selected === track} style:--level={levels[track]} onclick={() => onselect?.(track)}>
+      {DRUM_NAMES[track]}
+    </button>
     {#each row as vel, s}
       <button
         class="cell"
@@ -42,7 +47,8 @@
 
 <style>
   .seq { display: grid; grid-template-columns: 74px repeat(16, 1fr); gap: 3px; align-items: center; }
-  .name { font-size: 11px; color: var(--dim); position: relative; }
+  .name { font-size: 11px; color: var(--dim); position: relative; background: none; border: none; padding: 0; text-align: left; cursor: pointer; }
+  .name.selected { color: var(--accent); font-weight: 600; }
   .name::before { content: ""; position: absolute; left: -8px; top: 50%; width: 4px; height: 4px; margin-top: -2px; border-radius: 50%; background: var(--accent); opacity: var(--level); }
   .cell { height: 16px; padding: 0; border: none; border-radius: 3px; background: #1e2427; cursor: pointer; }
   .cell.beat { background: #252d31; }

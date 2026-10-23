@@ -15,6 +15,7 @@ import {
   type PadBank,
   type Program,
 } from "../minilab/protocol";
+import { rollDice } from "../presets/dice";
 import { FACTORY_PRESETS, FADERS, loadUserPresets, presetValues, saveUserPresets, type Preset, type Rgb } from "../presets/presets";
 
 export type MidiStatus = "idle" | "unsupported" | "denied" | "not-found" | "connected";
@@ -22,6 +23,11 @@ export type VizMode = "scope" | "spectrum";
 const VIZ_MODES: VizMode[] = ["scope", "spectrum"];
 
 const BROWSE_TIMEOUT_MS = 4000;
+const LONG_PRESS_MS = 500;
+const SPECTRUM_INTERVAL_MS = 50;
+/** Spectrum pad bands: 8 log-spaced bands between these frequencies. */
+const SPECTRUM_LOW_HZ = 40;
+const SPECTRUM_HIGH_HZ = 14000;
 const dim = ([r, g, b]: Rgb, k: number): Rgb => [r * k, g * k, b * k];
 
 export class Playground {
@@ -34,6 +40,17 @@ export class Playground {
   dirty = $state(false);
   /** Preset highlighted by the encoder but not loaded yet. */
   browseIndex = $state<number | null>(null);
+  /** A rolled Dice patch. While set, it is the current preset (not in the list until saved). */
+  dicePreset = $state<Preset | null>(null);
+
+  /** Step mode: pads edit the drum loop (bank A = steps 1-8, bank B = 9-16) for one drum. */
+  stepMode = $state(false);
+  stepTrack = $state(0);
+  /** Step under the playhead, as heard (not as scheduled). -1 when stopped. */
+  playStep = $state(-1);
+  /** Pad lights follow the audio spectrum instead of flashing on drum hits. */
+  spectrumPads = $state(false);
+  spectrumLevels = $state<number[]>(Array(8).fill(0));
 
   audioRunning = $state(false);
   midiStatus = $state<MidiStatus>("idle");
@@ -58,6 +75,10 @@ export class Playground {
   private device: MiniLab | null = null;
   private browseTimer = 0;
   private taps: number[] = [];
+  private longPressTimer = 0;
+  private longPressFired = false;
+  private spectrumTimer = 0;
+  private spectrumSent: number[] = Array(8).fill(-1);
 
   constructor() {
     this.seq.pattern = this.pattern;
@@ -66,12 +87,16 @@ export class Playground {
       setTimeout(() => this.flashPad(track, velocity), delay);
       setTimeout(() => this.flashPad(track, 0), delay + 90);
     };
+    this.seq.onStep = (step, time) => {
+      const delay = Math.max(0, (time - this.engine.ctx.currentTime) * 1000);
+      setTimeout(() => this.movePlayhead(step), delay);
+    };
     this.engine.setParams(this.values);
     this.engine.ctx.onstatechange = () => (this.audioRunning = this.engine.ctx.state === "running");
   }
 
   get preset(): Preset {
-    return this.presets[this.presetIndex];
+    return this.dicePreset ?? this.presets[this.presetIndex];
   }
 
   async startAudio() {
@@ -85,6 +110,7 @@ export class Playground {
     const n = this.presets.length;
     this.presetIndex = ((index % n) + n) % n;
     this.browseIndex = null;
+    this.dicePreset = null;
     this.values = presetValues(this.preset);
     this.dirty = false;
     this.engine.setParams(this.values);
@@ -101,12 +127,27 @@ export class Playground {
     saveUserPresets(user);
     this.presets = [...FACTORY_PRESETS, ...user];
     this.presetIndex = this.presets.length - 1;
+    this.dicePreset = null;
     this.dirty = false;
     this.syncHardware();
   }
 
-  isUserPreset(index = this.presetIndex) {
+  isUserPreset(index?: number) {
+    if (index === undefined) {
+      if (this.dicePreset) return false;
+      index = this.presetIndex;
+    }
     return index >= FACTORY_PRESETS.length;
+  }
+
+  /** Roll a random patch and make it the current sound. */
+  dice() {
+    this.dicePreset = rollDice();
+    this.browseIndex = null;
+    this.values = presetValues(this.dicePreset);
+    this.dirty = false;
+    this.engine.setParams(this.values);
+    this.syncHardware();
   }
 
   deleteUserPreset() {
@@ -153,13 +194,103 @@ export class Playground {
   }
 
   hitPad(i: number, velocity: number) {
+    if (this.stepMode) return this.tapStep(i + (this.bank === "B" ? 8 : 0), velocity);
     this.engine.drums.trigger(i, velocity);
     this.seq.record(i, velocity);
     this.flashPad(i, velocity);
   }
 
   releasePad(i: number) {
+    if (this.stepMode) return;
     this.flashPad(i, 0);
+  }
+
+  // ------------------------------------------------------------------ step mode
+
+  toggleStepMode() {
+    this.stepMode = !this.stepMode;
+    this.browseIndex = null;
+    if (this.stepMode) this.showMessage("Step edit", `${DRUM_NAMES[this.stepTrack]}: turn encoder`);
+    else this.showMessage("Step edit", "off");
+    this.syncPadLeds();
+  }
+
+  selectTrack(track: number) {
+    this.stepTrack = ((track % 8) + 8) % 8;
+    if (this.stepMode) {
+      this.showMessage("Step edit", DRUM_NAMES[this.stepTrack]);
+      this.syncPadLeds();
+    }
+  }
+
+  /** Pad press in step mode: toggle that step for the selected drum, and let you hear it. */
+  private tapStep(step: number, velocity: number) {
+    const row = this.pattern[this.stepTrack];
+    row[step] = row[step] ? 0 : Math.max(60, velocity);
+    if (row[step]) this.engine.drums.trigger(this.stepTrack, row[step]);
+    this.paintStep(step);
+  }
+
+  private movePlayhead(step: number) {
+    const prev = this.playStep;
+    this.playStep = this.playing ? step : -1;
+    if (!this.stepMode) return;
+    if (prev >= 0) this.paintStep(prev);
+    if (this.playStep >= 0) this.paintStep(this.playStep);
+  }
+
+  private stepLedId(step: number) {
+    return step < 8 ? LED_IDS.padsA[step] : LED_IDS.padsB[step - 8];
+  }
+
+  private stepColor(step: number): Rgb {
+    const vel = this.pattern[this.stepTrack][step];
+    if (step === this.playStep) return vel ? [127, 127, 127] : [35, 35, 35];
+    if (vel) return dim(this.preset.color, 0.35 + 0.65 * (vel / 127));
+    // Faint markers on each beat, so the 16 steps are easy to count.
+    return step % 4 === 0 ? [10, 10, 10] : [0, 0, 0];
+  }
+
+  private paintStep(step: number) {
+    this.sendLed(this.stepLedId(step), this.stepColor(step));
+  }
+
+  // ------------------------------------------------------------------ spectrum pads
+
+  setSpectrumPads(on: boolean) {
+    this.spectrumPads = on;
+    clearInterval(this.spectrumTimer);
+    this.spectrumSent.fill(-1);
+    this.spectrumLevels = Array(8).fill(0);
+    if (on) this.spectrumTimer = window.setInterval(() => this.updateSpectrum(), SPECTRUM_INTERVAL_MS);
+    this.syncPadLeds();
+  }
+
+  private spectrumBins: Float32Array<ArrayBuffer> | null = null;
+  private updateSpectrum() {
+    const analyser = this.engine.analyser;
+    this.spectrumBins ??= new Float32Array(analyser.frequencyBinCount);
+    analyser.getFloatFrequencyData(this.spectrumBins);
+    const binHz = analyser.context.sampleRate / analyser.fftSize;
+    const ratio = Math.pow(SPECTRUM_HIGH_HZ / SPECTRUM_LOW_HZ, 1 / 8);
+    for (let band = 0; band < 8; band++) {
+      const lo = Math.floor((SPECTRUM_LOW_HZ * Math.pow(ratio, band)) / binHz);
+      const hi = Math.max(lo + 1, Math.floor((SPECTRUM_LOW_HZ * Math.pow(ratio, band + 1)) / binHz));
+      let peak = -Infinity;
+      for (let b = lo; b < hi; b++) peak = Math.max(peak, this.spectrumBins[b]);
+      const level = Math.max(0, Math.min(1, (peak + 85) / 60)); // -85 dB..-25 dB
+      // Fast attack, slower fall, so the lights read as a meter rather than flicker.
+      const prev = this.spectrumLevels[band];
+      this.spectrumLevels[band] = level > prev ? level : prev * 0.82 + level * 0.18;
+    }
+    if (!this.device || this.stepMode) return;
+    this.spectrumLevels.forEach((level, i) => {
+      // Only send when the visible brightness changes, to keep MIDI traffic low.
+      const q = Math.round(level * 12);
+      if (q === this.spectrumSent[i]) return;
+      this.spectrumSent[i] = q;
+      this.sendLed(LED_IDS.padsA[i], spectrumColor(i, q / 12));
+    });
   }
 
   setBend(v: number) {
@@ -188,6 +319,7 @@ export class Playground {
     this.seq.stop();
     this.playing = false;
     this.recording = false;
+    this.movePlayhead(-1);
     this.syncTransportLeds();
     this.showHome();
   }
@@ -204,10 +336,12 @@ export class Playground {
     this.pattern = emptyPattern();
     this.seq.pattern = this.pattern;
     this.showMessage("Pattern", "cleared");
+    if (this.stepMode) this.syncPadLeds();
   }
 
   toggleStep(track: number, step: number) {
     this.pattern[track][step] = this.pattern[track][step] ? 0 : 100;
+    if (this.stepMode && track === this.stepTrack) this.paintStep(step);
   }
 
   setBpm(bpm: number) {
@@ -328,16 +462,16 @@ export class Playground {
           this.bank = e.bank;
           this.syncPadLeds();
         }
-        if (e.bank === "B") {
+        if (e.bank === "B" && !this.stepMode) {
           if (e.on && e.index < this.presets.length) this.loadPreset(e.index);
           return;
         }
         return e.on ? this.hitPad(e.index, e.velocity) : this.releasePad(e.index);
       case "encoder":
-        return e.shifted || this.shift ? this.cycleViz(e.delta) : this.browse(e.delta);
+        if (e.shifted || this.shift) return this.cycleViz(e.delta);
+        return this.stepMode ? this.selectTrack(this.stepTrack + e.delta) : this.browse(e.delta);
       case "encoderClick":
-        if (e.pressed) this.confirmBrowse();
-        return;
+        return this.encoderClick(e.pressed, e.shifted || this.shift);
       case "shift":
         this.shift = e.pressed;
         return;
@@ -360,6 +494,25 @@ export class Playground {
     }
   }
 
+  /** Click: load the browsed preset. Long press: Dice. Shift + click: step mode. */
+  private encoderClick(pressed: boolean, shifted: boolean) {
+    if (pressed) {
+      this.longPressFired = false;
+      if (shifted) {
+        this.longPressFired = true; // consume the release
+        return this.toggleStepMode();
+      }
+      clearTimeout(this.longPressTimer);
+      this.longPressTimer = window.setTimeout(() => {
+        this.longPressFired = true;
+        this.dice();
+      }, LONG_PRESS_MS);
+      return;
+    }
+    clearTimeout(this.longPressTimer);
+    if (!this.longPressFired) this.confirmBrowse();
+  }
+
   private notePrgm(p: Program) {
     if (this.program !== p) this.program = p;
   }
@@ -380,10 +533,15 @@ export class Playground {
 
   private syncPadLeds() {
     if (!this.device) return;
-    LED_IDS.padsA.forEach((id, i) => this.sendLed(id, this.drumColor(i)));
+    if (this.stepMode) {
+      for (let step = 0; step < 16; step++) this.paintStep(step);
+      return;
+    }
+    this.spectrumSent.fill(-1);
+    LED_IDS.padsA.forEach((id, i) => this.sendLed(id, this.spectrumPads ? [0, 0, 0] : this.drumColor(i)));
     LED_IDS.padsB.forEach((id, i) => {
       const p = this.presets[i];
-      this.sendLed(id, p ? dim(p.color, i === this.presetIndex ? 1 : 0.15) : [0, 0, 0]);
+      this.sendLed(id, p ? dim(p.color, i === this.presetIndex && !this.dicePreset ? 1 : 0.15) : [0, 0, 0]);
     });
   }
 
@@ -399,7 +557,7 @@ export class Playground {
 
   private flashPad(i: number, velocity: number) {
     this.padLevels[i] = velocity / 127;
-    if (this.bank !== "A") return;
+    if (this.bank !== "A" || this.stepMode || this.spectrumPads) return;
     const id = LED_IDS.padsA[i];
     if (velocity > 0) {
       const k = 0.4 + 0.6 * (velocity / 127);
@@ -423,7 +581,8 @@ export class Playground {
 
   showHome() {
     const n = this.presets.length;
-    this.sendDisplay(`${this.presetIndex + 1}/${n} ${this.preset.category}`, this.preset.name);
+    const where = this.dicePreset ? "Dice" : `${this.presetIndex + 1}/${n}`;
+    this.sendDisplay(`${where} ${this.preset.category}`, this.preset.name);
   }
 
   private messageTimer = 0;
@@ -441,4 +600,13 @@ export class Playground {
   drumName(i: number) {
     return DRUM_NAMES[i];
   }
+}
+
+/** Spectrum pad colour: a rainbow from red (bass) to violet (treble), brightness by level. */
+function spectrumColor(band: number, level: number): Rgb {
+  const hue = (band / 8) * 5; // 0..5 of the 6 hue sectors: red -> magenta-ish violet
+  const x = 1 - Math.abs((hue % 2) - 1);
+  const sectors: [number, number, number][] = [[1, x, 0], [x, 1, 0], [0, 1, x], [0, x, 1], [x, 0, 1], [1, 0, x]];
+  const k = level * level * 127; // squared: LEDs look linear-ish to the eye
+  return sectors[Math.floor(hue)].map((c) => c * k) as Rgb;
 }

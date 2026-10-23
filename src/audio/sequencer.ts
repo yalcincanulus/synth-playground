@@ -29,6 +29,8 @@ export class Sequencer {
   playing = false;
   recording = false;
   onTrigger: (track: number, velocity: number, time: number) => void = () => {};
+  /** Called when each step is scheduled, with the audio time it will sound at. */
+  onStep: (step: number, time: number) => void = () => {};
 
   private timer = 0;
   private nextStep = 0;
@@ -89,6 +91,7 @@ export class Sequencer {
     while (this.nextTime < ctx.currentTime + LOOKAHEAD) {
       const step = this.nextStep;
       this.stepTimes[step] = this.nextTime;
+      this.onStep(step, this.nextTime);
       for (let track = 0; track < TRACKS; track++) {
         const vel = this.pattern[track][step];
         if (vel > 0) {

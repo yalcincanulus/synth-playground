@@ -23,14 +23,14 @@ Channels are 1-based here.
 
 | Control | Arturia program (1) | DAW program (2) | Status |
 |---|---|---|---|
-| Knobs 1–8 | CC 74 71 76 77 93 18 19 16 | CC 86 87 89 90 110 111 116 117 | verified / script |
-| Faders 1–4 | CC 82 83 85 17 | CC 14 15 30 31 | verified / script |
+| Knobs 1–8 | CC 74 71 76 77 93 18 19 16 | CC 86 87 89 90 110 111 116 117 | verified / verified |
+| Faders 1–4 | CC 82 83 85 17 | CC 14 15 30 31 | verified / verified |
 | Shift | CC 9 | CC 27 | verified / verified |
-| Encoder turn | CC 114 relative | CC 28 (Shift: CC 29) | verified / script |
-| Encoder click | CC 115 | CC 118 (Shift: CC 119) | verified / script |
+| Encoder turn | CC 114 relative | CC 28 (Shift: CC 29) | verified / verified |
+| Encoder click | CC 115 | CC 118 (Shift: CC 119) | verified / verified |
 | Keys | Notes on the keyboard channel (default ch 1), 48–72 at Oct 0 | same | verified |
 | Pads bank A | Notes 36–43, ch 10, velocity + poly aftertouch | same | verified |
-| Pads bank B | Notes 44–51, ch 10 | same | script |
+| Pads bank B | Notes 44–51, ch 10 | same | verified |
 | Pitch strip | Pitch bend | same | verified |
 | Mod strip | CC 1 | same | verified |
 | Shift + loop/stop/play/rec/tap | CC 105–109 | same | verified |
@@ -61,7 +61,7 @@ Status SysEx from the device (`F0 00 20 6B 7F 42 …` header):
 
 Icon bytes: 0 none, 1 arp, 2 play, 3 record, 4 arm.
 
-LED IDs: pads bank A `0x34–0x3B` (verified), bank B `0x44–0x4B` (script), transport `0x57–0x5B` (script),
+LED IDs: pads bank A `0x34–0x3B` (verified), bank B `0x44–0x4B` (verified), transport `0x57–0x5B` (script),
 Oct − `0x31` and Oct + `0x33` (verified). Shift and Hold: unknown, probably `0x2E–0x32`.
 
 **Pacing:** LED messages sent back-to-back landed on the wrong pads; with ~300 ms gaps they were correct.

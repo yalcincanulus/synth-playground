@@ -1,0 +1,113 @@
+import type { ParamId, ParamValues } from "../audio/params";
+import type { Preset, Rgb } from "./presets";
+
+const rand = (min: number, max: number) => min + Math.random() * (max - min);
+const expRand = (min: number, max: number) => min * Math.pow(max / min, Math.random());
+const pick = <T>(items: readonly T[]): T => items[Math.floor(Math.random() * items.length)];
+const chance = (p: number) => Math.random() < p;
+
+type Archetype = "bass" | "lead" | "pad" | "pluck";
+const CATEGORY: Record<Archetype, Preset["category"]> = { bass: "Bass", lead: "Lead", pad: "Pad", pluck: "Keys" };
+
+const ADJECTIVES = ["Fuzzy", "Cosmic", "Velvet", "Rusty", "Neon", "Hollow", "Liquid", "Dusty", "Glass", "Wobbly", "Lazy", "Molten", "Frozen", "Tiny", "Electric", "Sleepy"];
+const NOUNS = ["Comet", "Engine", "Moth", "Signal", "Harbor", "Lantern", "Robot", "Tide", "Circuit", "Whale", "Static", "Garden", "Rocket", "Ghost", "Prism", "Bloom"];
+
+function randomName() {
+  for (;;) {
+    const name = `${pick(ADJECTIVES)} ${pick(NOUNS)}`;
+    if (name.length <= 18) return name;
+  }
+}
+
+/** A saturated colour in the LED's 0-127 range. */
+function randomColor(): Rgb {
+  const h = Math.random() * 6;
+  const x = 127 * (1 - Math.abs((h % 2) - 1));
+  const sectors: Rgb[] = [[127, x, 0], [x, 127, 0], [0, 127, x], [0, x, 127], [x, 0, 127], [127, 0, x]];
+  return sectors[Math.floor(h)].map(Math.round) as Rgb;
+}
+
+/**
+ * Roll a random but playable patch. An archetype fixes the envelope shape and
+ * sensible ranges; everything else is free within musical limits.
+ */
+export function rollDice(): Preset {
+  const archetype = pick<Archetype>(["bass", "lead", "pad", "pluck"]);
+  const mono = archetype === "bass" ? chance(0.8) : archetype === "lead" ? chance(0.6) : false;
+
+  const v: Partial<ParamValues> = {
+    mono: mono ? 1 : 0,
+    glide: mono && chance(0.6) ? rand(0.01, 0.12) : 0,
+    osc1Wave: pick([2, 2, 3, 3, 1, 0]),
+    osc2Wave: pick([2, 2, 3, 1, 0]),
+    osc2Semi: pick([0, 0, 0, 12, -12, 7, 5, 19, 24]),
+    osc2Detune: chance(0.7) ? rand(2, 20) : rand(20, 40),
+    oscMix: rand(0.1, 0.9),
+    unison: archetype === "pad" ? pick([2, 3, 3]) : pick([1, 1, 2]),
+    subLevel: archetype === "bass" ? rand(0.2, 0.7) : chance(0.2) ? rand(0, 0.4) : 0,
+    noiseLevel: chance(0.15) ? rand(0.05, 0.3) : 0,
+    filterType: chance(0.85) ? 0 : pick([1, 2]),
+    resonance: expRand(0.7, 12),
+    drive: chance(0.5) ? rand(0, 0.5) : 0,
+    keyTrack: rand(0.2, 0.8),
+    velocity: rand(0.3, 0.8),
+    lfoTarget: pick([0, 1, 1, 2]),
+    lfoRate: expRand(0.1, 8),
+    lfoDepth: chance(0.5) ? rand(0.05, 0.4) : 0,
+    modTarget: pick([0, 0, 1]),
+    chorus: chance(0.5) ? rand(0.1, 0.7) : 0,
+    delayMix: chance(0.45) ? rand(0.1, 0.4) : 0,
+    delayDiv: pick([1, 2, 3, 4]),
+    delayFeedback: rand(0.2, 0.55),
+    reverbMix: rand(0.05, 0.5),
+    reverbSize: expRand(1, 6),
+  };
+
+  switch (archetype) {
+    case "bass":
+      Object.assign(v, {
+        cutoff: expRand(150, 900), filterEnvAmt: rand(0.5, 4), filterAttack: 0.002, filterDecay: expRand(0.08, 0.6),
+        filterSustain: rand(0, 0.4), attack: 0.003, decay: rand(0.2, 0.6), sustain: rand(0.5, 1), release: rand(0.05, 0.2),
+        reverbMix: rand(0, 0.12), chorus: 0,
+      });
+      break;
+    case "lead":
+      Object.assign(v, {
+        cutoff: expRand(600, 5000), filterEnvAmt: rand(0, 3), filterAttack: expRand(0.002, 0.1), filterDecay: expRand(0.1, 1),
+        filterSustain: rand(0.2, 0.7), attack: expRand(0.002, 0.08), decay: rand(0.1, 0.5), sustain: rand(0.6, 1), release: rand(0.1, 0.5),
+      });
+      break;
+    case "pad":
+      Object.assign(v, {
+        cutoff: expRand(300, 3000), filterEnvAmt: rand(-1, 3), filterAttack: expRand(0.3, 3), filterDecay: expRand(0.5, 3),
+        filterSustain: rand(0.3, 0.8), attack: expRand(0.3, 2), decay: rand(0.5, 2), sustain: rand(0.7, 1), release: expRand(1, 4),
+        reverbMix: rand(0.3, 0.6),
+      });
+      break;
+    case "pluck":
+      Object.assign(v, {
+        cutoff: expRand(250, 1500), filterEnvAmt: rand(2, 5), filterAttack: 0.001, filterDecay: expRand(0.08, 0.4),
+        filterSustain: 0, attack: 0.001, decay: rand(0.3, 1.2), sustain: rand(0, 0.15), release: rand(0.2, 0.8),
+      });
+      break;
+  }
+
+  // Knobs: the filter core, then four of the parameters this roll actually uses.
+  const optional: ParamId[] = ["osc2Detune", "osc2Semi", "oscMix", "lfoRate", "lfoDepth", "drive", "chorus", "delayMix", "reverbMix", "subLevel", "glide"];
+  const used = optional.filter((id) => {
+    if (id === "lfoRate") return (v.lfoDepth ?? 0) > 0;
+    if (id === "glide") return mono;
+    if (id === "osc2Semi" || id === "osc2Detune" || id === "oscMix") return true;
+    return (v[id] ?? 0) > 0;
+  });
+  const extras = used.sort(() => Math.random() - 0.5).slice(0, 4);
+  while (extras.length < 4) extras.push(["reverbMix", "drive", "chorus", "delayMix"].find((id) => !extras.includes(id as ParamId)) as ParamId);
+
+  return {
+    name: randomName(),
+    category: CATEGORY[archetype],
+    color: randomColor(),
+    knobs: ["cutoff", "resonance", "filterEnvAmt", "filterDecay", ...extras] as Preset["knobs"],
+    values: v,
+  };
+}

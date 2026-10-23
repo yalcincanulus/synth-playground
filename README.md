@@ -20,8 +20,9 @@ Pad lights and the screen need the device in **DAW mode** (Shift + Prog).
 | Knobs 1–8 | Preset-specific parameters (shown on the OLED while turning) |
 | Faders 1–4 | Amp envelope: attack, decay, sustain, release |
 | Pitch / Mod strips | Pitch bend ±2 semitones / LFO depth to the preset's mod target |
-| Encoder | Browse presets, click to load. Shift + turn: switch visualiser |
-| Pads, bank A | Drum kit, recordable into the 16-step loop |
+| Encoder | Browse presets, click to load. Hold: Dice (random patch). Shift + turn: switch visualiser |
+| Shift + encoder click | Step edit: pads edit the drum loop (bank A = steps 1–8, bank B = 9–16), encoder picks the drum |
+| Pads, bank A | Drum kit, recordable into the 16-step loop. Optional "Spectrum lights" turn them into a live 8-band meter |
 | Pads, bank B | Load presets 1–8 |
 | Shift + ▶ / ■ / ● / ⟲ / Tap | Play / stop / record the drum loop / clear it / tap tempo |
 
