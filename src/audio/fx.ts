@@ -10,6 +10,10 @@ export class Fx {
   readonly synthIn: GainNode;
   readonly drumIn: GainNode;
   readonly analyser: AnalyserNode;
+  /** Points inside the chain, for visualisation: after chorus, delay's wet output, reverb's wet output. */
+  readonly chorusOut: AudioNode;
+  readonly delayOut: AudioNode;
+  readonly reverbOut: AudioNode;
 
   private chorusWet: GainNode;
   private chorusDry: GainNode;
@@ -26,6 +30,7 @@ export class Fx {
     this.synthIn = new GainNode(ctx);
     this.drumIn = new GainNode(ctx);
     const post = new GainNode(ctx);
+    this.chorusOut = post;
     this.master = new GainNode(ctx);
 
     // Chorus: two delay lines swept by slow LFOs in opposite phase, panned apart.
@@ -50,12 +55,14 @@ export class Fx {
     const tone = new BiquadFilterNode(ctx, { type: "lowpass", frequency: 3500 });
     post.connect(this.delaySend).connect(this.delay).connect(tone).connect(this.delayFeedback).connect(this.delay);
     tone.connect(this.master);
+    this.delayOut = tone;
 
     // Reverb: convolution with a generated noise-decay impulse.
     this.reverb = new ConvolverNode(ctx);
     this.reverbSend = new GainNode(ctx, { gain: 0 });
     this.drumReverbSend = new GainNode(ctx, { gain: 0 });
     post.connect(this.reverbSend).connect(this.reverb).connect(this.master);
+    this.reverbOut = this.reverb;
     this.drumIn.connect(this.drumReverbSend).connect(this.reverb);
     this.drumIn.connect(this.master);
 

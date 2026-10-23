@@ -16,11 +16,15 @@ import {
   type Program,
 } from "../minilab/protocol";
 import { rollDice } from "../presets/dice";
+import { KNOB_PAGES, pageOf, type BlockId } from "./synth/blocks";
 import { FACTORY_PRESETS, FADERS, loadUserPresets, presetValues, saveUserPresets, type Preset, type Rgb } from "../presets/presets";
 
 export type MidiStatus = "idle" | "unsupported" | "denied" | "not-found" | "connected";
 export type VizMode = "scope" | "spectrum";
-const VIZ_MODES: VizMode[] = ["scope", "spectrum"];
+export type View = "playground" | "synth";
+/** What Shift + encoder cycles through: the playground's two visualisers, then the Synth view. */
+const SCREENS = ["scope", "spectrum", "synth"] as const;
+const EXPLAIN_KEY = "minilab3.explain";
 
 const BROWSE_TIMEOUT_MS = 4000;
 const LONG_PRESS_MS = 500;
@@ -66,6 +70,11 @@ export class Playground {
   /** Last control touched, for highlighting in the UI. */
   touched = $state<{ param: ParamId; at: number } | null>(null);
   vizMode = $state<VizMode>("scope");
+  view = $state<View>("playground");
+  /** Synth view: the block the hardware knobs are focused on. */
+  focusBlock = $state<BlockId>("filter");
+  /** Synth view: show plain-English explanations on each block. */
+  explain = $state(localStorage.getItem(EXPLAIN_KEY) !== "off");
 
   bpm = $state(120);
   playing = $state(false);
@@ -170,7 +179,8 @@ export class Playground {
 
   /** Knob i to control position t (0..1). `cc` is set when it came from the hardware. */
   setKnob(i: number, t: number, cc?: number) {
-    const id = this.preset.knobs[i];
+    const id = this.knobParams[i];
+    if (!id) return;
     this.setParam(id, fromControl(id, t));
     this.popup(id, cc);
   }
@@ -361,10 +371,55 @@ export class Playground {
     this.showMessage("Tempo", `${this.bpm} BPM`);
   }
 
-  cycleViz(delta: number) {
-    const i = VIZ_MODES.indexOf(this.vizMode);
-    this.vizMode = VIZ_MODES[(i + delta + VIZ_MODES.length) % VIZ_MODES.length];
-    this.showMessage("View", this.vizMode);
+  /** Shift + encoder: Waveform -> Spectrum -> Synth view. */
+  cycleScreen(delta: number) {
+    const current = this.view === "synth" ? "synth" : this.vizMode;
+    const next = SCREENS[(SCREENS.indexOf(current) + delta + SCREENS.length) % SCREENS.length];
+    if (next === "synth") this.setView("synth");
+    else {
+      this.vizMode = next;
+      this.setView("playground");
+    }
+    this.showMessage("View", next === "synth" ? "Synth" : next === "scope" ? "Waveform" : "Spectrum");
+  }
+
+  setView(view: View) {
+    if (this.view === view) return;
+    this.view = view;
+    this.realignKnobs();
+  }
+
+  setExplain(on: boolean) {
+    this.explain = on;
+    localStorage.setItem(EXPLAIN_KEY, on ? "on" : "off");
+  }
+
+  /** What the 8 hardware knobs control right now. */
+  get knobParams(): (ParamId | null)[] {
+    return this.view === "synth" ? KNOB_PAGES[this.focusPage].knobs : this.preset.knobs;
+  }
+
+  get focusPage() {
+    return pageOf(this.focusBlock);
+  }
+
+  focus(block: BlockId) {
+    const before = this.focusPage;
+    this.focusBlock = block;
+    if (this.focusPage !== before) this.announcePage();
+  }
+
+  /** Synth view encoder: step through the knob pages. */
+  cycleFocus(delta: number) {
+    const n = KNOB_PAGES.length;
+    this.focusBlock = KNOB_PAGES[(((this.focusPage + delta) % n) + n) % n].blocks[0];
+    this.announcePage();
+  }
+
+  private announcePage() {
+    const page = KNOB_PAGES[this.focusPage];
+    this.showMessage(page.name, "knobs follow");
+    this.realignKnobs();
   }
 
   /** Encoder turn: browse presets without loading. Click loads. */
@@ -468,8 +523,9 @@ export class Playground {
         }
         return e.on ? this.hitPad(e.index, e.velocity) : this.releasePad(e.index);
       case "encoder":
-        if (e.shifted || this.shift) return this.cycleViz(e.delta);
-        return this.stepMode ? this.selectTrack(this.stepTrack + e.delta) : this.browse(e.delta);
+        if (e.shifted || this.shift) return this.cycleScreen(e.delta);
+        if (this.stepMode) return this.selectTrack(this.stepTrack + e.delta);
+        return this.view === "synth" ? this.cycleFocus(e.delta) : this.browse(e.delta);
       case "encoderClick":
         return this.encoderClick(e.pressed, e.shifted || this.shift);
       case "shift":
@@ -525,9 +581,14 @@ export class Playground {
     this.showHome();
     this.syncPadLeds();
     this.syncTransportLeds();
-    // Move the device's stored knob values to the preset, so the next turn doesn't jump.
-    this.preset.knobs.forEach((id, i) => {
-      this.device!.send(knobValueMessage(i, Math.round(toControl(id, this.values[id]) * 127)), `knob-${i}`);
+    this.realignKnobs();
+  }
+
+  /** Move the device's stored knob values to what they now control, so the next turn doesn't jump. */
+  private realignKnobs() {
+    this.knobParams.forEach((id, i) => {
+      const value = id ? Math.round(toControl(id, this.values[id]) * 127) : 0;
+      this.device?.send(knobValueMessage(i, value), `knob-${i}`);
     });
   }
 

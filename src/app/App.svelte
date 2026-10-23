@@ -11,6 +11,7 @@
   import SeqGrid from "./components/SeqGrid.svelte";
   import Spectrum from "./components/Spectrum.svelte";
   import { Playground } from "./playground.svelte";
+  import SynthView from "./synth/SynthView.svelte";
 
   const pg = new Playground();
   if (import.meta.env.DEV) Object.assign(window, { pg });
@@ -75,6 +76,10 @@
 <div class="app" style:--accent={accent}>
   <header>
     <h1>MiniLab 3 <span>Playground</span></h1>
+    <nav class="views" aria-label="View">
+      <button class:active={pg.view === "playground"} onclick={() => pg.setView("playground")}>Playground</button>
+      <button class:active={pg.view === "synth"} onclick={() => pg.setView("synth")} title="Shift + encoder">Synth</button>
+    </nav>
 
     <div class="midi">
       {#if pg.midiStatus === "connected"}
@@ -125,6 +130,7 @@
     {#if pg.isUserPreset()}<button onclick={() => pg.deleteUserPreset()}>Delete</button>{/if}
   </section>
 
+  {#if pg.view === "playground"}
   <section class="viz">
     <div class="panel main-viz">
       <div class="tabs">
@@ -240,6 +246,9 @@
       />
     </div>
   </section>
+  {:else}
+    <SynthView {pg} {accent} />
+  {/if}
 
   <section class="panel">
     <Keyboard notes={pg.notes} onnoteon={(n) => pg.noteOn(n, 100)} onnoteoff={(n) => pg.noteOff(n)} />
@@ -264,6 +273,9 @@
   header { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
   h1 { margin: 0; font-size: 18px; letter-spacing: 0.02em; }
   h1 span { color: var(--accent); font-weight: 400; }
+  .views { display: flex; gap: 2px; background: #0b0e10; border: 1px solid var(--line); border-radius: 6px; padding: 2px; }
+  .views button { border: none; background: none; font-size: 13px; padding: 4px 14px; border-radius: 4px; color: var(--dim); }
+  .views .active { background: var(--accent); color: #0b1314; font-weight: 600; }
   .midi { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
   .pill { border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: 12px; white-space: nowrap; }
   .pill.ok { color: var(--accent); border-color: var(--accent); }

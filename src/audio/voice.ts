@@ -10,6 +10,20 @@ export interface VoiceContext {
   /** Filter modulation in cents (LFO), added to every filter's detune. */
   filterMod: AudioNode;
   driveCurve: (drive: number) => Float32Array<ArrayBuffer> | null;
+  /** Shared analysers that every voice also feeds, so each stage can be visualised. */
+  taps: VoiceTaps;
+}
+
+export interface VoiceTaps {
+  /** Raw sources, before their mixer level. */
+  osc1: AudioNode;
+  osc2: AudioNode;
+  sub: AudioNode;
+  noise: AudioNode;
+  /** After the mixer, after drive, after the filter. */
+  mix: AudioNode;
+  drive: AudioNode;
+  filter: AudioNode;
 }
 
 export const midiToHz = (note: number) => 440 * Math.pow(2, (note - 69) / 12);
@@ -38,6 +52,9 @@ export class Voice {
   note: number;
   releasedAt: number | null = null;
   readonly startedAt: number;
+  /** When the envelopes last (re)started: differs from startedAt after a mono retrigger. */
+  triggeredAt: number;
+  velocity: number;
 
   private osc1: OscillatorNode[] = [];
   private osc2: OscillatorNode[] = [];
@@ -50,6 +67,7 @@ export class Voice {
   private shaper: WaveShaperNode;
   private filter: BiquadFilterNode;
   private amp: GainNode;
+  private mix: GainNode;
   private peak = 1;
 
   constructor(
@@ -62,6 +80,8 @@ export class Voice {
     const { ctx } = vc;
     this.note = note;
     this.startedAt = t;
+    this.triggeredAt = t;
+    this.velocity = velocity;
     const freq = midiToHz(note);
 
     this.osc1Gain = new GainNode(ctx);
@@ -88,10 +108,19 @@ export class Voice {
     // Random start so stacked voices don't phase.
     this.noise.start(t, Math.random() * vc.noise.duration);
 
-    const mix = new GainNode(ctx, { gain: 0.5 });
+    const mix = (this.mix = new GainNode(ctx, { gain: 0.5 }));
     for (const g of [this.osc1Gain, this.osc2Gain, this.subGain, this.noiseGain]) g.connect(mix);
     mix.connect(this.shaper).connect(this.filter).connect(this.amp).connect(vc.out);
     vc.filterMod.connect(this.filter.detune);
+
+    const { taps } = vc;
+    for (const o of this.osc1) o.connect(taps.osc1);
+    for (const o of this.osc2) o.connect(taps.osc2);
+    this.sub.connect(taps.sub);
+    this.noise.connect(taps.noise);
+    mix.connect(taps.mix);
+    this.shaper.connect(taps.drive);
+    this.filter.connect(taps.filter);
 
     this.apply(p, t);
     for (const o of [...this.osc1, ...this.osc2, this.sub]) o.start(t);
@@ -158,6 +187,8 @@ export class Voice {
   /** Mono mode: a new note after all keys were released retriggers the envelopes. */
   retrigger(p: ParamValues, velocity: number, t: number) {
     this.releasedAt = null;
+    this.triggeredAt = t;
+    this.velocity = velocity;
     const vel = velocity / 127;
     this.peak = 1 - p.velocity + p.velocity * vel;
     const a = this.amp.gain;
@@ -200,7 +231,7 @@ export class Voice {
     this.noise.onended = () => {
       for (const o of [...this.osc1, ...this.osc2, this.sub]) this.vc.pitchMod.disconnect(o.detune);
       this.vc.filterMod.disconnect(this.filter.detune);
-      this.amp.disconnect();
+      for (const n of [...this.osc1, ...this.osc2, this.sub, this.noise, this.mix, this.shaper, this.filter, this.amp]) n.disconnect();
     };
   }
 }

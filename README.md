@@ -26,6 +26,17 @@ Pad lights and the screen need the device in **DAW mode** (Shift + Prog).
 | Pads, bank B | Load presets 1–8 |
 | Shift + ▶ / ■ / ● / ⟲ / Tap | Play / stop / record the drum loop / clear it / tap tempo |
 
+### Synth view
+
+The **Synth** tab draws the whole synth as blocks in signal order (oscillators → mixer → drive → filter →
+amp → effects → output), with the modulators below (playing, LFO, filter and amp envelopes). Every block
+shows its live signal and all its controls, and coloured cables show what modulates what. Short
+explanations are on each block; the selected block's full explanation and a "Try this" are in the corner.
+
+In this view the MiniLab knobs follow the selected block: click a block, or turn the encoder to step
+through the five knob pages (Sources, Filter, Envelopes, Modulation, Effects). Shift + encoder switches
+between the playground's waveform, spectrum and the Synth view.
+
 Without a MiniLab, the computer keyboard plays notes (A row; Z/X change octave), and every control works with the mouse.
 
 ## Layout

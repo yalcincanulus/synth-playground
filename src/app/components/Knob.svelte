@@ -8,10 +8,12 @@
     position: number;
     hot?: boolean;
     number?: number;
+    /** Rendered size in pixels. */
+    size?: number;
     onchange: (position: number) => void;
     onreset?: () => void;
   }
-  let { label, display, position, hot = false, number, onchange, onreset }: Props = $props();
+  let { label, display, position, hot = false, number, size = 64, onchange, onreset }: Props = $props();
 
   const R = 26;
   const START = 225;
@@ -28,8 +30,10 @@
   let pointer = $derived(point(position, 14));
 </script>
 
-<div class="knob" class:hot>
+<div class="knob" class:hot class:small={size < 56}>
   <svg
+    style:width="{size}px"
+    style:height="{size}px"
     viewBox="0 0 64 64"
     role="slider"
     tabindex="0"
@@ -59,6 +63,8 @@
   .hot .face { fill: #33403f; }
   .pointer { stroke: #e8eef0; stroke-width: 3; stroke-linecap: round; }
   .label { font-size: 12px; color: var(--text); white-space: nowrap; }
+  .small .label { font-size: 11px; }
+  .small .display { font-size: 10px; }
   .num { color: var(--dim); margin-right: 4px; font-size: 10px; }
   .display { font: 11px var(--mono); color: var(--dim); white-space: nowrap; }
   .hot .display { color: var(--accent); }
