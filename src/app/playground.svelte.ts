@@ -111,7 +111,7 @@ export class Playground {
 
   audioRunning = $state(false);
   /** CPU meter: the voice processor's share of the time available. */
-  cpu = $state<CpuLoad>({ load: 0, peak: 0, voices: 0, clock: "" });
+  cpu = $state<CpuLoad>({ load: 0, peak: 0, voices: 0, units: 0, cuts: 0, clock: "" });
   timing = $state<TimingReport>({ midiAverage: null, midiWorst: null, longestFreeze: 0, sequencer: null });
   midiStatus = $state<MidiStatus>("idle");
   deviceName = $state("");

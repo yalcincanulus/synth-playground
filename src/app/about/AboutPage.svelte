@@ -38,7 +38,7 @@
 
       <h3>Coming later <span class="tag">not in yet</span></h3>
       <ul class="later">
-        <li>Two sounds at once (one for the sequencer, one for your keys), and a voice limit that keeps heavy patches from crackling</li>
+        <li>Two sounds at once: one for the sequencer, one for your keys</li>
         <li>Stereo, a ladder filter, filter morph, cleaner drive and FM, better effects</li>
         <li>WAV import and drawing your own wavetables</li>
         <li>Scale lock and chord mode</li>
@@ -103,7 +103,7 @@
       <h4>Audio</h4>
       <ul>
         <li><strong>Delay:</strong> sound goes through the browser and the system's standard audio path, so there is more delay between key and sound than in a desktop synth with a dedicated audio driver. There is no buffer size setting and no choice of output device.</li>
-        <li><strong>One CPU core:</strong> all sound is made on one audio thread. Heavy patches (many notes, unison, wavetables, routes) can crackle.</li>
+        <li><strong>One CPU core:</strong> all sound is made on one audio thread. With heavy patches (many notes, unison, wavetables, routes) the synth plays fewer notes at once rather than crackle; the CPU meter's tooltip counts the notes cut. The effects aren't measured, so very heavy reverb or delay use can still crackle.</li>
         <li><strong>Background tabs:</strong> browsers slow down hidden tabs. The sequencer and drums keep time (their clock runs in a worker thread, which isn't slowed down), but the visuals pause.</li>
         <li><strong>A busy page:</strong> notes are planned 100 ms ahead. If the page freezes for longer, the steps it missed are skipped, so the loop stays on the beat instead of stumbling.</li>
         <li><strong>Not a plugin:</strong> it can't load in a DAW. To record it, capture the system audio.</li>

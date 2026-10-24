@@ -113,6 +113,8 @@ export const PARAMS = {
   modTarget: enumParam("Mod To", LFO_TARGETS, 0),
   glide: { label: "Glide", min: 0, max: 1, curve: "lin", default: 0, format: sec },
   mono: enumParam("Voice", ["poly", "mono"], 0),
+  /** Most notes sounding at once (poly). Fewer can sound when the CPU is busy (see voiceLimit.ts). */
+  maxVoices: { label: "Max Voices", min: 1, max: 16, curve: "int", default: 10, format: (v) => `${v} note${v > 1 ? "s" : ""}` },
 
   // Mod envelope: a fourth envelope, only connected through the mod matrix.
   modEnvAttack: { label: "M Attack", min: 0.001, max: 5, curve: "exp", default: 0.001, format: sec },

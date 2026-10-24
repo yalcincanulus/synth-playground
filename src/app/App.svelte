@@ -111,7 +111,9 @@
         class="cpu"
         class:hot={pg.cpu.load > 0.6 || (pg.cpu.clock === "performance" && pg.cpu.peak > 0.9)}
         style:--load={Math.min(1, pg.cpu.load)}
-        title="CPU: share of the time available that the voice processor uses (every note and the LFOs; not the effects) · {pg.cpu.voices} voices{pg.cpu.clock ===
+        title="CPU: share of the time available that the voice processor uses (every note and the LFOs; not the effects) · {pg.cpu.voices} voices{pg.cpu.cuts
+          ? ` · ${pg.cpu.cuts} note${pg.cpu.cuts > 1 ? "s" : ""} cut to keep it from crackling`
+          : ""}{pg.cpu.clock ===
         'performance'
           ? ` · busiest block ${Math.round(pg.cpu.peak * 100)}%`
           : ''}"

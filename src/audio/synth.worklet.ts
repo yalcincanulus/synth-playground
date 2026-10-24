@@ -39,8 +39,10 @@ let peakMs = 0;
 let reportFrame = 0;
 let voicesInBlock = 0;
 let voices = 0;
+/** Voice weight summed over the blocks since the last report. */
+let unitsSum = 0;
 
-function account(ms: number, voiceCount = 1) {
+function account(ms: number, voiceCount: number, units: number) {
   if (currentFrame !== blockFrame) {
     peakMs = Math.max(peakMs, blockMs);
     voices = Math.max(voices, voicesInBlock);
@@ -51,6 +53,7 @@ function account(ms: number, voiceCount = 1) {
   blockMs += ms;
   busyMs += ms;
   voicesInBlock += voiceCount;
+  unitsSum += units;
   const elapsedFrames = currentFrame - reportFrame;
   if (elapsedFrames < REPORT_EVERY_S * sampleRate) return;
   const budgetMs = (BLOCK / sampleRate) * 1000;
@@ -59,11 +62,13 @@ function account(ms: number, voiceCount = 1) {
       load: busyMs / ((elapsedFrames / sampleRate) * 1000),
       peak: peakMs / budgetMs,
       voices,
+      // Average voice weight over the same time (blocks without voices count as 0).
+      units: unitsSum / (elapsedFrames / BLOCK),
       clock,
     },
   });
   reportFrame = currentFrame;
-  busyMs = peakMs = voices = 0;
+  busyMs = peakMs = voices = unitsSum = 0;
 }
 
 class TableLoader extends AudioWorkletProcessor {
@@ -101,7 +106,7 @@ class SynthVoices extends AudioWorkletProcessor {
     const out = outputs[0][0];
     for (let i = 1; i < outputs.length; i++) this.taps[i - 1] = outputs[i][0];
     this.bank.render(out, currentFrame, this.taps);
-    if (this.bank.voiceCount) account(now() - start, this.bank.voiceCount);
+    if (this.bank.voiceCount) account(now() - start, this.bank.voiceCount, this.bank.units);
     if (currentFrame >= this.lfoReportFrame) {
       this.lfoReportFrame = currentFrame + LFO_REPORT_S * sampleRate;
       // The phases are now at the end of this block.

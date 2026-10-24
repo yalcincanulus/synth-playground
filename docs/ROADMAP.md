@@ -110,6 +110,13 @@ What the browser still limits, whatever we do:
 
 - A **max voices** setting. When it's reached, or when the CPU meter gets close to the limit, the quietest or oldest notes are cut first, with a short fade.
 - **Done when:** heavy patches (unison 3, tables, routes) never crackle; they lose notes instead.
+- Status: built 2026-10-24, waiting for the hardware check (together with slice 4).
+  - **Max Voices** (1–16, default 10, as before) is a preset setting in the Playing block, also on its knob page.
+  - **Which note goes** (`voiceLimit.ts`): released notes first, the quietest of them; then the step sequencer's oldest note; then your oldest. Cut notes fade over 5 ms.
+  - **CPU limit:** the meter's clock is whole milliseconds in Chromium, too coarse to react block by block, so the engine predicts instead. Each voice has a weight (1 + its unison copies); the processor reports its average load and weight together, and `CpuGuard` learns the cost per unit of weight. Before a note starts, notes are cut until the total fits 60% of the time available. Above 80% measured (say, a route added to held notes), one note is cut per report. The meter's tooltip counts the notes cut.
+  - **The effects aren't measured** (they are the browser's nodes on the same thread); the 60% target leaves room for them.
+  - **Tested:** Max Voices 4 holds 8 played notes to 4. On this machine 16 heavy notes (unison 3, table, drive, 8 routes) use 46%, so nothing is cut. With the target lowered to 20% for the test, it settled at 5 notes at 17% load, each new note fading out the oldest.
+  - The render reference was re-saved: on long-release presets the phrase goes over 10 voices, and the quietest note is now cut instead of the oldest (envelope differences under 1 dB).
 
 ### 6. Two parts
 

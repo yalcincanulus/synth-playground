@@ -5,6 +5,7 @@
 import type { BankMessage } from "./dsp/voiceBank";
 import { releaseEnd } from "./dsp/voiceMath";
 import type { ParamValues } from "./params";
+import { voiceWeight } from "./voiceLimit";
 
 export type NoteOwner = "keys" | "seq";
 
@@ -18,6 +19,8 @@ export class Voice {
   /** When the envelopes last (re)started: differs from startedAt after a mono retrigger. */
   triggeredAt: number;
   velocity: number;
+  /** How much work this voice is for the processor (see voiceWeight). */
+  readonly weight: number;
   /** This note's "random" mod source value, -1..1. */
   random = Math.random() * 2 - 1;
   private id = nextId++;
@@ -32,6 +35,7 @@ export class Voice {
     this.startedAt = this.triggeredAt = t;
     this.velocity = velocity;
     const unison = Math.max(1, Math.min(3, Math.round(p.unison)));
+    this.weight = voiceWeight(unison);
     this.send({
       type: "on",
       id: this.id,

@@ -9,10 +9,10 @@ import { DELAY_DIV_BEATS, LFO_SYNC_BEATS, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, def
 import workletUrl from "./synth.worklet.ts?worker&url";
 import { buildMips, FRAMES, tableFrames, WAVETABLES } from "./wavetables";
 import { Voice, type NoteOwner } from "./voice";
+import { CpuGuard, pickVictim, voiceWeight } from "./voiceLimit";
 
 export { LFO_AMP, LFO_FILTER_CENTS, LFO_PITCH_CENTS, LFO_POSITION, LFO_WIDTH } from "./dsp/lfo";
 
-const MAX_VOICES = 10;
 /** Shortest glide used for a sequencer slide on a mono preset, in Glide units (seconds). */
 const SLIDE_GLIDE = 0.12;
 export const BEND_RANGE_CENTS = 200;
@@ -43,6 +43,10 @@ export interface CpuLoad {
   peak: number;
   /** Most voices sounding at once in that time. */
   voices: number;
+  /** Their average weight (see voiceWeight). */
+  units: number;
+  /** Notes cut so far because the CPU was close to its limit. */
+  cuts: number;
   /** "performance" (precise) or "date" (whole milliseconds; `load` is still right on average, and smoothed). */
   clock: string;
 }
@@ -62,7 +66,9 @@ export class Engine {
   private tablesSent = new Set<number>();
 
   params: ParamValues = defaultValues();
-  private cpuReport: CpuLoad = { load: 0, peak: 0, voices: 0, clock: "" };
+  private cpuReport: CpuLoad = { load: 0, peak: 0, voices: 0, units: 0, cuts: 0, clock: "" };
+  private cpuGuard = new CpuGuard();
+  private cpuCuts = 0;
   private cpuAt = 0;
   bpm = 120;
 
@@ -92,10 +98,14 @@ export class Engine {
       this.tableLoader = new AudioWorkletNode(ctx, "table-loader", { numberOfInputs: 0, numberOfOutputs: 1 });
       this.tableLoader.port.onmessage = (e) => {
         if (!e.data.cpu) return;
+        const cpu = e.data.cpu as Omit<CpuLoad, "cuts">;
         const fresh = performance.now() - this.cpuAt < CPU_STALE_MS;
-        const load = fresh ? this.cpuReport.load * 0.6 + e.data.cpu.load * 0.4 : e.data.cpu.load;
-        this.cpuReport = { ...e.data.cpu, load };
+        const load = fresh ? this.cpuReport.load * 0.6 + cpu.load * 0.4 : cpu.load;
+        this.cpuReport = { ...cpu, load, cuts: this.cpuCuts };
         this.cpuAt = performance.now();
+        this.cpuGuard.report(cpu.load, cpu.units);
+        // Over the limit despite the budget (say a route was added to held notes): cut a note now.
+        if (this.cpuGuard.overloaded(cpu.load) && this.voices.length > 1 && !this.params.mono) this.cut(this.ctx.currentTime, true);
       };
       this.loadTable(this.params.wtTable);
       this.createBank();
@@ -181,8 +191,8 @@ export class Engine {
   }
 
   get cpu(): CpuLoad {
-    if (performance.now() - this.cpuAt > CPU_STALE_MS) return { ...this.cpuReport, load: 0, peak: 0, voices: 0 };
-    return this.cpuReport;
+    if (performance.now() - this.cpuAt > CPU_STALE_MS) return { ...this.cpuReport, load: 0, peak: 0, voices: 0, units: 0, cuts: this.cpuCuts };
+    return { ...this.cpuReport, cuts: this.cpuCuts };
   }
 
   /** Send every wavetable to the audio thread now (the render check needs them before rendering starts). */
@@ -367,11 +377,13 @@ export class Engine {
 
     // Retriggering a held note: release the old voice first.
     for (const v of this.voices) if (v.note === note && v.owner === owner && v.releasedAt === null) this.releaseVoice(v, t);
-    // Steal the oldest voice, preferring released ones, then the sequencer's, so held chords survive.
-    if (this.voices.length >= MAX_VOICES) {
-      const victim = this.voices.find((v) => v.releasedAt !== null) ?? this.voices.find((v) => v.owner === "seq") ?? this.voices[0];
-      victim.kill(t);
-      this.voices.splice(this.voices.indexOf(victim), 1);
+    // Make room: within Max Voices, and within what the CPU can make without crackling.
+    const max = Math.round(this.params.maxVoices);
+    const weight = voiceWeight(this.params.unison);
+    while (this.voices.length) {
+      const full = this.voices.length >= max;
+      if (!full && this.weight() + weight <= this.cpuGuard.budget) break;
+      this.cut(t, !full);
     }
     const voice = this.newVoice(note, velocity, t);
     voice.owner = owner;
@@ -382,6 +394,23 @@ export class Engine {
     const t = Math.max(at ?? 0, this.ctx.currentTime);
     if (this.params.mono) return this.monoNoteOff(note, t);
     for (const v of this.voices) if (v.note === note && v.owner === owner && v.releasedAt === null) this.releaseVoice(v, t);
+  }
+
+  /** Total weight of the voices still sounding. */
+  private weight() {
+    return this.voices.reduce((sum, v) => sum + v.weight, 0);
+  }
+
+  /** Fade out one voice (see pickVictim for which). */
+  private cut(t: number, forCpu: boolean) {
+    const p = this.params;
+    const amp = { attack: p.attack, decay: p.decay, sustain: p.sustain, release: p.release };
+    const level = (v: Voice) => envelopeAt(amp, t, v.triggeredAt, v.releasedAt).level * (v.velocity / 127);
+    const victim = pickVictim(this.voices, level);
+    if (!victim) return;
+    victim.kill(t);
+    this.voices.splice(this.voices.indexOf(victim), 1);
+    if (forCpu) this.cpuCuts++;
   }
 
   private releaseVoice(v: Voice, t: number) {

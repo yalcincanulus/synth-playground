@@ -148,9 +148,9 @@ export const BLOCKS: Record<BlockId, BlockDef> = {
   perf: {
     title: "Playing",
     short: "How your playing shapes the sound.",
-    explain: "How you shape the sound while playing: pitch strip bends notes, mod strip adds LFO movement, Mono plays one note at a time, Glide slides between notes, Unison stacks copies.",
+    explain: "How you shape the sound while playing: pitch strip bends notes, mod strip adds LFO movement, Mono plays one note at a time, Glide slides between notes, Unison stacks copies. Max Voices is how many notes can sound at once: when you play more, the quietest fading note (or else the oldest) makes way. If the computer gets too busy, fewer notes sound, so the sound never crackles.",
     tryThis: "Switch to mono, raise Glide, and play overlapping notes.",
-    params: ["modTarget", "mono", "glide", "unison"],
+    params: ["modTarget", "mono", "glide", "unison", "maxVoices"],
   },
 };
 
@@ -206,7 +206,7 @@ export const KNOB_PAGES: KnobPage[] = [
   },
   {
     name: "Playing",
-    knobs: ["velocity", "glide", "mono", "unison", "keyTrack", "modTarget", null, null],
+    knobs: ["velocity", "glide", "mono", "unison", "keyTrack", "modTarget", "maxVoices", null],
     blocks: ["perf"],
   },
   {

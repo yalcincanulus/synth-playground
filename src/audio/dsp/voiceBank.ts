@@ -20,6 +20,7 @@ import { LFO_AMP, LFO_AMP_TARGET, LFO_SCALE, LfoCore, lfoDepths } from "./lfo";
 import { Oscillator, type OscParams, type Table } from "./oscillator";
 import { coefFor, Ramp } from "./ramp";
 import { Svf, svfG } from "./svf";
+import { voiceWeight } from "../voiceLimit";
 import { filterBase, filterK, filterQ, keySource, midiToHz, MOD_RANGE, unisonSpread, velocityFilterScale, velocityPeak } from "./voiceMath";
 
 export type BankMessage =
@@ -118,6 +119,8 @@ class Voice {
   readonly driver = new Oversampled2x();
   readonly smooth: Float64Array;
   readonly gainScale: number;
+  /** How much work this voice is (see voiceWeight). */
+  readonly weight: number;
   stopAt = Infinity;
   velocity: number;
   random: number;
@@ -153,6 +156,7 @@ class Voice {
     this.velocity = msg.velocity;
     this.random = msg.random;
     this.gainScale = 1 / Math.sqrt(Math.max(1, Math.min(3, msg.unison)));
+    this.weight = voiceWeight(msg.unison);
     // Notes start at their settings: nothing glides in at the start.
     this.smooth = Float64Array.from(bank.targets);
     this.routeKey = Array(MOD_SLOTS).fill("");
@@ -418,6 +422,13 @@ export class VoiceBank {
 
   get voiceCount() {
     return this.voices.length;
+  }
+
+  /** The total weight of the sounding voices, for the CPU meter. */
+  get units() {
+    let u = 0;
+    for (const v of this.voices) u += v.weight;
+    return u;
   }
 
   post(msg: BankMessage) {
