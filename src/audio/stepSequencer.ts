@@ -9,8 +9,14 @@ export const NOTE_STEPS = 8;
 /** Lowest note a step knob reaches; the knob covers two octaves above it. */
 export const STEP_NOTE_LOW = 48; // C3
 export const STEP_NOTE_RANGE = 24;
-/** Keyboard transpose is measured from this key. */
+/** What the keys do while the sequencer plays. */
+export const KEYS_MODES = ["Play", "Transpose", "Split"] as const;
+export type KeysMode = (typeof KEYS_MODES)[number];
+/** Transpose mode: transpose is measured from this key. */
 export const TRANSPOSE_ROOT = 60; // C4
+/** Split mode: keys below this transpose (measured from SPLIT_ROOT), this key and above play notes. */
+export const SPLIT_NOTE = 60; // C4
+export const SPLIT_ROOT = 48; // C3
 
 export const RATES = [
   { name: "1/8", beats: 1 / 2 },

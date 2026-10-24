@@ -95,9 +95,13 @@ interface Route {
   from: AudioNode;
 }
 
+export type NoteOwner = "keys" | "seq";
+
 /** One sounding note: oscillators -> drive -> filter -> amp, plus its envelopes and mod matrix routes. */
 export class Voice {
   note: number;
+  /** Who played it: your keys or the step sequencer. Each only releases its own notes. */
+  owner: NoteOwner = "keys";
   releasedAt: number | null = null;
   readonly startedAt: number;
   /** When the envelopes last (re)started: differs from startedAt after a mono retrigger. */

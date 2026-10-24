@@ -5,7 +5,7 @@ import { envelopeAt } from "./envelope";
 import { DELAY_DIV_BEATS, LFO_SYNC_BEATS, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, defaultValues, slotIds, type ModSource, type ParamId, type ParamValues } from "./params";
 import oscWorkletUrl from "./osc.worklet.ts?worker&url";
 import { buildMips, FRAMES, tableFrames, WAVETABLES } from "./wavetables";
-import { keySource, MOD_RANGE, Voice, type VoiceContext, type VoiceTaps } from "./voice";
+import { keySource, MOD_RANGE, Voice, type NoteOwner, type VoiceContext, type VoiceTaps } from "./voice";
 
 const MAX_VOICES = 10;
 /** Shortest glide used for a sequencer slide on a mono preset, in Glide units (seconds). */
@@ -329,27 +329,31 @@ export class Engine {
   /**
    * `at` schedules the note ahead (the step sequencer does this); it defaults to now.
    * `slide` glides into the note on mono presets even when the preset's Glide is 0.
+   * `owner` keeps your keys and the sequencer apart: each only retriggers and releases its own notes,
+   * so the sequencer playing C3 doesn't cut off a C3 you are holding in a chord.
    */
-  noteOn(note: number, velocity: number, at?: number, slide = false) {
+  noteOn(note: number, velocity: number, at?: number, slide = false, owner: NoteOwner = "keys") {
     if (!this.loaded) return;
     const t = Math.max(at ?? 0, this.ctx.currentTime);
     if (this.params.mono) return this.monoNoteOn(note, velocity, t, slide);
 
     // Retriggering a held note: release the old voice first.
-    for (const v of this.voices) if (v.note === note && v.releasedAt === null) this.releaseVoice(v, t);
-    // Steal the oldest voice, preferring released ones.
+    for (const v of this.voices) if (v.note === note && v.owner === owner && v.releasedAt === null) this.releaseVoice(v, t);
+    // Steal the oldest voice, preferring released ones, then the sequencer's, so held chords survive.
     if (this.voices.length >= MAX_VOICES) {
-      const victim = this.voices.find((v) => v.releasedAt !== null) ?? this.voices[0];
+      const victim = this.voices.find((v) => v.releasedAt !== null) ?? this.voices.find((v) => v.owner === "seq") ?? this.voices[0];
       victim.kill(t);
       this.voices.splice(this.voices.indexOf(victim), 1);
     }
-    this.voices.push(new Voice(this.vc, this.params, note, velocity, t));
+    const voice = new Voice(this.vc, this.params, note, velocity, t);
+    voice.owner = owner;
+    this.voices.push(voice);
   }
 
-  noteOff(note: number, at?: number) {
+  noteOff(note: number, at?: number, owner: NoteOwner = "keys") {
     const t = Math.max(at ?? 0, this.ctx.currentTime);
     if (this.params.mono) return this.monoNoteOff(note, t);
-    for (const v of this.voices) if (v.note === note && v.releasedAt === null) this.releaseVoice(v, t);
+    for (const v of this.voices) if (v.note === note && v.owner === owner && v.releasedAt === null) this.releaseVoice(v, t);
   }
 
   private releaseVoice(v: Voice, t: number) {

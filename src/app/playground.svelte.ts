@@ -13,6 +13,10 @@ import {
   STEP_NOTE_LOW,
   STEP_NOTE_RANGE,
   TRANSPOSE_ROOT,
+  KEYS_MODES,
+  SPLIT_NOTE,
+  SPLIT_ROOT,
+  type KeysMode,
   type NoteSeqSettings,
 } from "../audio/stepSequencer";
 import { TABLE_WAVE } from "../audio/oscCore";
@@ -84,8 +88,8 @@ export class Playground {
   seqStep = $state(-1);
   /** Notes the sequencer is sounding right now, for the on-screen keyboard. */
   seqNotes = new SvelteSet<number>();
-  /** While the sequencer plays, keys transpose it instead of playing notes. */
-  keyTranspose = $state(true);
+  /** While the sequencer plays: keys play notes (Play), move the sequence (Transpose), or both, split at C4 (Split). */
+  keysMode = $state<KeysMode>("Play");
   /** Pad lights follow the audio spectrum instead of flashing on drum hits. */
   spectrumPads = $state(false);
   spectrumLevels = $state<number[]>(Array(8).fill(0));
@@ -151,11 +155,11 @@ export class Playground {
     };
     this.noteSequencer = new NoteSequencer(this.noteSeq, {
       noteOn: (note, velocity, time, slide) => {
-        this.engine.noteOn(note, velocity, time, slide);
+        this.engine.noteOn(note, velocity, time, slide, "seq");
         this.atAudioTime(time, () => this.seqNotes.add(note));
       },
       noteOff: (note, time) => {
-        this.engine.noteOff(note, time);
+        this.engine.noteOff(note, time, "seq");
         this.atAudioTime(time, () => this.seqNotes.delete(note));
       },
     });
@@ -260,9 +264,12 @@ export class Playground {
       this.stopAudition();
       this.heldStepKeyed = true;
       this.setStepNote(this.heldStep, note, { on: true, audition: false });
-    } else if (this.transposing) {
-      this.transposeKeys.add(note);
-      return this.setTranspose(note - TRANSPOSE_ROOT);
+    } else {
+      const root = this.transposeRoot(note);
+      if (root !== null) {
+        this.transposeKeys.add(note);
+        return this.setTranspose(note - root);
+      }
     }
     this.engine.noteOn(note, velocity);
     this.notes.add(note);
@@ -274,9 +281,22 @@ export class Playground {
     this.notes.delete(note);
   }
 
-  /** Keys transpose the sequence while it plays (unless switched off). */
-  get transposing() {
-    return this.keyTranspose && this.noteSeq.enabled && this.playing;
+  /** If this key should transpose the running sequence, the key that means "no change"; otherwise null. */
+  private transposeRoot(note: number): number | null {
+    if (!this.noteSeq.enabled || !this.playing) return null;
+    if (this.keysMode === "Transpose") return TRANSPOSE_ROOT;
+    if (this.keysMode === "Split" && note < SPLIT_NOTE) return SPLIT_ROOT;
+    return null;
+  }
+
+  setKeysMode(mode: KeysMode) {
+    this.keysMode = mode;
+    const what = { Play: "play notes", Transpose: "transpose", Split: "low transposes" }[mode];
+    this.showMessage("Keys", what);
+  }
+
+  cycleKeysMode() {
+    this.setKeysMode(KEYS_MODES[(KEYS_MODES.indexOf(this.keysMode) + 1) % KEYS_MODES.length]);
   }
 
   hitPad(i: number, velocity: number) {
@@ -404,8 +424,8 @@ export class Playground {
     if (audition && !this.playing) {
       const n = step.note + this.noteSeq.transpose;
       const now = this.engine.ctx.currentTime;
-      this.engine.noteOn(n, 100, now);
-      this.engine.noteOff(n, now + AUDITION_S);
+      this.engine.noteOn(n, 100, now, false, "seq");
+      this.engine.noteOff(n, now + AUDITION_S, "seq");
     }
     if (realign && this.seqEdit) this.device?.send(knobValueMessage(i, Math.round(this.stepKnobPosition(i) * 127)), `knob-${i}`);
     if (!audition || on) this.showMessage(`Step ${i + 1}`, noteName(step.note));
@@ -448,7 +468,7 @@ export class Playground {
     if (!this.playing) {
       // Stopped: hear the step's note while the pad is held.
       this.auditionNote = this.noteSeq.steps[i].note + this.noteSeq.transpose;
-      this.engine.noteOn(this.auditionNote, 100);
+      this.engine.noteOn(this.auditionNote, 100, undefined, false, "seq");
     }
     this.showMessage(`Step ${i + 1}`, `${noteName(this.noteSeq.steps[i].note)}: press a key`);
   }
@@ -467,7 +487,7 @@ export class Playground {
   }
 
   private stopAudition() {
-    if (this.auditionNote !== null) this.engine.noteOff(this.auditionNote);
+    if (this.auditionNote !== null) this.engine.noteOff(this.auditionNote, undefined, "seq");
     this.auditionNote = null;
   }
 
@@ -923,6 +943,8 @@ export class Playground {
     }
     clearTimeout(this.longPressTimer);
     if (this.longPressFired) return;
+    // In sequencer edit, a click switches what the keys do: play, transpose, split.
+    if (this.seqEdit && this.browseIndex === null) return this.cycleKeysMode();
     // In the Synth view, a click listens to the selected block (if it has a signal to hear).
     if (this.view === "synth" && this.browseIndex === null) {
       this.listenTo(this.listening ? null : (BLOCK_TAPS[this.focusBlock] ?? null));

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { noteName } from "../../audio/stepSequencer";
+  import { KEYS_MODES, noteName } from "../../audio/stepSequencer";
   import Fader from "../components/Fader.svelte";
   import Knob from "../components/Knob.svelte";
   import { SEQ_FADERS, type Playground } from "../playground.svelte";
@@ -10,6 +10,12 @@
   let { pg }: Props = $props();
 
   let s = $derived(pg.noteSeq);
+  const KEYS_HELP = {
+    Play: "Keys play notes and chords over the sequence",
+    Transpose: "A key moves the whole sequence up or down (C4 = no change)",
+    Split: "Keys below C4 transpose the sequence (C3 = no change), C4 and up play notes",
+  };
+  let mono = $derived(pg.values.mono > 0);
   const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
 </script>
 
@@ -20,16 +26,21 @@
     <button class:active={pg.seqEdit} onclick={() => pg.setSeqEdit(!pg.seqEdit)} title="Shift + encoder click (twice: drum steps, then sequencer)">
       Edit on MiniLab
     </button>
-    <label class="check" title="While the sequencer plays, a key moves the whole sequence up or down (C4 = no change)">
-      <input type="checkbox" checked={pg.keyTranspose} onchange={(e) => (pg.keyTranspose = e.currentTarget.checked)} />
-      Keys transpose
-    </label>
+    <div class="keys" role="group" aria-label="What the keys do while the sequencer plays" title="Encoder click in sequencer edit">
+      <span>Keys:</span>
+      {#each KEYS_MODES as mode (mode)}
+        <button class:active={pg.keysMode === mode} onclick={() => pg.setKeysMode(mode)} title={KEYS_HELP[mode]}>{mode}</button>
+      {/each}
+    </div>
     <span class="transpose">
       Transpose {s.transpose === 0 ? "0" : signed(s.transpose)}
       {#if s.transpose !== 0}<button class="small" onclick={() => pg.setTranspose(0)}>reset</button>{/if}
     </span>
+    {#if mono && pg.keysMode !== "Transpose" && s.enabled}
+      <span class="hint">This preset is mono: one note at a time, shared with the sequencer. Pick a poly preset for chords.</span>
+    {/if}
     {#if pg.seqEdit}
-      <span class="hint shifted">Knobs: step notes · Pads A: steps on/off (hold + key: set the note) · Pads B: slides · Faders: length, gate, rate, direction</span>
+      <span class="hint shifted">Knobs: step notes · Pads A: steps on/off (hold + key: set the note) · Pads B: slides · Faders: length, gate, rate, direction · Encoder click: keys mode</span>
     {/if}
   </div>
 
@@ -37,7 +48,8 @@
     <p class="explain">
       A step sequencer plays a short loop of notes by itself, in time with the drums. Each column is one step: the knob sets its
       note, the button below switches it on or off (off is a rest), and <b>Slide</b> holds the note into the next step and glides
-      to it. Press ▶ to hear it, then play a key to move the whole line up or down.
+      to it. Press ▶ to hear it, then play chords over it. <b>Keys</b> picks what the keyboard does while it runs: play notes,
+      move the whole line up or down (Transpose), or both (Split: the low keys transpose, the rest play).
     </p>
   {/if}
 
@@ -78,7 +90,8 @@
   .head .title { margin: 0 6px 0 0; }
   .head button { font-size: 12px; padding: 2px 10px; }
   .head .active { border-color: var(--accent); color: var(--accent); }
-  .check { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--dim); }
+  .keys { display: flex; align-items: center; gap: 2px; font-size: 12px; color: var(--dim); }
+  .keys span { margin-right: 4px; }
   .transpose { font: 12px var(--mono); color: var(--dim); display: flex; align-items: center; gap: 6px; }
   .small { font-size: 11px !important; padding: 0 6px !important; }
   .hint { font-size: 12px; }

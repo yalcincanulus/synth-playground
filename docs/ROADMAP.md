@@ -13,7 +13,7 @@ Replaces the arpeggiator. Modelled on the Oberheim Mini-Sequencer: one knob and 
 - 8 steps, each with a note, on/off (off is a rest) and a slide (holds the note into the next step and glides to it, like a TB-303).
 - Settings: length 1–8, gate, rate (1/8, 1/8T, 1/16, 1/16T), direction (forward, backward, ping-pong, random).
 - Runs on the drum loop's clock, so ▶ / ■ / Tap control both and they stay in time.
-- While it plays, a key transposes the whole line (C4 = no change); this can be switched off.
+- While it plays, the keys either play notes and chords over it (Play, the default), transpose the whole line (Transpose, C4 = no change), or both (Split: below C4 transposes, C3 = no change). Encoder click in sequencer edit switches. Your notes and the sequencer's don't cut each other off.
 - On the MiniLab, **sequencer edit** (Shift + encoder click twice: drum steps, then sequencer, then off):
   - knobs 1–8: step notes (two octaves from C3)
   - pads bank A: steps on/off; hold a pad and press a key to set that step's note
@@ -158,7 +158,7 @@ Ideas without a place in the order yet. Any of them can slot in between phases.
 - Presets: tags, favourites, search, export/import as files; morphing between two presets with a fader.
 - Pads play notes (which would also make pad pressure useful as a matrix source).
 - Arpeggiator (hold a chord, it plays the notes in turn), on the same clock as the sequencer.
-- Sequencer: 16 steps (second page on pad bank B), per-step velocity/accent, a second row of values as a mod matrix source (e.g. step → cutoff), a Sequencer block in the Synth view, saving sequences.
+- Sequencer: a separate sound for the sequencer (two parts, e.g. bass line + chord pad), 16 steps (second page on pad bank B), per-step velocity/accent, a second row of values as a mod matrix source (e.g. step → cutoff), a Sequencer block in the Synth view, saving sequences.
 - Looper/recorder, with WAV export.
 - "What changed?" view: compare a tweaked preset with the saved version (A/B).
 - Effects rack: separate effect slots you can reorder; distortion types, phaser, flanger, EQ, bit-crusher, compressor.
