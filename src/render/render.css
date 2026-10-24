@@ -32,4 +32,7 @@ td.issues { color: var(--bad); }
 td.issues .minor { color: var(--warn); }
 td.warn { color: var(--warn); }
 td.bad { color: var(--bad); }
+td.routes { color: var(--dim); font-size: 12px; }
+label { color: var(--dim); display: flex; align-items: center; gap: 6px; }
+select { font: inherit; color: var(--text); background: #222a2e; border: 1px solid var(--line); border-radius: 4px; padding: 3px 6px; }
 .category { color: var(--dim); font-size: 11px; margin-left: 6px; }

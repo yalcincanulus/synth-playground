@@ -1,14 +1,13 @@
 // Render check page (render.html): renders every factory preset offline and checks the results.
 // See analyse.ts for what is measured.
 
-import { Engine } from "../audio/engine";
+import { hasRoutes } from "../audio/dsp/voiceBank";
+import { Engine, type EngineKind } from "../audio/engine";
 import { FACTORY_PRESETS, presetValues, type Preset } from "../presets/presets";
-import { analyse, compare, levelOutliers, PHRASE, RENDER_SECONDS, type Analysis, type IssueKind } from "./analyse";
+import { analyse, compare, levelOutliers, PHRASE, RENDER_RATE, RENDER_SECONDS, type Analysis, type IssueKind } from "./analyse";
 
-const SAMPLE_RATE = 48000;
+const SAMPLE_RATE = RENDER_RATE;
 const REFERENCE_URL = "/__render-reference";
-/** Which engine made these renders; stored with the reference. The new engine (roadmap slices 2–3) adds a choice. */
-const ENGINE_NAME = "old";
 /** Above these differences from the reference, a cell is highlighted. */
 const WARN_DB = 1.5;
 const BAD_DB = 4;
@@ -23,6 +22,7 @@ interface Reference {
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const runButton = $<HTMLButtonElement>("run");
+const engineSelect = $<HTMLSelectElement>("engine");
 const saveButton = $<HTMLButtonElement>("save");
 const status = $("status");
 const rows = $("rows");
@@ -63,18 +63,30 @@ async function renderSeeded(preset: Preset): Promise<AudioBuffer> {
   // The engine is written for a live AudioContext; offline it only lacks resume(), which isn't called here.
   const engine = new Engine(ctx as unknown as AudioContext);
   await engine.ready;
+  engine.setKind(engineSelect.value as EngineKind);
   engine.setParams(presetValues(preset));
+  engine.fx.settle();
   engine.loadAllTables();
   // Let the wavetables reach the audio thread before rendering starts.
   await new Promise((r) => setTimeout(r, 20));
-  // Calls must come in time order, as when playing live (mono presets track which keys are held).
+  await engine.flush();
+  // Play the phrase as if live: the render pauses at each note time and the keys are pressed then
+  // (scheduling everything ahead would build the classic engine's notes early, starting their waves at
+  // random points). Calls come in time order: mono presets track which keys are held.
   const events = PHRASE.flatMap((p) => [
     { time: p.on, on: true, note: p.note },
     { time: p.off, on: false, note: p.note },
   ]).sort((a, b) => a.time - b.time || Number(a.on) - Number(b.on));
-  for (const e of events) {
-    if (e.on) engine.noteOn(e.note, 100, e.time);
-    else engine.noteOff(e.note, e.time);
+  for (const time of new Set(events.map((e) => e.time))) {
+    ctx.suspend(time).then(async () => {
+      for (const e of events.filter((x) => x.time === time)) {
+        if (e.on) engine.noteOn(e.note, 100, time);
+        else engine.noteOff(e.note, time);
+      }
+      // The new engine's notes are messages to the audio thread: let them arrive before going on.
+      await engine.flush();
+      ctx.resume();
+    });
   }
   return ctx.startRendering();
 }
@@ -111,7 +123,7 @@ async function runAll() {
 }
 
 async function saveReference() {
-  const body: Reference = { engine: ENGINE_NAME, savedAt: new Date().toISOString(), sampleRate: SAMPLE_RATE, results: Object.fromEntries(results) };
+  const body: Reference = { engine: engineSelect.value, savedAt: new Date().toISOString(), sampleRate: SAMPLE_RATE, results: Object.fromEntries(results) };
   const res = await fetch(REFERENCE_URL, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   status.textContent = res.ok ? "Saved as reference." : `Saving failed: ${res.status}`;
   await loadReference();
@@ -151,7 +163,7 @@ function draw() {
       category.className = "category";
       category.textContent = preset.category;
       name.append(category);
-      tr.append(cell(String(i + 1), "num"), name);
+      tr.append(cell(String(i + 1), "num"), name, cell(hasRoutes(presetValues(preset)) ? "yes" : "", "routes"));
       if (!a) {
         tr.append(cell(""), cell(""), cell(""), cell(""), cell(""), cell(""), cell(""));
         return tr;

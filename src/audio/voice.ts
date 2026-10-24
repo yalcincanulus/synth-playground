@@ -1,3 +1,4 @@
+import { filterBase, filterQ, keySource, midiToHz, releaseEnd, unisonSpread, velocityFilterScale, velocityPeak } from "./dsp/voiceMath";
 import { FILTER_TYPES, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, slotIds, type ModDest, type ModSource, type ParamValues } from "./params";
 
 /** Shared nodes a voice plugs into. Owned by the engine. */
@@ -32,22 +33,7 @@ export interface VoiceTaps {
   filter: AudioNode;
 }
 
-export const midiToHz = (note: number) => 440 * Math.pow(2, (note - 69) / 12);
-
-/** Biquad lowpass/highpass Q is in dB; bandpass Q is a plain quality factor. */
-export function filterQ(type: number, resonance: number) {
-  return FILTER_TYPES[type] === "bandpass" ? resonance : Math.min(24, 20 * Math.log10(resonance));
-}
-
-export function filterBase(p: ParamValues, note: number) {
-  return Math.min(20000, p.cutoff * Math.pow(2, ((note - 60) / 12) * p.keyTrack));
-}
-
-/** Unison copies are spread this many cents either side (at least), so they never sound like one. */
-export const unisonSpread = (p: ParamValues) => Math.max(p.osc2Detune, 8);
-
-/** The "key" source: -1 two octaves below middle C, +1 two octaves above. */
-export const keySource = (note: number) => (note - 60) / 24;
+export { filterBase, filterQ, keySource, midiToHz, unisonSpread } from "./dsp/voiceMath";
 
 /** What a route's amount of 100% means at each destination. */
 export const MOD_RANGE: Record<ModDest, number> = {
@@ -97,8 +83,30 @@ interface Route {
 
 export type NoteOwner = "keys" | "seq";
 
+/** What the engine needs from a voice; the classic Voice and the new engine's WorkletVoice both provide it. */
+export interface SynthVoice {
+  note: number;
+  owner: NoteOwner;
+  releasedAt: number | null;
+  readonly startedAt: number;
+  triggeredAt: number;
+  velocity: number;
+  random: number;
+  /** Update sound parameters on a sounding voice. */
+  apply(p: ParamValues, t?: number): void;
+  /** Mono: move to a new note without retriggering the envelopes. */
+  glideTo(note: number, p: ParamValues, t: number): void;
+  /** Mono: restart the envelopes from where they are. */
+  retrigger(p: ParamValues, velocity: number, t: number): void;
+  /** Start the release; returns the time the voice falls silent. */
+  release(p: ParamValues, t: number): number;
+  /** Fast fade for voice stealing. */
+  kill(t: number): void;
+  stop(at: number): void;
+}
+
 /** One sounding note: oscillators -> drive -> filter -> amp, plus its envelopes and mod matrix routes. */
-export class Voice {
+export class Voice implements SynthVoice {
   note: number;
   /** Who played it: your keys or the step sequencer. Each only releases its own notes. */
   owner: NoteOwner = "keys";
@@ -221,7 +229,7 @@ export class Voice {
 
   /** Start (or, in mono, restart from where they are) the amp, filter, pitch and mod envelopes. */
   private startEnvelopes(p: ParamValues, t: number, retrigger: boolean) {
-    const peak = 1 - p.velocity + p.velocity * (this.velocity / 127);
+    const peak = velocityPeak(p, this.velocity);
     startAdsr(this.amp.gain, p.attack, p.decay, p.sustain, peak, t, retrigger);
     startAdsr(this.sources["amp env"].offset, p.attack, p.decay, p.sustain, 1, t, retrigger);
     startAdsr(this.sources["filter env"].offset, p.filterAttack, p.filterDecay, p.filterSustain, 1, t, retrigger);
@@ -255,7 +263,7 @@ export class Voice {
     this.filter.Q.setTargetAtTime(filterQ(p.filterType, p.resonance), t, 0.01);
     this.filter.frequency.setTargetAtTime(filterBase(p, this.note), t, 0.01);
     // Envelope amounts, so turning them changes a held note too.
-    const velScale = 0.5 + 0.5 * (p.velocity > 0 ? this.velocity / 127 : 1);
+    const velScale = velocityFilterScale(p, this.velocity);
     this.filterEnvGain.gain.setTargetAtTime(p.filterEnvAmt * 1200 * velScale, t, 0.01);
     this.pitchEnvGain.gain.setTargetAtTime(p.pitchEnvAmt * 100, t, 0.01);
     this.applyRoutes(p, t);
@@ -351,7 +359,7 @@ export class Voice {
     releaseTo0(this.sources["amp env"].offset, p.release, t);
     releaseTo0(this.sources["filter env"].offset, p.filterRelease, t);
     releaseTo0(this.sources["mod env"].offset, p.modEnvRelease, t);
-    return t + p.release * 1.8 + 0.05;
+    return t + releaseEnd(p);
   }
 
   /** Fast fade for voice stealing. */

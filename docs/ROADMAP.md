@@ -64,13 +64,25 @@ What the browser still limits, whatever we do:
 - Notes arrive as timestamped messages, so sequencer notes start on the exact sample.
 - A switch between the old and new engine (in the About page, or a dev setting).
 - **Done when:** presets without modulation routes sound the same on both engines (render check and by ear), and fast retriggers don't click.
+- Status: built 2026-10-24, waiting for an ear check on the MiniLab. Switch engines on the About page.
+  - **Code:** `src/audio/dsp/voiceBank.ts` (the voices), `svf.ts` (filter), `ramp.ts` (envelopes and glides that move like Web Audio automation), `drive.ts` (drive with 2x oversampling, as the classic WaveShaper had). `WorkletVoice` sends the actions from the main thread.
+  - **Also in this slice** (planned for slice 3): mono, legato and glide; velocity; unison. The LFOs and pitch bend reach the processor as audio inputs from their existing Web Audio nodes.
+  - **Kept for the A/B:** new notes glide from the classic engine's start values over about 10 ms (gains 1, filter at 350 Hz, envelope amounts 0), as the classic voices did. Starting from the targets instead is a later, deliberate change.
+  - **Render check fixes:**
+    - notes are now played at their time, as live (the offline render pauses at each note)
+    - the reverb size is applied before rendering
+    - the reference was re-saved
+  - **Result:** 35 presets without routes match within 1 dB, most exactly (0.0). Square Lead differs only in bands 55 dB below its tone. Digital Keys differs slightly from its random LFO. The 3 presets with routes differ, as expected.
+  - **CPU:** 8 notes of a unison-2 pad use about 11% for the whole voice path.
 
 ### 3. New voice engine, part 2: modulation and switching over
 
-- LFOs, the mod matrix, velocity/key/random, mod strip, pitch bend, glide, mono/legato and unison inside the processor.
+- The mod matrix inside the processor, with every source (LFOs, the four envelopes, velocity, key, random, mod strip) and destination.
+- Decide whether the LFOs move inside the processor too (today they are Web Audio nodes feeding it), and make the random LFO repeatable.
 - "Listen here" and the stage pictures in the Synth view read the processor's per-stage outputs.
 - Stolen notes fade out quickly instead of clicking.
 - Once every factory preset matches, the new engine becomes the default and the old one is removed.
+- After the switch, new notes start at their target settings instead of gliding from the classic start values for 10 ms (decided 2026-10-24). Re-save the render reference afterwards.
 - **Done when:** all presets pass the render check and A/B by ear, and the CPU meter shows headroom with 10 notes of a heavy patch.
 
 ### 4. Robust timing

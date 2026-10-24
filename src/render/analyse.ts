@@ -10,12 +10,19 @@ export interface PhraseNote {
   off: number;
 }
 
+export const RENDER_RATE = 48000;
+/**
+ * Times are moved onto the audio engine's 128-sample blocks, where an offline render can pause:
+ * the render check plays each note at that moment, as a live key press would.
+ */
+const onBlock = (t: number) => (Math.round((t * RENDER_RATE) / 128) * 128) / RENDER_RATE;
+
 /** A held low note, a held chord, then fast short notes (for retrigger clicks). */
 export const PHRASE: PhraseNote[] = [
   { note: 48, on: 0.1, off: 1.1 },
   ...[60, 64, 67].map((note) => ({ note, on: 1.6, off: 2.6 })),
   ...Array.from({ length: 8 }, (_, i) => ({ note: i % 2 ? 67 : 60, on: 3.2 + i * 0.125, off: 3.2 + i * 0.125 + 0.0625 })),
-];
+].map((p) => ({ ...p, on: onBlock(p.on), off: onBlock(p.off) }));
 export const RENDER_SECONDS = 7;
 /** The chord's held part: where the spectrum is measured. */
 const CHORD_FROM = 1.8;

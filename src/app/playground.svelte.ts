@@ -1,6 +1,6 @@
 import { SvelteSet } from "svelte/reactivity";
 import { DRUM_NAMES } from "../audio/drums";
-import { Engine, type CpuLoad, type ListenTap } from "../audio/engine";
+import { Engine, type CpuLoad, type EngineKind, type ListenTap } from "../audio/engine";
 import { formatValue, fromControl, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, PARAMS, slotIds, toControl, type ParamId, type ParamValues } from "../audio/params";
 import { Sequencer, type Pattern, basicBeat, emptyPattern } from "../audio/sequencer";
 import {
@@ -44,6 +44,7 @@ export type View = "playground" | "synth" | "wavetable" | "about";
 const SCREENS = ["scope", "spectrum", "synth", "wavetable"] as const;
 const SCREEN_NAMES: Record<(typeof SCREENS)[number], string> = { scope: "Waveform", spectrum: "Spectrum", synth: "Synth", wavetable: "Wavetable" };
 const EXPLAIN_KEY = "minilab3.explain";
+const ENGINE_KEY = "minilab3.engine";
 
 const BROWSE_TIMEOUT_MS = 4000;
 const LONG_PRESS_MS = 500;
@@ -95,6 +96,8 @@ export class Playground {
   spectrumLevels = $state<number[]>(Array(8).fill(0));
 
   audioRunning = $state(false);
+  /** Which voice engine plays the notes (see EngineKind). */
+  engineKind = $state<EngineKind>(localStorage.getItem(ENGINE_KEY) === "worklet" ? "worklet" : "classic");
   /** CPU meter: our audio code's share of the time available (oscillators only, for now). */
   cpu = $state<CpuLoad>({ load: 0, peak: 0, voices: 0, clock: "" });
   midiStatus = $state<MidiStatus>("idle");
@@ -168,6 +171,7 @@ export class Playground {
     this.noteSequencer.onStep = (step, time) => this.atAudioTime(time, () => this.moveSeqHead(step));
     this.seq.notes = this.noteSequencer;
     this.engine.setParams(this.values);
+    this.engine.setKind(this.engineKind);
     setInterval(() => (this.cpu = this.engine.cpu), 250);
     this.engine.ctx.onstatechange = () => (this.audioRunning = this.engine.ctx.state === "running");
   }
@@ -703,6 +707,14 @@ export class Playground {
     this.listening = tap === this.listening ? null : tap;
     this.engine.listen(this.listening);
     this.showMessage("Listen", this.listening ? TAP_NAMES[this.listening] : "full sound");
+  }
+
+  setEngineKind(kind: EngineKind) {
+    this.engineKind = kind;
+    localStorage.setItem(ENGINE_KEY, kind);
+    this.engine.setKind(kind);
+    this.notes.clear();
+    this.seqNotes.clear();
   }
 
   setExplain(on: boolean) {

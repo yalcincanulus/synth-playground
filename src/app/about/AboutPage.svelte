@@ -57,6 +57,17 @@
         <dt>Output delay</dt>
         <dd>{latencyMs === null ? "—" : `about ${latencyMs} ms, as reported by the browser`}</dd>
       </dl>
+
+      <h3>Sound engine <span class="tag">being rebuilt</span></h3>
+      <div class="engine" role="group" aria-label="Sound engine">
+        <button class:active={pg.engineKind === "classic"} onclick={() => pg.setEngineKind("classic")}>Classic</button>
+        <button class:active={pg.engineKind === "worklet"} onclick={() => pg.setEngineKind("worklet")}>New (beta)</button>
+      </div>
+      <p class="note">
+        The new engine makes every note in one piece of code on the audio thread, sample by sample, instead of building each
+        note from the browser's audio nodes. It sounds the same on presets without mod matrix routes. Not in it yet: the mod
+        matrix, and "Listen here" and the per-stage pictures in the Synth view for the oscillator, mixer, drive and filter stages.
+      </p>
     </section>
 
     <section>
@@ -117,6 +128,10 @@
   dt { color: var(--dim); }
   dd { margin: 0; font-family: var(--mono); font-size: 12px; color: var(--accent); }
   dd.bad { color: #ff6b6b; }
+  .engine { display: flex; gap: 4px; margin-bottom: 6px; }
+  .engine button { font-size: 12px; padding: 3px 12px; }
+  .engine .active { border-color: var(--accent); color: var(--accent); }
+  .note { color: var(--dim); font-size: 12.5px; max-width: 60ch; }
   footer { border-top: 1px solid var(--line); padding-top: 12px; color: var(--dim); font-size: 12.5px; }
   .small { font-size: 11.5px; margin: 0; }
   @media (max-width: 900px) { .columns { grid-template-columns: 1fr; } }

@@ -9,6 +9,12 @@
   <body>
     <header>
       <h1>MiniLab 3 <span>render check</span></h1>
+      <label>Engine
+        <select id="engine">
+          <option value="classic">Classic</option>
+          <option value="worklet">New (worklet)</option>
+        </select>
+      </label>
       <button id="run" class="primary">Render all presets</button>
       <button id="save" disabled title="Save these results as the reference that later renders are compared with (dev server only)">Save as reference</button>
       <span id="status" class="status"></span>
@@ -25,7 +31,7 @@
       <table>
         <thead>
           <tr>
-            <th>#</th><th>Preset</th><th>Peak dB</th><th>RMS dB</th><th>Issues</th>
+            <th>#</th><th>Preset</th><th title="Uses the mod matrix, which the new engine doesn't have yet (roadmap slice 3)">Routes</th><th>Peak dB</th><th>RMS dB</th><th>Issues</th>
             <th title="Loudness difference from the reference">Δ level</th>
             <th title="Average difference of the loudness over time">Δ envelope</th>
             <th title="Average difference of the chord's spectrum">Δ spectrum</th>

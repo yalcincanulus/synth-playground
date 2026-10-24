@@ -101,14 +101,24 @@ export class Fx {
   }
 
   private reverbTimer = 0;
+  private pendingReverb: (() => void) | null = null;
+
+  /** Apply a debounced reverb change now (the render check needs the preset's reverb from the first sample). */
+  settle() {
+    clearTimeout(this.reverbTimer);
+    this.pendingReverb?.();
+  }
+
   private setReverbSize(seconds: number) {
     if (Math.abs(seconds - this.reverbSeconds) < 0.05) return;
     // Building an impulse is expensive: debounce while a knob is turning.
     clearTimeout(this.reverbTimer);
     const build = () => {
+      this.pendingReverb = null;
       this.reverbSeconds = seconds;
       this.reverb.buffer = makeImpulse(this.ctx, seconds);
     };
+    this.pendingReverb = build;
     if (this.reverbSeconds === 0) build();
     else this.reverbTimer = window.setTimeout(build, 120);
   }

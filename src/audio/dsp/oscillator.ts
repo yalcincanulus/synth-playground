@@ -149,8 +149,11 @@ export class Oscillator {
     this.reader2 = new TableReader(tables, sampleRate);
   }
 
-  /** Fill one block: Osc 1, Osc 2 and the sub (each the sum of its copies). */
-  render(params: OscParams, out1: Float32Array, out2: Float32Array, outSub: Float32Array) {
+  /**
+   * Fill samples `from` to `to` (default: the whole block) of Osc 1, Osc 2 and the sub, each the sum of
+   * its copies. Per-sample params are read at the same positions; one-value params apply throughout.
+   */
+  render(params: OscParams, out1: Float32Array, out2: Float32Array, outSub: Float32Array, from = 0, to = out1.length) {
     const n = this.copies;
     const wave1 = Math.round(params.wave1[0]);
     const wave2 = Math.round(params.wave2[0]);
@@ -159,22 +162,23 @@ export class Oscillator {
     const FM_K = FM_INDEX / (2 * Math.PI);
     // Osc 2's offset and the FM amount can move during the block (mod matrix), so they are read per sample.
     const osc2Cents = params.osc2Detune;
-    let osc2Mul = Math.pow(2, osc2Cents[0] / 1200);
+    let osc2Mul = Math.pow(2, at(osc2Cents, from) / 1200);
     const spread = params.spread[0];
     const spreadMul = new Float32Array(n);
     for (let u = 0; u < n; u++) spreadMul[u] = Math.pow(2, (n === 1 ? 0 : (u / (n - 1) - 0.5) * 2 * spread) / 1200);
     const [b1, b2, bs] = this.blep;
     const inv = 1 / this.sampleRate;
     const table = Math.round(params.table[0]);
-    const freq0 = params.frequency[0] * Math.pow(2, (params.detune[0] + params.pitchEnv[0]) / 1200);
-    if (wave1 === TABLE_WAVE) this.reader1.setup(table, freq0 * (envOnBoth ? 1 : Math.pow(2, -params.pitchEnv[0] / 1200)));
+    const first = (values: Float32Array) => at(values, from);
+    const freq0 = first(params.frequency) * Math.pow(2, (first(params.detune) + first(params.pitchEnv)) / 1200);
+    if (wave1 === TABLE_WAVE) this.reader1.setup(table, freq0 * (envOnBoth ? 1 : Math.pow(2, -first(params.pitchEnv) / 1200)));
     if (wave2 === TABLE_WAVE) this.reader2.setup(table, freq0 * osc2Mul);
     let position = 0;
     // A wave's value at a phase: the built-in shapes, or the wavetable at the current position.
     const v1 = (p: number, w: number) => (wave1 === TABLE_WAVE ? this.reader1.read(position, p) : naive(wave1, p, w));
     const v2 = (p: number, w: number) => (wave2 === TABLE_WAVE ? this.reader2.read(position, p) : naive(wave2, p, w));
 
-    for (let i = 0; i < out1.length; i++) {
+    for (let i = from; i < to; i++) {
       const base = at(params.frequency, i);
       const cents = at(params.detune, i);
       const env = at(params.pitchEnv, i);

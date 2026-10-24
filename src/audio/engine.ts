@@ -1,11 +1,13 @@
 import { Drums } from "./drums";
+import { DRIVE_MIN, driveShape } from "./dsp/drive";
 import { Fx } from "./fx";
 import { Lfo } from "./lfo";
 import { envelopeAt } from "./envelope";
 import { DELAY_DIV_BEATS, LFO_SYNC_BEATS, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, defaultValues, slotIds, type ModSource, type ParamId, type ParamValues } from "./params";
 import oscWorkletUrl from "./osc.worklet.ts?worker&url";
 import { buildMips, FRAMES, tableFrames, WAVETABLES } from "./wavetables";
-import { keySource, MOD_RANGE, Voice, type NoteOwner, type VoiceContext, type VoiceTaps } from "./voice";
+import { keySource, MOD_RANGE, Voice, type NoteOwner, type SynthVoice, type VoiceContext, type VoiceTaps } from "./voice";
+import { WorkletVoice } from "./workletVoice";
 
 const MAX_VOICES = 10;
 /** Shortest glide used for a sequencer slide on a mono preset, in Glide units (seconds). */
@@ -50,6 +52,12 @@ export interface CpuLoad {
   clock: string;
 }
 
+/**
+ * Which voice engine makes the notes: the classic one (each note built from Web Audio nodes, voice.ts)
+ * or the new one (one AudioWorklet processor runs every note, dsp/voiceBank.ts). Roadmap slices 2-3.
+ */
+export type EngineKind = "classic" | "worklet";
+
 /** With no report for this long, nothing is playing: the meter reads zero. */
 const CPU_STALE_MS = 600;
 
@@ -70,9 +78,14 @@ export class Engine {
   bpm = 120;
 
   private vc: VoiceContext;
-  private voices: Voice[] = [];
+  private voices: SynthVoice[] = [];
   /** Mono mode: the single voice and the stack of held keys (last = sounding). */
-  private monoVoice: Voice | null = null;
+  private monoVoice: SynthVoice | null = null;
+  kind: EngineKind = "classic";
+  /** The new engine's processor (one for the whole part); null until the worklet module has loaded. */
+  private bankNode: AudioWorkletNode | null = null;
+  private pings = new Map<number, () => void>();
+  private pingCount = 0;
   private held: number[] = [];
 
   private bend: ConstantSourceNode;
@@ -103,6 +116,7 @@ export class Engine {
         this.cpuAt = performance.now();
       };
       this.loadTable(this.params.wtTable);
+      this.createBank();
       this.loaded = true;
       // The rest in the background (about 15 ms each), so switching tables later is instant.
       WAVETABLES.forEach((_, i) => setTimeout(() => this.loadTable(i), 300 + i * 80));
@@ -171,6 +185,50 @@ export class Engine {
 
   resume() {
     return this.ctx.resume();
+  }
+
+  private createBank() {
+    const node = new AudioWorkletNode(this.ctx, "synth-voices", {
+      numberOfInputs: 4,
+      numberOfOutputs: 1,
+      outputChannelCount: [1],
+      processorOptions: { values: this.params },
+    });
+    const { pitchMod, filterMod, widthMod, positionMod } = this.vc;
+    [pitchMod, filterMod, widthMod, positionMod].forEach((mod, i) => mod.connect(node, 0, i));
+    node.connect(this.vc.out);
+    node.port.onmessage = (e) => {
+      if (e.data.type !== "pong") return;
+      this.pings.get(e.data.n)?.();
+      this.pings.delete(e.data.n);
+    };
+    this.bankNode = node;
+  }
+
+  /** Switch voice engines. Sounding notes are cut. */
+  setKind(kind: EngineKind) {
+    if (kind === this.kind) return;
+    this.allNotesOff();
+    this.kind = kind;
+  }
+
+  /**
+   * Resolves once the new engine's processor has every message sent so far (or after `timeoutMs`).
+   * The render check waits for this before rendering, since notes are messages there, not automation.
+   */
+  flush(timeoutMs = 500): Promise<void> {
+    if (!this.bankNode) return Promise.resolve();
+    const n = ++this.pingCount;
+    return new Promise((resolve) => {
+      this.pings.set(n, resolve);
+      this.bankNode!.port.postMessage({ type: "ping", n });
+      setTimeout(resolve, timeoutMs);
+    });
+  }
+
+  private newVoice(note: number, velocity: number, t: number): SynthVoice {
+    if (this.kind === "worklet" && this.bankNode) return new WorkletVoice(this.bankNode.port, this.params, note, velocity, t);
+    return new Voice(this.vc, this.params, note, velocity, t);
   }
 
   get cpu(): CpuLoad {
@@ -344,20 +402,17 @@ export class Engine {
   }
 
   private applyVoices() {
+    this.bankNode?.port.postMessage({ type: "params", values: this.params });
     for (const v of this.voices) v.apply(this.params);
   }
 
   private driveCurve(drive: number): Float32Array<ArrayBuffer> | null {
-    if (drive < 0.01) return null;
+    if (drive < DRIVE_MIN) return null;
     const key = Math.round(drive * 50);
     let curve = this.driveCache.get(key);
     if (!curve) {
-      const k = 1 + (key / 50) * 12;
       curve = new Float32Array(1025);
-      for (let i = 0; i < curve.length; i++) {
-        const x = (i / (curve.length - 1)) * 2 - 1;
-        curve[i] = Math.tanh(k * x) / Math.tanh(k);
-      }
+      for (let i = 0; i < curve.length; i++) curve[i] = driveShape((i / (curve.length - 1)) * 2 - 1, key / 50);
       this.driveCache.set(key, curve);
     }
     return curve;
@@ -384,7 +439,7 @@ export class Engine {
       victim.kill(t);
       this.voices.splice(this.voices.indexOf(victim), 1);
     }
-    const voice = new Voice(this.vc, this.params, note, velocity, t);
+    const voice = this.newVoice(note, velocity, t);
     voice.owner = owner;
     this.voices.push(voice);
   }
@@ -395,7 +450,7 @@ export class Engine {
     for (const v of this.voices) if (v.note === note && v.owner === owner && v.releasedAt === null) this.releaseVoice(v, t);
   }
 
-  private releaseVoice(v: Voice, t: number) {
+  private releaseVoice(v: SynthVoice, t: number) {
     const end = v.release(this.params, t);
     v.stop(end);
     setTimeout(() => {
@@ -415,7 +470,7 @@ export class Engine {
       v.glideTo(note, { ...this.params, glide: 0 }, t);
       v.retrigger(this.params, velocity, t);
     } else {
-      this.monoVoice = new Voice(this.vc, this.params, note, velocity, t);
+      this.monoVoice = this.newVoice(note, velocity, t);
       this.voices = [this.monoVoice];
     }
   }
