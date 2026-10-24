@@ -2,7 +2,18 @@
 
 The next pieces of work, as slices to build in order. Each slice should work on its own, be testable on the MiniLab, and take about one session.
 
-Status: nothing in this file has been started (written 2026-10-24, after commit `fdfe9f3`).
+Status: nothing in this file has been started (written 2026-10-24). Slice 0 is a bug fix to do before the rest.
+
+## Fixes first
+
+### 0. Firefox: lost note-offs
+
+- In Firefox (tested without add-ons, and it works), releasing several keys at once plays a different note; Chromium is fine.
+- Likely cause: the MIDI input assumes one complete message per MIDI event. If Firefox bundles several messages into one event, or uses running status (repeated messages without the status byte), the extra note-offs are dropped. Poly notes then keep ringing, and mono presets slide back to a key that is no longer held.
+- Already ruled out: the audio engine. Firefox 158 has no `cancelAndHoldAtTime`, but the fallback in `voice.ts` reads correct values.
+- Fix: split each incoming event into individual messages and restore missing status bytes (`src/minilab/protocol.ts`, `src/minilab/device.ts`). Log the raw bytes in Firefox once to confirm which case it is.
+- Also update the About page: Firefox works without an add-on.
+- **Done when:** releasing chords in Firefox leaves no notes ringing, in both poly and mono presets.
 
 ## Phase A: playing and the first learning step
 
