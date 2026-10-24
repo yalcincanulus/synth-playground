@@ -47,6 +47,15 @@ What the browser still limits, whatever we do:
 - A dev page that renders every preset offline (a few notes with `OfflineAudioContext`) and checks the result: no NaN, not silent, no clicks (sudden jumps) at note start and end, no level far above the others. It saves the old engine's results as the reference for A/B comparisons.
 - A CPU meter: the processor times its own work for each 128-sample block against the time it has (about 2.7 ms at 48 kHz). For now it only measures the oscillators; this is the baseline.
 - **Done when:** `bun test` passes, the render check runs over all presets, and the meter moves while playing.
+- Status: done 2026-10-24.
+  - `bun test` covers the sequencer, the oscillator (moved to `src/audio/dsp/oscillator.ts`), the envelope maths and the render analysis.
+  - The render check is `render.html`. Renders are seeded, so they repeat exactly, and the old engine's results are saved in `src/render/reference.json`.
+  - First findings:
+    - No preset clicks or stops dead.
+    - Acid Line and Table Pluck peak just above 0 dB (slice 10's soft clipper).
+    - Acid Line is 8 dB louder than the median preset.
+    - The random LFO wave is stepped by a main-thread timer, so it can't be rendered offline or seeded (the new engine fixes this).
+  - CPU baseline: 8 notes of a unison-2 pad use about 6% of the available time for the oscillators. Chrome gives worklets no precise clock (`performance.now()`), so the meter averages whole-millisecond timings.
 
 ### 2. New voice engine, part 1: the sound path
 

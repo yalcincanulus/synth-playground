@@ -106,6 +106,20 @@
       {/if}
     </div>
 
+    {#if pg.audioRunning}
+      <span
+        class="cpu"
+        class:hot={pg.cpu.load > 0.6 || (pg.cpu.clock === "performance" && pg.cpu.peak > 0.9)}
+        style:--load={Math.min(1, pg.cpu.load)}
+        title="CPU: share of the time available that our audio code uses (only the oscillators for now) · {pg.cpu.voices} voices{pg.cpu.clock ===
+        'performance'
+          ? ` · busiest block ${Math.round(pg.cpu.peak * 100)}%`
+          : ''}"
+      >
+        CPU {Math.round(pg.cpu.load * 100)}%
+      </span>
+    {/if}
+
     <div class="transport">
       <button class:active={pg.playing} onclick={() => pg.togglePlay()} title="Play / stop (Shift + ▶)">{pg.playing ? "■" : "▶"}</button>
       <button class="rec" class:active={pg.recording} onclick={() => pg.toggleRecord()} title="Record pads into the loop (Shift + ●)">●</button>
@@ -318,6 +332,11 @@
   .pill { border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: 12px; white-space: nowrap; }
   .pill.ok { color: var(--accent); border-color: var(--accent); }
   .hint { color: var(--dim); font-size: 12px; }
+  .cpu {
+    font: 11px var(--mono); color: var(--dim); border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px; min-width: 64px; text-align: center;
+    background: linear-gradient(to right, color-mix(in srgb, var(--accent) 30%, transparent) calc(var(--load) * 100%), transparent 0);
+  }
+  .cpu.hot { color: #ff6b6b; border-color: #ff6b6b; }
   .transport { display: flex; align-items: center; gap: 6px; }
   .transport button { min-width: 34px; }
   .transport .active { background: var(--accent); color: #0b1314; }

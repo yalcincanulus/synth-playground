@@ -35,8 +35,25 @@ export interface VoiceState {
   random: number;
 }
 
+/** CPU meter, from the audio thread. For now it covers the oscillators only (the rest is the browser's own nodes). */
+export interface CpuLoad {
+  /** Share of the available time spent in our audio code, averaged over the last report (0..1+). */
+  load: number;
+  /**
+   * The busiest single block in that time, as a share of one block's time (above 1 means a dropout).
+   * Only meaningful with the "performance" clock: Chrome's worklets only have Date.now(), whole milliseconds.
+   */
+  peak: number;
+  /** Most voices sounding at once in that time. */
+  voices: number;
+  /** "performance" (precise) or "date" (whole milliseconds; `load` is still right on average, and smoothed). */
+  clock: string;
+}
+
+/** With no report for this long, nothing is playing: the meter reads zero. */
+const CPU_STALE_MS = 600;
+
 export class Engine {
-  readonly ctx = new AudioContext({ latencyHint: "interactive" });
   readonly fx: Fx;
   readonly drums: Drums;
   readonly analyser: AnalyserNode;
@@ -48,6 +65,8 @@ export class Engine {
   private tablesSent = new Set<number>();
 
   params: ParamValues = defaultValues();
+  private cpuReport: CpuLoad = { load: 0, peak: 0, voices: 0, clock: "" };
+  private cpuAt = 0;
   bpm = 120;
 
   private vc: VoiceContext;
@@ -69,10 +88,20 @@ export class Engine {
   readonly taps: Record<TapId, AnalyserNode>;
   private driveCache = new Map<number, Float32Array<ArrayBuffer>>();
 
-  constructor() {
-    const ctx = this.ctx;
+  /**
+   * `ctx` is normally a live AudioContext. The render check passes an OfflineAudioContext (cast):
+   * the engine uses nothing an offline context lacks, apart from resume().
+   */
+  constructor(readonly ctx: AudioContext = new AudioContext({ latencyHint: "interactive" })) {
     this.ready = ctx.audioWorklet.addModule(oscWorkletUrl).then(() => {
       this.tableLoader = new AudioWorkletNode(ctx, "table-loader", { numberOfInputs: 0, numberOfOutputs: 1 });
+      this.tableLoader.port.onmessage = (e) => {
+        if (!e.data.cpu) return;
+        const fresh = performance.now() - this.cpuAt < CPU_STALE_MS;
+        const load = fresh ? this.cpuReport.load * 0.6 + e.data.cpu.load * 0.4 : e.data.cpu.load;
+        this.cpuReport = { ...e.data.cpu, load };
+        this.cpuAt = performance.now();
+      };
       this.loadTable(this.params.wtTable);
       this.loaded = true;
       // The rest in the background (about 15 ms each), so switching tables later is instant.
@@ -142,6 +171,16 @@ export class Engine {
 
   resume() {
     return this.ctx.resume();
+  }
+
+  get cpu(): CpuLoad {
+    if (performance.now() - this.cpuAt > CPU_STALE_MS) return { ...this.cpuReport, load: 0, peak: 0, voices: 0 };
+    return this.cpuReport;
+  }
+
+  /** Send every wavetable to the audio thread now (the render check needs them before rendering starts). */
+  loadAllTables() {
+    WAVETABLES.forEach((_, i) => this.loadTable(i));
   }
 
   // --- parameters

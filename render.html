@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MiniLab 3 Render check</title>
+    <link rel="stylesheet" href="/src/render/render.css" />
+  </head>
+  <body>
+    <header>
+      <h1>MiniLab 3 <span>render check</span></h1>
+      <button id="run" class="primary">Render all presets</button>
+      <button id="save" disabled title="Save these results as the reference that later renders are compared with (dev server only)">Save as reference</button>
+      <span id="status" class="status"></span>
+    </header>
+    <main>
+      <p class="hint">
+        Every preset plays the same phrase offline (a held low note, a held chord, then 8 fast short notes) and the result is
+        checked: no NaN, not silent, no clicks at note starts and ends, no sound stopping dead, no level far from the other presets.
+        The last columns compare each render with the saved reference: loudness, loudness over time, and the chord's spectrum,
+        in dB. Random parts of the sound (noise, unison phases, the random source) are seeded, so the same engine gives the same
+        result every time; only the random LFO wave can still vary a little.
+      </p>
+      <p id="reference" class="hint"></p>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th><th>Preset</th><th>Peak dB</th><th>RMS dB</th><th>Issues</th>
+            <th title="Loudness difference from the reference">Δ level</th>
+            <th title="Average difference of the loudness over time">Δ envelope</th>
+            <th title="Average difference of the chord's spectrum">Δ spectrum</th>
+            <th>Listen</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </main>
+    <script type="module" src="/src/render/main.ts"></script>
+  </body>
+</html>

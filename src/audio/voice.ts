@@ -162,7 +162,8 @@ export class Voice {
       numberOfInputs: 0,
       numberOfOutputs: 3,
       outputChannelCount: [1, 1, 1],
-      processorOptions: { unison },
+      // Unison start phases are picked here rather than on the audio thread, so a seeded render is repeatable.
+      processorOptions: { unison, phases: Array.from({ length: 2 * unison }, () => Math.random()) },
     });
     this.param("frequency").value = midiToHz(note);
     this.osc.connect(this.osc1Gain, 0);
