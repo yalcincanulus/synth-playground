@@ -8,6 +8,8 @@ import { buildMips, FRAMES, tableFrames, WAVETABLES } from "./wavetables";
 import { keySource, MOD_RANGE, Voice, type VoiceContext, type VoiceTaps } from "./voice";
 
 const MAX_VOICES = 10;
+/** Shortest glide used for a sequencer slide on a mono preset, in Glide units (seconds). */
+const SLIDE_GLIDE = 0.12;
 export const BEND_RANGE_CENTS = 200;
 /** LFO depth 1.0 means: ±60 cents of pitch, ±3 octaves of cutoff, ±50% volume, ±45% pulse width or ±50% wavetable position. */
 export const LFO_PITCH_CENTS = 60;
@@ -324,10 +326,14 @@ export class Engine {
 
   // --- notes
 
-  noteOn(note: number, velocity: number) {
+  /**
+   * `at` schedules the note ahead (the step sequencer does this); it defaults to now.
+   * `slide` glides into the note on mono presets even when the preset's Glide is 0.
+   */
+  noteOn(note: number, velocity: number, at?: number, slide = false) {
     if (!this.loaded) return;
-    const t = this.ctx.currentTime;
-    if (this.params.mono) return this.monoNoteOn(note, velocity, t);
+    const t = Math.max(at ?? 0, this.ctx.currentTime);
+    if (this.params.mono) return this.monoNoteOn(note, velocity, t, slide);
 
     // Retriggering a held note: release the old voice first.
     for (const v of this.voices) if (v.note === note && v.releasedAt === null) this.releaseVoice(v, t);
@@ -340,8 +346,8 @@ export class Engine {
     this.voices.push(new Voice(this.vc, this.params, note, velocity, t));
   }
 
-  noteOff(note: number) {
-    const t = this.ctx.currentTime;
+  noteOff(note: number, at?: number) {
+    const t = Math.max(at ?? 0, this.ctx.currentTime);
     if (this.params.mono) return this.monoNoteOff(note, t);
     for (const v of this.voices) if (v.note === note && v.releasedAt === null) this.releaseVoice(v, t);
   }
@@ -352,15 +358,16 @@ export class Engine {
     setTimeout(() => {
       const i = this.voices.indexOf(v);
       if (i >= 0) this.voices.splice(i, 1);
-    }, (end - t) * 1000 + 50);
+    }, (end - this.ctx.currentTime) * 1000 + 50);
   }
 
-  private monoNoteOn(note: number, velocity: number, t: number) {
+  private monoNoteOn(note: number, velocity: number, t: number, slide: boolean) {
     this.held = this.held.filter((n) => n !== note);
     this.held.push(note);
     const v = this.monoVoice;
     if (v && v.releasedAt === null) {
-      v.glideTo(note, this.params, t); // legato
+      // Legato
+      v.glideTo(note, slide ? { ...this.params, glide: Math.max(this.params.glide, SLIDE_GLIDE) } : this.params, t);
     } else if (v) {
       v.glideTo(note, { ...this.params, glide: 0 }, t);
       v.retrigger(this.params, velocity, t);

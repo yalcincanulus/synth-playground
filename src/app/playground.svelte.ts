@@ -3,6 +3,18 @@ import { DRUM_NAMES } from "../audio/drums";
 import { Engine, type ListenTap } from "../audio/engine";
 import { formatValue, fromControl, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, PARAMS, slotIds, toControl, type ParamId, type ParamValues } from "../audio/params";
 import { Sequencer, type Pattern, basicBeat, emptyPattern } from "../audio/sequencer";
+import {
+  defaultNoteSeq,
+  DIRECTIONS,
+  NOTE_STEPS,
+  NoteSequencer,
+  noteName,
+  RATES,
+  STEP_NOTE_LOW,
+  STEP_NOTE_RANGE,
+  TRANSPOSE_ROOT,
+  type NoteSeqSettings,
+} from "../audio/stepSequencer";
 import { TABLE_WAVE } from "../audio/oscCore";
 import { WAVETABLES } from "../audio/wavetables";
 import { findPorts, isMainPort, MiniLab, requestMidi } from "../minilab/device";
@@ -36,6 +48,16 @@ const SPECTRUM_INTERVAL_MS = 50;
 const SPECTRUM_LOW_HZ = 40;
 const SPECTRUM_HIGH_HZ = 14000;
 const dim = ([r, g, b]: Rgb, k: number): Rgb => [r * k, g * k, b * k];
+/** How close (0..1) a hardware fader must come to its new value before it takes over. */
+const PICKUP_WINDOW = 0.04;
+/** How long a step's note sounds when you change it while the transport is stopped. */
+const AUDITION_S = 0.2;
+const SLIDE_COLOR: Rgb = [70, 0, 127];
+/** Knob value used while Shift is held, so a knob can turn the tempo up or down from anywhere. */
+const KNOB_PARK = 64;
+
+/** What the 4 faders do in sequencer edit mode. */
+export const SEQ_FADERS = ["Length", "Gate", "Rate", "Direction"] as const;
 
 export class Playground {
   readonly engine = new Engine();
@@ -55,6 +77,15 @@ export class Playground {
   stepTrack = $state(0);
   /** Step under the playhead, as heard (not as scheduled). -1 when stopped. */
   playStep = $state(-1);
+  /** Sequencer edit: knobs set step pitches, bank A pads switch steps, bank B pads set slides, faders set Length/Gate/Rate/Direction. */
+  seqEdit = $state(false);
+  noteSeq = $state<NoteSeqSettings>(defaultNoteSeq());
+  /** Sequencer step under the playhead, as heard. -1 when stopped. */
+  seqStep = $state(-1);
+  /** Notes the sequencer is sounding right now, for the on-screen keyboard. */
+  seqNotes = new SvelteSet<number>();
+  /** While the sequencer plays, keys transpose it instead of playing notes. */
+  keyTranspose = $state(true);
   /** Pad lights follow the audio spectrum instead of flashing on drum hits. */
   spectrumPads = $state(false);
   spectrumLevels = $state<number[]>(Array(8).fill(0));
@@ -84,6 +115,7 @@ export class Playground {
   explain = $state(localStorage.getItem(EXPLAIN_KEY) !== "off");
 
   bpm = $state(120);
+  drumsOn = $state(true);
   playing = $state(false);
   recording = $state(false);
   pattern = $state<Pattern>(basicBeat());
@@ -95,6 +127,16 @@ export class Playground {
   private longPressFired = false;
   private spectrumTimer = 0;
   private spectrumSent: number[] = Array(8).fill(-1);
+  /** Sequencer edit: the step pad held down (a key pressed meanwhile sets its note), and whether a key was. */
+  private heldStep: number | null = null;
+  private heldStepKeyed = false;
+  private auditionNote: number | null = null;
+  /** Keys used to transpose: their release must not stop a note. */
+  private transposeKeys = new Set<number>();
+  /** Fader pickup after the faders change job: a fader only takes over once it reaches the value it now controls. */
+  private faderLive: boolean[] = Array(FADERS.length).fill(true);
+  private faderLast: (number | null)[] = Array(FADERS.length).fill(null);
+  readonly noteSequencer: NoteSequencer;
 
   constructor() {
     this.seq.pattern = this.pattern;
@@ -107,6 +149,18 @@ export class Playground {
       const delay = Math.max(0, (time - this.engine.ctx.currentTime) * 1000);
       setTimeout(() => this.movePlayhead(step), delay);
     };
+    this.noteSequencer = new NoteSequencer(this.noteSeq, {
+      noteOn: (note, velocity, time, slide) => {
+        this.engine.noteOn(note, velocity, time, slide);
+        this.atAudioTime(time, () => this.seqNotes.add(note));
+      },
+      noteOff: (note, time) => {
+        this.engine.noteOff(note, time);
+        this.atAudioTime(time, () => this.seqNotes.delete(note));
+      },
+    });
+    this.noteSequencer.onStep = (step, time) => this.atAudioTime(time, () => this.moveSeqHead(step));
+    this.seq.notes = this.noteSequencer;
     this.engine.setParams(this.values);
     this.engine.ctx.onstatechange = () => (this.audioRunning = this.engine.ctx.state === "running");
   }
@@ -201,16 +255,32 @@ export class Playground {
   // ------------------------------------------------------------------ playing
 
   noteOn(note: number, velocity: number) {
+    if (this.seqEdit && this.heldStep !== null) {
+      // Hold a step pad and press a key: that key becomes the step's note (and you hear it).
+      this.stopAudition();
+      this.heldStepKeyed = true;
+      this.setStepNote(this.heldStep, note, { on: true, audition: false });
+    } else if (this.transposing) {
+      this.transposeKeys.add(note);
+      return this.setTranspose(note - TRANSPOSE_ROOT);
+    }
     this.engine.noteOn(note, velocity);
     this.notes.add(note);
   }
 
   noteOff(note: number) {
+    if (this.transposeKeys.delete(note)) return;
     this.engine.noteOff(note);
     this.notes.delete(note);
   }
 
+  /** Keys transpose the sequence while it plays (unless switched off). */
+  get transposing() {
+    return this.keyTranspose && this.noteSeq.enabled && this.playing;
+  }
+
   hitPad(i: number, velocity: number) {
+    if (this.seqEdit) return this.seqPadDown(i);
     if (this.stepMode) return this.tapStep(i + (this.bank === "B" ? 8 : 0), velocity);
     this.engine.drums.trigger(i, velocity);
     this.seq.record(i, velocity);
@@ -218,6 +288,7 @@ export class Playground {
   }
 
   releasePad(i: number) {
+    if (this.seqEdit) return this.seqPadUp(i);
     if (this.stepMode) return;
     this.flashPad(i, 0);
   }
@@ -225,6 +296,7 @@ export class Playground {
   // ------------------------------------------------------------------ step mode
 
   toggleStepMode() {
+    if (this.seqEdit) this.setSeqEdit(false);
     this.stepMode = !this.stepMode;
     this.browseIndex = null;
     if (this.stepMode) this.showMessage("Step edit", `${DRUM_NAMES[this.stepTrack]}: turn encoder`);
@@ -272,6 +344,176 @@ export class Playground {
     this.sendLed(this.stepLedId(step), this.stepColor(step));
   }
 
+  /** Shift + encoder click: off -> drum step edit -> sequencer edit -> off. */
+  cyclePadMode() {
+    if (this.stepMode) {
+      this.toggleStepMode();
+      this.setSeqEdit(true);
+    } else if (this.seqEdit) this.setSeqEdit(false);
+    else this.toggleStepMode();
+  }
+
+  // ------------------------------------------------------------------ step sequencer
+
+  setSeqEdit(on: boolean) {
+    if (on === this.seqEdit) return;
+    if (on && this.stepMode) this.toggleStepMode();
+    this.seqEdit = on;
+    this.browseIndex = null;
+    this.endHeldStep();
+    if (on) this.noteSeq.enabled = true;
+    this.faderLive.fill(false);
+    this.realignKnobs();
+    this.syncPadLeds();
+    this.showMessage("Sequencer", on ? "knobs = notes" : "edit off");
+  }
+
+  setSeqEnabled(on: boolean) {
+    this.noteSeq.enabled = on;
+    if (!on) this.seqNotes.clear();
+    if (this.seqEdit) this.syncPadLeds();
+  }
+
+  toggleSeqStep(i: number) {
+    this.noteSeq.steps[i].on = !this.noteSeq.steps[i].on;
+    this.paintSeqStep(i);
+  }
+
+  toggleSlide(i: number) {
+    this.noteSeq.steps[i].slide = !this.noteSeq.steps[i].slide;
+    this.paintSeqStep(i);
+  }
+
+  /** Step knob position (0..1) for a note: two octaves from STEP_NOTE_LOW. */
+  stepKnobPosition(i: number) {
+    return Math.max(0, Math.min(1, (this.noteSeq.steps[i].note - STEP_NOTE_LOW) / STEP_NOTE_RANGE));
+  }
+
+  /** Knob i in sequencer edit: the pitch of step i, in semitones. `cc` is set when it came from the hardware. */
+  setStepKnob(i: number, t: number, cc?: number) {
+    const note = STEP_NOTE_LOW + Math.round(t * STEP_NOTE_RANGE);
+    if (note === this.noteSeq.steps[i].note) return;
+    this.setStepNote(i, note, { on: false, audition: true, realign: false });
+    if (cc !== undefined) this.device?.send(parameterMessage(cc, `Step ${i + 1}`, noteName(note)), "display");
+  }
+
+  setStepNote(i: number, note: number, { on = false, audition = false, realign = true } = {}) {
+    const step = this.noteSeq.steps[i];
+    step.note = Math.max(12, Math.min(108, note));
+    if (on) step.on = true;
+    if (audition && !this.playing) {
+      const n = step.note + this.noteSeq.transpose;
+      const now = this.engine.ctx.currentTime;
+      this.engine.noteOn(n, 100, now);
+      this.engine.noteOff(n, now + AUDITION_S);
+    }
+    if (realign && this.seqEdit) this.device?.send(knobValueMessage(i, Math.round(this.stepKnobPosition(i) * 127)), `knob-${i}`);
+    if (!audition || on) this.showMessage(`Step ${i + 1}`, noteName(step.note));
+    this.paintSeqStep(i);
+  }
+
+  setTranspose(semitones: number) {
+    this.noteSeq.transpose = Math.max(-24, Math.min(24, semitones));
+    const t = this.noteSeq.transpose;
+    this.showMessage("Transpose", t === 0 ? "none" : `${t > 0 ? "+" : ""}${t} semitones`);
+  }
+
+  seqFaderPosition(i: number) {
+    const s = this.noteSeq;
+    return [(s.length - 1) / (NOTE_STEPS - 1), (s.gate - 0.05) / 0.95, s.rate / (RATES.length - 1), s.direction / (DIRECTIONS.length - 1)][i];
+  }
+
+  seqFaderDisplay(i: number) {
+    const s = this.noteSeq;
+    return [`${s.length} steps`, `${Math.round(s.gate * 100)}%`, RATES[s.rate].name, DIRECTIONS[s.direction]][i];
+  }
+
+  setSeqFader(i: number, t: number, cc?: number) {
+    const s = this.noteSeq;
+    if (i === 0) {
+      s.length = 1 + Math.round(t * (NOTE_STEPS - 1));
+      if (this.seqEdit) this.syncPadLeds();
+    } else if (i === 1) s.gate = 0.05 + t * 0.95;
+    else if (i === 2) s.rate = Math.round(t * (RATES.length - 1));
+    else s.direction = Math.round(t * (DIRECTIONS.length - 1));
+    if (cc !== undefined) this.device?.send(parameterMessage(cc, SEQ_FADERS[i], this.seqFaderDisplay(i)), "display");
+  }
+
+  /** Bank A: hold for keyboard note entry, release to switch the step on/off. Bank B: switch its slide. */
+  private seqPadDown(i: number) {
+    if (this.bank === "B") return this.toggleSlide(i);
+    this.endHeldStep();
+    this.heldStep = i;
+    this.heldStepKeyed = false;
+    if (!this.playing) {
+      // Stopped: hear the step's note while the pad is held.
+      this.auditionNote = this.noteSeq.steps[i].note + this.noteSeq.transpose;
+      this.engine.noteOn(this.auditionNote, 100);
+    }
+    this.showMessage(`Step ${i + 1}`, `${noteName(this.noteSeq.steps[i].note)}: press a key`);
+  }
+
+  private seqPadUp(i: number) {
+    if (this.bank === "B" || this.heldStep !== i) return;
+    const keyed = this.heldStepKeyed;
+    this.endHeldStep();
+    if (!keyed) this.toggleSeqStep(i);
+  }
+
+  private endHeldStep() {
+    this.stopAudition();
+    this.heldStep = null;
+    this.heldStepKeyed = false;
+  }
+
+  private stopAudition() {
+    if (this.auditionNote !== null) this.engine.noteOff(this.auditionNote);
+    this.auditionNote = null;
+  }
+
+  private moveSeqHead(step: number) {
+    const prev = this.seqStep;
+    this.seqStep = this.playing && this.noteSeq.enabled ? step : -1;
+    if (!this.seqEdit) return;
+    if (prev >= 0) this.paintSeqStep(prev);
+    if (this.seqStep >= 0) this.paintSeqStep(this.seqStep);
+  }
+
+  private paintSeqStep(i: number) {
+    if (!this.seqEdit) return;
+    const step = this.noteSeq.steps[i];
+    const inLength = i < this.noteSeq.length;
+    const now = i === this.seqStep;
+    // Bank A lights only the note playing now, in the preset colour; rests stay dark.
+    const a: Rgb = inLength && now && step.on ? this.preset.color : [0, 0, 0];
+    let b: Rgb = [0, 0, 0];
+    if (inLength) b = step.slide ? dim(SLIDE_COLOR, now ? 1 : 0.6) : now ? [25, 25, 25] : [0, 0, 0];
+    this.sendLed(LED_IDS.padsA[i], a);
+    this.sendLed(LED_IDS.padsB[i], b);
+  }
+
+  /** Run `fn` when the audio clock reaches `time` (for lights and the screen, which can't be scheduled ahead). */
+  private atAudioTime(time: number, fn: () => void) {
+    setTimeout(fn, Math.max(0, (time - this.engine.ctx.currentTime) * 1000));
+  }
+
+  /**
+   * Hardware fader pickup: after the faders change job, a fader is ignored until it reaches (or crosses)
+   * the value of what it now controls, so the sound doesn't jump.
+   */
+  private pickedUp(i: number, t: number, target: number, cc: number, label: string): boolean {
+    if (this.faderLive[i]) return true;
+    const last = this.faderLast[i];
+    this.faderLast[i] = t;
+    if (Math.abs(t - target) <= PICKUP_WINDOW || (last !== null && (last - target) * (t - target) <= 0)) {
+      this.faderLive[i] = true;
+      this.faderLast[i] = null;
+      return true;
+    }
+    this.device?.send(parameterMessage(cc, label, `move ${t < target ? "up" : "down"} to ${Math.round(target * 100)}%`), "display");
+    return false;
+  }
+
   // ------------------------------------------------------------------ spectrum pads
 
   setSpectrumPads(on: boolean) {
@@ -300,7 +542,7 @@ export class Playground {
       const prev = this.spectrumLevels[band];
       this.spectrumLevels[band] = level > prev ? level : prev * 0.82 + level * 0.18;
     }
-    if (!this.device || this.stepMode) return;
+    if (!this.device || this.stepMode || this.seqEdit) return;
     this.spectrumLevels.forEach((level, i) => {
       // Only send when the visible brightness changes, to keep MIDI traffic low.
       const q = Math.round(level * 12);
@@ -337,6 +579,8 @@ export class Playground {
     this.playing = false;
     this.recording = false;
     this.movePlayhead(-1);
+    this.moveSeqHead(-1);
+    this.seqNotes.clear();
     this.syncTransportLeds();
     this.showHome();
   }
@@ -361,6 +605,12 @@ export class Playground {
     if (this.stepMode && track === this.stepTrack) this.paintStep(step);
   }
 
+  setDrumsOn(on: boolean) {
+    this.drumsOn = on;
+    this.seq.drumsOn = on;
+    this.showMessage("Drum loop", on ? "on" : "off");
+  }
+
   setBpm(bpm: number) {
     this.bpm = Math.round(Math.max(40, Math.min(240, bpm)));
     this.engine.setBpm(this.bpm);
@@ -376,6 +626,19 @@ export class Playground {
       this.setBpm(60000 / avg);
     }
     this.showMessage("Tempo", `${this.bpm} BPM`);
+  }
+
+  /** Shift + knob: each click of the knob is 1 BPM, measured from the parked middle position. */
+  private tempoKnob(i: number, value: number, cc: number) {
+    const delta = value - KNOB_PARK;
+    if (delta === 0) return;
+    this.setBpm(this.bpm + delta);
+    this.device?.send(knobValueMessage(i, KNOB_PARK), `knob-${i}`);
+    this.device?.send(parameterMessage(cc, "Tempo", `${this.bpm} BPM`), "display");
+  }
+
+  private parkKnobs() {
+    for (let i = 0; i < 8; i++) this.device?.send(knobValueMessage(i, KNOB_PARK), `knob-${i}`);
   }
 
   /** Shift + encoder: Waveform -> Spectrum -> Synth -> Wavetable. */
@@ -577,12 +840,25 @@ export class Playground {
     switch (e.type) {
       case "key":
         return e.on ? this.noteOn(e.note, e.velocity) : this.noteOff(e.note);
-      case "knob":
+      case "knob": {
         this.notePrgm(e.program);
-        return this.setKnob(e.index, e.value / 127, CC_MAPS[e.program].knobs[e.index]);
-      case "fader":
+        const cc = CC_MAPS[e.program].knobs[e.index];
+        if (this.shift) return this.tempoKnob(e.index, e.value, cc);
+        if (this.seqEdit) return this.setStepKnob(e.index, e.value / 127, cc);
+        return this.setKnob(e.index, e.value / 127, cc);
+      }
+      case "fader": {
         this.notePrgm(e.program);
-        return this.setFader(e.index, e.value / 127, CC_MAPS[e.program].faders[e.index]);
+        const cc = CC_MAPS[e.program].faders[e.index];
+        const t = e.value / 127;
+        if (this.seqEdit) {
+          if (this.pickedUp(e.index, t, this.seqFaderPosition(e.index), cc, SEQ_FADERS[e.index])) this.setSeqFader(e.index, t, cc);
+          return;
+        }
+        const id = FADERS[e.index];
+        if (this.pickedUp(e.index, t, toControl(id, this.values[id]), cc, PARAMS[id].label)) this.setFader(e.index, t, cc);
+        return;
+      }
       case "pitchBend":
         return this.setBend(e.value);
       case "mod":
@@ -592,7 +868,7 @@ export class Playground {
           this.bank = e.bank;
           this.syncPadLeds();
         }
-        if (e.bank === "B" && !this.stepMode) {
+        if (e.bank === "B" && !this.stepMode && !this.seqEdit) {
           if (e.on) this.loadPreset(PAD_PRESETS[e.index]);
           return;
         }
@@ -606,6 +882,10 @@ export class Playground {
         return this.encoderClick(e.pressed, e.shifted || this.shift);
       case "shift":
         this.shift = e.pressed;
+        // Shift + any knob turns the tempo. The knobs are parked in the middle so they can turn either way
+        // without hitting an end, then given back their real values on release.
+        if (e.pressed) this.parkKnobs();
+        else this.realignKnobs();
         return;
       case "transport":
         if (!e.pressed) return;
@@ -632,7 +912,7 @@ export class Playground {
       this.longPressFired = false;
       if (shifted) {
         this.longPressFired = true; // consume the release
-        return this.toggleStepMode();
+        return this.cyclePadMode();
       }
       clearTimeout(this.longPressTimer);
       this.longPressTimer = window.setTimeout(() => {
@@ -668,6 +948,10 @@ export class Playground {
 
   /** Move the device's stored knob values to what they now control, so the next turn doesn't jump. */
   private realignKnobs() {
+    if (this.seqEdit) {
+      for (let i = 0; i < NOTE_STEPS; i++) this.device?.send(knobValueMessage(i, Math.round(this.stepKnobPosition(i) * 127)), `knob-${i}`);
+      return;
+    }
     this.knobParams.forEach((id, i) => {
       const value = id ? Math.round(toControl(id, this.values[id]) * 127) : 0;
       this.device?.send(knobValueMessage(i, value), `knob-${i}`);
@@ -678,6 +962,10 @@ export class Playground {
     if (!this.device) return;
     if (this.stepMode) {
       for (let step = 0; step < 16; step++) this.paintStep(step);
+      return;
+    }
+    if (this.seqEdit) {
+      for (let i = 0; i < NOTE_STEPS; i++) this.paintSeqStep(i);
       return;
     }
     this.spectrumSent.fill(-1);
@@ -700,7 +988,7 @@ export class Playground {
 
   private flashPad(i: number, velocity: number) {
     this.padLevels[i] = velocity / 127;
-    if (this.bank !== "A" || this.stepMode || this.spectrumPads) return;
+    if (this.bank !== "A" || this.stepMode || this.seqEdit || this.spectrumPads) return;
     const id = LED_IDS.padsA[i];
     if (velocity > 0) {
       const k = 0.4 + 0.6 * (velocity / 127);

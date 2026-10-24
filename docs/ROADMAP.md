@@ -2,33 +2,32 @@
 
 The next pieces of work, as slices to build in order. Each slice should work on its own, be testable on the MiniLab, and take about one session.
 
-Status: nothing in this file has been started (written 2026-10-24). Slice 0 is a bug fix to do before the rest.
-
-## Fixes first
-
-### 0. Firefox: lost note-offs
-
-- In Firefox (tested without add-ons, and it works), releasing several keys at once plays a different note; Chromium is fine.
-- Likely cause: the MIDI input assumes one complete message per MIDI event. If Firefox bundles several messages into one event, or uses running status (repeated messages without the status byte), the extra note-offs are dropped. Poly notes then keep ringing, and mono presets slide back to a key that is no longer held.
-- Already ruled out: the audio engine. Firefox 158 has no `cancelAndHoldAtTime`, but the fallback in `voice.ts` reads correct values.
-- Fix: split each incoming event into individual messages and restore missing status bytes (`src/minilab/protocol.ts`, `src/minilab/device.ts`). Log the raw bytes in Firefox once to confirm which case it is.
-- Also update the About page: Firefox works without an add-on.
-- **Done when:** releasing chords in Firefox leaves no notes ringing, in both poly and mono presets.
+Status: nothing in this file has been started (written 2026-10-24).
 
 ## Phase A: playing and the first learning step
 
-### 1. Arpeggiator
+### 1. 8-step sequencer
 
-- Hold a chord and it plays the notes one at a time: up, down, up-down, random, or as played.
-- Settings: speed synced to the tempo (1/8, 1/16, triplets), range of 1–3 octaves, gate length, and latch (keeps playing after you let go).
-- On the MiniLab: the pad labelled "Arp" turns it on and off. In the Synth view it's a new block next to Playing.
-- **Done when:** you can hold a chord on the MiniLab and the arp plays it in time with the drum loop.
+Replaces the arpeggiator. Modelled on the Oberheim Mini-Sequencer: one knob and one light per step.
+
+- 8 steps, each with a note, on/off (off is a rest) and a slide (holds the note into the next step and glides to it, like a TB-303).
+- Settings: length 1–8, gate, rate (1/8, 1/8T, 1/16, 1/16T), direction (forward, backward, ping-pong, random).
+- Runs on the drum loop's clock, so ▶ / ■ / Tap control both and they stay in time.
+- While it plays, a key transposes the whole line (C4 = no change); this can be switched off.
+- On the MiniLab, **sequencer edit** (Shift + encoder click twice: drum steps, then sequencer, then off):
+  - knobs 1–8: step notes (two octaves from C3)
+  - pads bank A: steps on/off; hold a pad and press a key to set that step's note
+  - pads bank B: slides
+  - faders: length, gate, rate, direction. After the faders change job, they "pick up": a fader does nothing until it reaches the current value, so the sound doesn't jump.
+- On screen: a Step sequencer panel under the pads, and the keyboard lights the notes it plays.
+- Status: built 2026-10-24, waiting for a hardware check. Not yet in the Synth view.
+- **Done when:** you can build a line on the MiniLab with knobs and pads, and transpose it from the keys in time with the drum loop.
 
 ### 2. Scale lock and chord mode
 
 - Choose a root note and a scale (major, minor, pentatonic, dorian…). Notes outside the scale snap to the nearest scale note.
 - Chord mode: one key plays a chord that fits the scale (triads or 7ths).
-- The on-screen keyboard greys out notes outside the scale. It works together with the arp.
+- The on-screen keyboard greys out notes outside the scale. It works together with the sequencer (step knobs snap to the scale).
 - **Done when:** with any scale chosen, random playing sounds musical, and one finger can play chords.
 
 ### 3. Guided recipes: the engine and 3 recipes
@@ -158,8 +157,10 @@ Ideas without a place in the order yet. Any of them can slot in between phases.
 - Wavetables: warp modes (bend, mirror, sync).
 - Presets: tags, favourites, search, export/import as files; morphing between two presets with a fader.
 - Pads play notes (which would also make pad pressure useful as a matrix source).
-- Melodic step sequencer, with per-step parameter changes.
+- Arpeggiator (hold a chord, it plays the notes in turn), on the same clock as the sequencer.
+- Sequencer: 16 steps (second page on pad bank B), per-step velocity/accent, a second row of values as a mod matrix source (e.g. step → cutoff), a Sequencer block in the Synth view, saving sequences.
 - Looper/recorder, with WAV export.
 - "What changed?" view: compare a tweaked preset with the saved version (A/B).
 - Effects rack: separate effect slots you can reorder; distortion types, phaser, flanger, EQ, bit-crusher, compressor.
 - MiniLab: small drawings on the OLED (if the protocol allows it), MIDI learn, remembering the knob page and settings for each view.
+- Firefox: lost note-offs when releasing chords (postponed 2026-10-24; Chromium is the target for now). Likely cause: the MIDI input assumes one complete message per event, so bundled messages or running status drop note-offs. Fix: split each event into messages and restore missing status bytes (`src/minilab/protocol.ts`, `src/minilab/device.ts`), then update the About page.

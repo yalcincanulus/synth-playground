@@ -1,4 +1,5 @@
 import type { Engine } from "./engine";
+import type { NoteSequencer } from "./stepSequencer";
 
 export const STEPS = 16;
 export const TRACKS = 8;
@@ -26,8 +27,12 @@ const TICK_MS = 25;
  */
 export class Sequencer {
   pattern: Pattern = basicBeat();
+  /** The 8-step note sequencer, played on the same clock. */
+  notes: NoteSequencer | null = null;
   playing = false;
   recording = false;
+  /** When off, the clock keeps running (for the note sequencer) but the drum loop is silent. */
+  drumsOn = true;
   onTrigger: (track: number, velocity: number, time: number) => void = () => {};
   /** Called when each step is scheduled, with the audio time it will sound at. */
   onStep: (step: number, time: number) => void = () => {};
@@ -35,6 +40,8 @@ export class Sequencer {
   private timer = 0;
   private nextStep = 0;
   private nextTime = 0;
+  /** Beats since start at nextTime (a drum step is a quarter beat). */
+  private nextBeat = 0;
   /** Audio time each step is scheduled at, for quantised recording and UI playhead. */
   private stepTimes: number[] = Array(STEPS).fill(0);
 
@@ -48,7 +55,9 @@ export class Sequencer {
     if (this.playing) return;
     this.playing = true;
     this.nextStep = 0;
+    this.nextBeat = 0;
     this.nextTime = this.engine.ctx.currentTime + 0.05;
+    this.notes?.reset();
     this.timer = window.setInterval(() => this.schedule(), TICK_MS);
     this.schedule();
   }
@@ -57,6 +66,7 @@ export class Sequencer {
     this.playing = false;
     this.recording = false;
     clearInterval(this.timer);
+    this.notes?.release(this.engine.ctx.currentTime);
   }
 
   /** Step under the playhead right now, or -1 when stopped. */
@@ -94,12 +104,16 @@ export class Sequencer {
       this.onStep(step, this.nextTime);
       for (let track = 0; track < TRACKS; track++) {
         const vel = this.pattern[track][step];
-        if (vel > 0) {
+        if (vel > 0 && this.drumsOn) {
           this.engine.drums.trigger(track, vel, this.nextTime);
           this.onTrigger(track, vel, this.nextTime);
         }
       }
+      const secPerBeat = 60 / this.engine.bpm;
+      const stepStart = this.nextTime;
+      this.notes?.schedule(this.nextBeat, this.nextBeat + 0.25, (b) => stepStart + (b - this.nextBeat) * secPerBeat, secPerBeat);
       this.nextTime += this.stepDuration;
+      this.nextBeat += 0.25;
       this.nextStep = (step + 1) % STEPS;
     }
   }

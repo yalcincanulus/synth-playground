@@ -14,6 +14,8 @@
   import SynthView from "./synth/SynthView.svelte";
   import WavetableView from "./wavetable/WavetableView.svelte";
   import AboutPage from "./about/AboutPage.svelte";
+  import SequencerPanel from "./sequencer/SequencerPanel.svelte";
+  import { noteName } from "../audio/stepSequencer";
 
   const pg = new Playground();
   if (import.meta.env.DEV) Object.assign(window, { pg });
@@ -33,6 +35,9 @@
     });
     return [...groups];
   });
+
+  // The keyboard lights up the keys you hold and the notes the step sequencer plays.
+  let keyboardNotes = $derived(new Set([...pg.notes, ...pg.seqNotes]));
 
   const display = (id: ParamId) => formatValue(id, pg.values[id]);
   const resetParam = (id: ParamId) => pg.setParam(id, pg.preset.values[id] ?? PARAMS[id].default);
@@ -104,7 +109,7 @@
     <div class="transport">
       <button class:active={pg.playing} onclick={() => pg.togglePlay()} title="Play / stop (Shift + ▶)">{pg.playing ? "■" : "▶"}</button>
       <button class="rec" class:active={pg.recording} onclick={() => pg.toggleRecord()} title="Record pads into the loop (Shift + ●)">●</button>
-      <label class="bpm">
+      <label class="bpm" title="Shift + any knob on the MiniLab">
         <input type="number" min="40" max="240" value={pg.bpm} onchange={(e) => pg.setBpm(+e.currentTarget.value)} />
         BPM
       </label>
@@ -204,6 +209,8 @@
       <div class="title pads-title">
         {#if pg.shift}
           <span class="shifted">Shift held · pads are transport controls</span>
+        {:else if pg.seqEdit}
+          <span class="shifted">Sequencer edit · {pg.bank === "A" ? "steps on/off, hold + key sets the note" : "slides"}</span>
         {:else if pg.stepMode}
           <span class="shifted">Step edit · {pg.drumName(pg.stepTrack)} · steps {pg.bank === "A" ? "1–8" : "9–16"}</span>
         {:else}
@@ -212,7 +219,10 @@
       </div>
       <div class="pad-modes">
         <button class:active={pg.stepMode} onclick={() => pg.toggleStepMode()} title="Shift + encoder click">Step edit</button>
-        {#if pg.stepMode}
+        {#if pg.seqEdit}
+          <button class:active={pg.bank === "A"} onclick={() => (pg.bank = "A")} title="Pad bank A">Steps</button>
+          <button class:active={pg.bank === "B"} onclick={() => (pg.bank = "B")} title="Pad bank B">Slides</button>
+        {:else if pg.stepMode}
           <button class:active={pg.bank === "A"} onclick={() => (pg.bank = "A")} title="Pad bank A">1–8</button>
           <button class:active={pg.bank === "B"} onclick={() => (pg.bank = "B")} title="Pad bank B">9–16</button>
         {:else}
@@ -222,27 +232,39 @@
       <div class="pads">
         {#each pg.padLevels as level, i}
           {@const step = i + (pg.bank === "B" ? 8 : 0)}
-          {@const stepOn = pg.pattern[pg.stepTrack][step] > 0}
+          {@const seqStep = pg.noteSeq.steps[i]}
+          {@const editing = pg.stepMode || pg.seqEdit}
+          {@const stepOn = pg.seqEdit ? (pg.bank === "A" ? seqStep.on : seqStep.slide) : pg.pattern[pg.stepTrack][step] > 0}
           <button
             class="pad"
             class:shifted={pg.shift}
             class:device-only={pg.shift && SHIFT_PADS[i].deviceOnly}
-            class:step={pg.stepMode && !pg.shift}
-            class:step-on={pg.stepMode && stepOn}
-            class:playhead={pg.stepMode && pg.playStep === step}
-            style:--level={pg.stepMode ? 0 : pg.spectrumPads ? pg.spectrumLevels[i] : level}
-            style:--glow={pg.spectrumPads && !pg.stepMode ? spectrumCss(i) : "var(--accent)"}
+            class:step={editing && !pg.shift}
+            class:step-on={editing && stepOn}
+            class:slide={pg.seqEdit && pg.bank === "B"}
+            class:playhead={pg.seqEdit ? pg.seqStep === i : pg.stepMode && pg.playStep === step}
+            class:outside={pg.seqEdit && i >= pg.noteSeq.length}
+            style:--level={editing ? 0 : pg.spectrumPads ? pg.spectrumLevels[i] : level}
+            style:--glow={pg.spectrumPads && !editing ? spectrumCss(i) : "var(--accent)"}
             onpointerdown={() => pg.hitPad(i, 100)}
             onpointerup={() => pg.releasePad(i)}
             onpointerleave={() => pg.releasePad(i)}
           >
-            {pg.shift ? SHIFT_PADS[i].label : pg.stepMode ? `Step ${step + 1}` : pg.drumName(i)}
+            {#if pg.shift}{SHIFT_PADS[i].label}
+            {:else if pg.seqEdit}{pg.bank === "A" ? `${i + 1} · ${noteName(seqStep.note)}` : `Slide ${i + 1}`}
+            {:else if pg.stepMode}Step {step + 1}
+            {:else}{pg.drumName(i)}{/if}
           </button>
         {/each}
       </div>
     </div>
-    <div class="panel seq-panel">
-      <div class="title">Drum loop {pg.recording ? "· recording pad hits" : ""}</div>
+    <div class="panel seq-panel" class:muted={!pg.drumsOn}>
+      <div class="title seq-title">
+        Drum loop {pg.recording ? "· recording pad hits" : ""}
+        <button class:active={pg.drumsOn} onclick={() => pg.setDrumsOn(!pg.drumsOn)} title="Mute the drum loop (the sequencer keeps playing)">
+          {pg.drumsOn ? "On" : "Off"}
+        </button>
+      </div>
       <SeqGrid
         pattern={pg.pattern}
         getStep={() => pg.seq.currentStep}
@@ -253,6 +275,8 @@
       />
     </div>
   </section>
+
+  <SequencerPanel {pg} />
   {:else if pg.view === "synth"}
     <SynthView {pg} {accent} />
   {:else if pg.view === "wavetable"}
@@ -262,13 +286,13 @@
   {/if}
 
   <section class="panel">
-    <Keyboard notes={pg.notes} onnoteon={(n) => pg.noteOn(n, 100)} onnoteoff={(n) => pg.noteOff(n)} />
+    <Keyboard notes={keyboardNotes} onnoteon={(n) => pg.noteOn(n, 100)} onnoteoff={(n) => pg.noteOff(n)} />
   </section>
 
   <footer>
     Keys: computer keyboard A–' plays notes, Z / X shifts octave · Encoder: browse presets, click to load, hold for Dice (Synth view: knob pages, click to listen; Wavetable view: pick the table) ·
-    Shift + encoder click: step edit (turn to pick the drum) ·
-    Shift + pads: ▶ play, ■ stop, ● record, ⟲ clear loop, Tap tempo · Double-click a knob to reset it
+    Shift + encoder click: drum step edit (turn to pick the drum), click again: sequencer edit, again: off ·
+    Shift + any knob: tempo · Shift + pads: ▶ play, ■ stop, ● record, ⟲ clear loop, Tap tempo · Double-click a knob to reset it
   </footer>
 
   {#if !pg.audioRunning}
@@ -345,7 +369,13 @@
   .pad.step { color: var(--dim); border-color: var(--line); }
   .pad.step-on { background: var(--accent); color: #0b1314; border-color: var(--accent); }
   .pad.playhead { outline: 2px solid #fff; outline-offset: 2px; }
+  .pad.slide.step-on { background: #a35cff; border-color: #a35cff; }
+  .pad.outside { opacity: 0.3; }
   .pads-title { margin-bottom: 4px; }
+  .seq-title { display: flex; align-items: center; gap: 8px; }
+  .seq-title button { font-size: 11px; padding: 1px 10px; text-transform: none; letter-spacing: 0; }
+  .seq-title .active { border-color: var(--accent); color: var(--accent); }
+  .seq-panel.muted :global(.seq) { opacity: 0.4; }
   .pad-modes { display: flex; gap: 4px; margin-bottom: 8px; }
   .pad-modes button { font-size: 12px; padding: 2px 10px; }
   .pad-modes .active { border-color: var(--accent); color: var(--accent); }
