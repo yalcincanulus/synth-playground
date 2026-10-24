@@ -31,6 +31,7 @@
       <ul>
         <li><strong>Playground:</strong> presets, Dice (a random patch), a drum loop with step editing, waveform and spectrum views.</li>
         <li><strong>Step sequencer:</strong> 8 steps with notes, rests and slides, played on the MiniLab's knobs and pads. Play chords over it, or transpose it from the keys.</li>
+        <li><strong>Two parts:</strong> the keys and the step sequencer each have their own sound, say a pad over a bass line. Pick the part to edit above the presets, or with Shift + any key on the MiniLab.</li>
         <li><strong>Synth:</strong> the whole synth as blocks with live signals and cables, plain-English explanations, and "Listen here" to hear any stage on its own.</li>
         <li><strong>Wavetable:</strong> eight built-in wavetables in 3D, with the wave playing right now and its harmonics.</li>
         <li><strong>Sound:</strong> two oscillators with pulse width, hard sync, FM and wavetables; sub and noise; filter and drive; amp, filter, pitch and mod envelopes; two LFOs; a mod matrix with 8 routes; chorus, delay and reverb.</li>
@@ -38,7 +39,6 @@
 
       <h3>Coming later <span class="tag">not in yet</span></h3>
       <ul class="later">
-        <li>Two sounds at once: one for the sequencer, one for your keys</li>
         <li>Stereo, a ladder filter, filter morph, cleaner drive and FM, better effects</li>
         <li>WAV import and drawing your own wavetables</li>
         <li>Scale lock and chord mode</li>

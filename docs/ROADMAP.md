@@ -124,6 +124,13 @@ What the browser still limits, whatever we do:
 - The knobs, the Synth view and the preset browser edit the selected part; a part switch on screen and on the MiniLab.
 - Both parts share the effects and the drums, and each part has a volume.
 - **Done when:** a bass preset plays the sequence while you play a pad preset on the keys, and both can be edited from the MiniLab.
+- Status: done 2026-10-24 (checked on the MiniLab, Shift + key included).
+  - **Engine:** `part.ts` is one part (its own voice processor, voices, LFOs and stage taps); `Engine` holds two and a selected one, which the visualisations follow. Max Voices is per part; the CPU limit counts both parts' voices and cuts from either (a mono part's voice last).
+  - **Effects:** each part has its own Volume, chorus and delay/reverb sends (`PartFx`); the delay time, feedback and room size are shared and come from the Keys part. The master no longer follows a preset's Volume, so the drums play at a fixed level (the old default, 0.7 squared).
+  - **Playground:** each part keeps its own preset, settings and "edited" mark. The knobs, faders, encoder, favourite pads, Dice, the Synth and Wavetable views and "Listen here" follow the selected part. The Sequencer part starts on Round Bass.
+  - **Switching:** two buttons above the presets (showing each part's preset), and Shift + any key on the MiniLab (the key doesn't sound). The OLED's first line starts with Keys or Seq.
+  - **Choices:** the keys always play the Keys part, and the pitch and mod strips move it. So editing the Sequencer part is heard while the sequencer plays (or through step auditions).
+  - **Render check:** identical to the reference (the Keys part's sound path is unchanged).
 
 ## Phase B: sound quality
 

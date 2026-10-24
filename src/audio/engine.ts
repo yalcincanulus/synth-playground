@@ -1,38 +1,26 @@
 import { Drums } from "./drums";
-import { LFO_POSITION, lfoDepths, type PerTarget } from "./dsp/lfo";
-import { TAPS, type LfoState, type TapName } from "./dsp/voiceBank";
-import { keySource, MOD_RANGE } from "./dsp/voiceMath";
 import { Fx } from "./fx";
-import { Lfo } from "./lfo";
-import { envelopeAt } from "./envelope";
-import { DELAY_DIV_BEATS, LFO_SYNC_BEATS, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, defaultValues, slotIds, type ModSource, type ParamId, type ParamValues } from "./params";
+import type { Lfo } from "./lfo";
+import { DELAY_DIV_BEATS, type ModSource, type ParamId, type ParamValues } from "./params";
+import { Part, type PartTapId, type VoiceState } from "./part";
 import workletUrl from "./synth.worklet.ts?worker&url";
+import type { NoteOwner } from "./voice";
+import { CpuGuard, pickVictim } from "./voiceLimit";
 import { buildMips, FRAMES, tableFrames, WAVETABLES } from "./wavetables";
-import { Voice, type NoteOwner } from "./voice";
-import { CpuGuard, pickVictim, voiceWeight } from "./voiceLimit";
 
 export { LFO_AMP, LFO_FILTER_CENTS, LFO_PITCH_CENTS, LFO_POSITION, LFO_WIDTH } from "./dsp/lfo";
+export type { VoiceState } from "./part";
 
-/** Shortest glide used for a sequencer slide on a mono preset, in Glide units (seconds). */
-const SLIDE_GLIDE = 0.12;
 export const BEND_RANGE_CENTS = 200;
 
-/** Points in the sound you can see and hear on their own: the voice stages, then the effects. */
-export type TapId = TapName | "amp" | "chorus" | "delay" | "reverb" | "out";
+/** Points in the sound you can see and hear on their own: the selected part's stages, then the shared effects. */
+export type TapId = PartTapId | "delay" | "reverb" | "out";
 
 /** Taps you can listen to on their own ("out" is the normal full sound). */
 export type ListenTap = Exclude<TapId, "out">;
 const LISTEN_GAIN = 0.3;
 
-export interface VoiceState {
-  note: number;
-  velocity: number;
-  triggeredAt: number;
-  releasedAt: number | null;
-  random: number;
-}
-
-/** CPU meter, from the audio thread: the voice processor (every note, the LFOs). The effects are the browser's own nodes. */
+/** CPU meter, from the audio thread: the voice processors (every note, the LFOs). The effects are the browser's own nodes. */
 export interface CpuLoad {
   /** Share of the available time spent in our audio code, averaged over the last report (0..1+). */
   load: number;
@@ -41,7 +29,7 @@ export interface CpuLoad {
    * Only meaningful with the "performance" clock: Chrome's worklets only have Date.now(), whole milliseconds.
    */
   peak: number;
-  /** Most voices sounding at once in that time. */
+  /** Most voices sounding at once in that time (both parts). */
   voices: number;
   /** Their average weight (see voiceWeight). */
   units: number;
@@ -58,78 +46,69 @@ export class Engine {
   readonly fx: Fx;
   readonly drums: Drums;
   readonly analyser: AnalyserNode;
-  /** Resolves when the voice processor has loaded; notes before that are ignored. */
+  /** Resolves when the voice processors have loaded; notes before that are ignored. */
   readonly ready: Promise<void>;
-  private loaded = false;
   /** Receives prepared wavetables for the oscillators (see synth.worklet.ts). */
   private tableLoader: AudioWorkletNode | null = null;
   private tablesSent = new Set<number>();
 
-  params: ParamValues = defaultValues();
+  /** Two sounds at once: Keys (what you play) and Sequencer (what the step sequencer plays). */
+  readonly parts: Record<NoteOwner, Part>;
+  /** The part being edited and shown (the knobs, the Synth view, the presets). */
+  selected: NoteOwner = "keys";
+
   private cpuReport: CpuLoad = { load: 0, peak: 0, voices: 0, units: 0, cuts: 0, clock: "" };
   private cpuGuard = new CpuGuard();
   private cpuCuts = 0;
   private cpuAt = 0;
   bpm = 120;
 
-  private voices: Voice[] = [];
-  /** Mono mode: the single voice and the stack of held keys (last = sounding). */
-  private monoVoice: Voice | null = null;
-  /** The voice processor (one for the whole part); null until the worklet module has loaded. */
-  private bankNode: AudioWorkletNode | null = null;
-  private pings = new Map<number, () => void>();
-  private pingCount = 0;
-  private held: number[] = [];
-
-  /** What the two LFOs (running in the voice processor) are doing, for the drawings. */
-  readonly lfos: [Lfo, Lfo];
   private listenGain: GainNode;
   private listening: ListenTap | null = null;
+  private listenNode: AudioNode | null = null;
   private bend = 0;
   private mod = 0;
-  readonly taps: Record<TapId, AnalyserNode>;
+  private sharedTaps: Record<"delay" | "reverb" | "out", AnalyserNode>;
 
   /**
    * `ctx` is normally a live AudioContext. The render check passes an OfflineAudioContext (cast):
    * the engine uses nothing an offline context lacks, apart from resume().
    */
   constructor(readonly ctx: AudioContext = new AudioContext({ latencyHint: "interactive" })) {
+    this.fx = new Fx(ctx);
+    this.analyser = this.fx.analyser;
+    const engine = this;
+    const host = {
+      ctx,
+      get bpm() {
+        return engine.bpm;
+      },
+      makeRoom: (part: Part, weight: number, t: number) => this.makeRoom(part, weight, t),
+      changed: (part: Part) => this.partChanged(part),
+    };
+    this.parts = { keys: new Part(host, "keys", this.fx.addPart()), seq: new Part(host, "seq", this.fx.addPart()) };
+
     this.ready = ctx.audioWorklet.addModule(workletUrl).then(() => {
       this.tableLoader = new AudioWorkletNode(ctx, "table-loader", { numberOfInputs: 0, numberOfOutputs: 1 });
-      this.tableLoader.port.onmessage = (e) => {
-        if (!e.data.cpu) return;
-        const cpu = e.data.cpu as Omit<CpuLoad, "cuts">;
-        const fresh = performance.now() - this.cpuAt < CPU_STALE_MS;
-        const load = fresh ? this.cpuReport.load * 0.6 + cpu.load * 0.4 : cpu.load;
-        this.cpuReport = { ...cpu, load, cuts: this.cpuCuts };
-        this.cpuAt = performance.now();
-        this.cpuGuard.report(cpu.load, cpu.units);
-        // Over the limit despite the budget (say a route was added to held notes): cut a note now.
-        if (this.cpuGuard.overloaded(cpu.load) && this.voices.length > 1 && !this.params.mono) this.cut(this.ctx.currentTime, true);
-      };
-      this.loadTable(this.params.wtTable);
-      this.createBank();
-      this.loaded = true;
+      this.tableLoader.port.onmessage = (e) => e.data.cpu && this.cpuReported(e.data.cpu);
+      for (const part of this.allParts) this.loadTable(part.params.wtTable);
+      // One seed for both parts' random LFOs, picked here so a seeded render (render check) repeats them.
+      const seed = Math.floor(Math.random() * 2 ** 32);
+      this.parts.keys.start(seed);
+      this.parts.seq.start(seed ^ 0x5eed);
       // The rest in the background (about 15 ms each), so switching tables later is instant.
       WAVETABLES.forEach((_, i) => setTimeout(() => this.loadTable(i), 300 + i * 80));
     });
-    this.fx = new Fx(ctx);
-    this.analyser = this.fx.analyser;
 
     // The drums' noise.
     const noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
     const data = noise.getChannelData(0);
     for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
 
-    this.lfos = [new Lfo(ctx, this.params.lfoRate), new Lfo(ctx, this.params.lfo2Rate)];
     const tap = () => new AnalyserNode(ctx, { fftSize: 2048, smoothingTimeConstant: 0.6 });
-    this.taps = {
-      osc1: tap(), osc2: tap(), sub: tap(), noise: tap(), mix: tap(), drive: tap(), filter: tap(),
-      amp: tap(), chorus: tap(), delay: tap(), reverb: tap(), out: this.fx.analyser,
-    };
-    this.fx.chorusOut.connect(this.taps.chorus);
-    this.fx.delayOut.connect(this.taps.delay);
-    this.fx.reverbOut.connect(this.taps.reverb);
+    this.sharedTaps = { delay: tap(), reverb: tap(), out: this.fx.analyser };
+    this.fx.delayOut.connect(this.sharedTaps.delay);
+    this.fx.reverbOut.connect(this.sharedTaps.reverb);
 
     // "Listen here": a tap is routed to its own quiet, limited output while the main output is muted.
     this.listenGain = new GainNode(ctx, { gain: LISTEN_GAIN });
@@ -137,57 +116,35 @@ export class Engine {
     this.listenGain.connect(listenLimiter).connect(ctx.destination);
 
     this.drums = new Drums(ctx, this.fx.drumIn, noise);
-    this.applyGlobal();
+    for (const part of this.allParts) part.apply();
   }
 
   resume() {
     return this.ctx.resume();
   }
 
-  private createBank() {
-    const node = new AudioWorkletNode(this.ctx, "synth-voices", {
-      numberOfInputs: 0,
-      numberOfOutputs: 1 + TAPS.length,
-      outputChannelCount: Array(1 + TAPS.length).fill(1),
-      // The seed is picked here, so a seeded render (render check) repeats the random LFO too.
-      processorOptions: { values: this.params, seed: Math.floor(Math.random() * 2 ** 32) },
-    });
-    node.connect(this.fx.synthIn);
-    node.connect(this.taps.amp);
-    TAPS.forEach((tap, i) => node.connect(this.taps[tap], 1 + i));
-    node.port.onmessage = (e) => {
-      if (e.data.type === "lfo") return this.lfoReport(e.data);
-      if (e.data.type !== "pong") return;
-      this.pings.get(e.data.n)?.();
-      this.pings.delete(e.data.n);
-    };
-    this.bankNode = node;
-    this.applyVoices();
-    this.applyLfo();
-    this.sendControls();
+  private get allParts() {
+    return [this.parts.keys, this.parts.seq];
   }
 
-  private lfoReport(r: LfoState & { time: number }) {
-    this.lfos.forEach((lfo, i) => lfo.report(r.time, r.phase[i], r.rate[i]));
-    for (const [i, frame, value] of r.steps) this.lfos[i].step(frame / this.ctx.sampleRate, value);
+  /** The selected part. */
+  get part(): Part {
+    return this.parts[this.selected];
+  }
+
+  /** Edit and show another part. */
+  select(owner: NoteOwner) {
+    this.selected = owner;
+    // Keep listening to the same stage, now of this part.
+    if (this.listening) this.listen(this.listening);
   }
 
   /**
-   * Resolves once the voice processor has every message sent so far (or after `timeoutMs`).
+   * Resolves once both voice processors have every message sent so far (or after `timeoutMs`).
    * The render check waits for this before rendering, since notes are messages, not automation.
    */
-  flush(timeoutMs = 500): Promise<void> {
-    if (!this.bankNode) return Promise.resolve();
-    const n = ++this.pingCount;
-    return new Promise((resolve) => {
-      this.pings.set(n, resolve);
-      this.bankNode!.port.postMessage({ type: "ping", n });
-      setTimeout(resolve, timeoutMs);
-    });
-  }
-
-  private newVoice(note: number, velocity: number, t: number): Voice {
-    return new Voice(this.bankNode!.port, this.params, note, velocity, t);
+  async flush(timeoutMs = 500): Promise<void> {
+    await Promise.all(this.allParts.map((p) => p.flush(timeoutMs)));
   }
 
   get cpu(): CpuLoad {
@@ -195,137 +152,60 @@ export class Engine {
     return { ...this.cpuReport, cuts: this.cpuCuts };
   }
 
+  private cpuReported(cpu: Omit<CpuLoad, "cuts">) {
+    const fresh = performance.now() - this.cpuAt < CPU_STALE_MS;
+    const load = fresh ? this.cpuReport.load * 0.6 + cpu.load * 0.4 : cpu.load;
+    this.cpuReport = { ...cpu, load, cuts: this.cpuCuts };
+    this.cpuAt = performance.now();
+    this.cpuGuard.report(cpu.load, cpu.units);
+    // Over the limit despite the budget (say a route was added to held notes): cut a note now.
+    if (this.cpuGuard.overloaded(cpu.load)) this.cutForCpu(this.ctx.currentTime);
+  }
+
   /** Send every wavetable to the audio thread now (the render check needs them before rendering starts). */
   loadAllTables() {
     WAVETABLES.forEach((_, i) => this.loadTable(i));
   }
 
-  // --- parameters
+  // --- parameters (of the selected part unless another is named)
 
-  setParams(values: ParamValues) {
-    const wasMono = this.params.mono;
-    this.params = { ...values };
-    if (wasMono !== values.mono) this.allNotesOff();
-    else if (this.monoVoice && this.monoVoice.releasedAt !== null) {
-      // A released mono voice is kept for retriggering; rebuild it so the new preset's unison applies.
-      this.monoVoice.stop(this.ctx.currentTime + 0.5);
-      this.voices = this.voices.filter((v) => v !== this.monoVoice);
-      this.monoVoice = null;
-    }
-    this.applyGlobal();
-    this.applyVoices();
+  /** The selected part's settings. */
+  get params(): ParamValues {
+    return this.part.params;
   }
 
-  setParam(id: ParamId, value: number) {
-    if (this.params[id] === value) return;
-    if (id === "mono") this.allNotesOff();
-    this.params[id] = value;
-    this.applyGlobal();
-    if (id !== "unison") this.applyVoices();
+  setParams(values: ParamValues, owner = this.selected) {
+    this.parts[owner].setParams(values);
+  }
+
+  setParam(id: ParamId, value: number, owner = this.selected) {
+    this.parts[owner].setParam(id, value);
   }
 
   setBpm(bpm: number) {
     this.bpm = bpm;
-    this.applyGlobal();
+    for (const part of this.allParts) part.applyLfo();
+    this.partChanged(this.parts.keys);
   }
 
-  /** -1..1 */
+  /** Pitch bend, -1..1. Your playing controls (bend, mod strip) move the Keys part. */
   setBend(value: number) {
     this.bend = value * BEND_RANGE_CENTS;
-    this.sendControls();
+    this.parts.keys.setControls(this.bend, this.mod);
   }
 
-  /** 0..1 */
+  /** The mod strip, 0..1. */
   setMod(value: number) {
     this.mod = value;
-    this.sendControls();
+    this.parts.keys.setControls(this.bend, this.mod);
   }
 
-  private sendControls() {
-    this.bankNode?.port.postMessage({ type: "controls", bend: this.bend, mod: this.mod });
-  }
-
-  private applyGlobal() {
-    const p = this.params;
-    this.loadTable(p.wtTable);
-    this.fx.set({
-      chorus: p.chorus,
-      delayMix: p.delayMix,
-      delaySeconds: (60 / this.bpm) * DELAY_DIV_BEATS[p.delayDiv],
-      delayFeedback: p.delayFeedback,
-      reverbMix: p.reverbMix,
-      reverbSize: p.reverbSize,
-      volume: p.volume,
-    });
-    this.applyLfo();
-  }
-
-  /** The LFOs' speeds (their depths and shapes come with the parameters). */
-  private applyLfo() {
-    const p = this.params;
-    const waves = [p.lfoWave, p.lfo2Wave];
-    const rates = this.lfos.map((lfo, i) => {
-      lfo.setWave(waves[i]);
-      lfo.setRate(this.lfoRate(i));
-      return lfo.rate;
-    });
-    this.bankNode?.port.postMessage({ type: "lfoRates", rates });
-  }
-
-  /** Effective LFO speed in Hz: the Rate knob, or the tempo when synced. */
-  lfoRate(i: number) {
-    const p = this.params;
-    const [rate, sync] = i === 0 ? [p.lfoRate, p.lfoSync] : [p.lfo2Rate, p.lfo2Sync];
-    return sync ? this.bpm / 60 / LFO_SYNC_BEATS[sync] : rate;
-  }
-
-  // --- live state, for visualisation
-
-  /**
-   * Effective depth (0..1) of LFO `i` per target [pitch, filter, amp, width, position]. Each LFO's depth
-   * goes to its target; the mod strip adds depth to LFO 1's mod target.
-   */
-  lfoDepths(i: number): PerTarget<number> {
-    return lfoDepths(this.params, i, this.mod);
-  }
-
-  /**
-   * A mod matrix source's value right now, for the meters: per-note sources follow the newest
-   * sounding note (null when none is playing).
-   */
-  modSourceValue(source: ModSource): number | null {
-    const p = this.params;
-    if (source === "off") return null;
-    if (source === "lfo 1") return this.lfos[0].value();
-    if (source === "lfo 2") return this.lfos[1].value();
-    if (source === "mod strip") return this.mod;
-    const v = this.voices[this.voices.length - 1];
-    if (!v) return null;
-    const now = this.ctx.currentTime;
-    const env = (attack: number, decay: number, sustain: number, release: number) => envelopeAt({ attack, decay, sustain, release }, now, v.triggeredAt, v.releasedAt).level;
-    switch (source) {
-      case "filter env": return env(p.filterAttack, p.filterDecay, p.filterSustain, p.filterRelease);
-      case "amp env": return env(p.attack, p.decay, p.sustain, p.release);
-      case "mod env": return env(p.modEnvAttack, p.modEnvDecay, p.modEnvSustain, p.modEnvRelease);
-      case "pitch env": return Math.exp(-(now - v.triggeredAt) / (p.pitchEnvDecay / 4));
-      case "velocity": return v.velocity / 127;
-      case "key": return keySource(v.note);
-      case "random": return v.random;
-    }
-  }
-
-  /** Wavetable position 0..1 right now, with the LFOs' and mod matrix's position modulation. */
-  livePosition() {
-    const p = this.params;
-    let pos = p.wtPos;
-    this.lfos.forEach((lfo, i) => (pos += this.lfoDepths(i)[4] * LFO_POSITION * lfo.value()));
-    // Mod matrix routes to WT Pos, as heard on the newest note.
-    for (let n = 1; n <= MOD_SLOTS; n++) {
-      const ids = slotIds(n);
-      if (MOD_DESTS[p[ids.dst]] !== "wt pos") continue;
-      pos += p[ids.amt] * MOD_RANGE["wt pos"] * (this.modSourceValue(MOD_SOURCES[p[ids.src]]) ?? 0);
-    }
-    return Math.min(1, Math.max(0, pos));
+  /** A part's settings changed. The shared effects (delay time and feedback, room size) follow the Keys part. */
+  private partChanged(part: Part) {
+    this.loadTable(part.params.wtTable);
+    if (part !== this.parts.keys) return;
+    const p = part.params;
+    this.fx.setShared({ delaySeconds: (60 / this.bpm) * DELAY_DIV_BEATS[p.delayDiv], delayFeedback: p.delayFeedback, reverbMix: p.reverbMix, reverbSize: p.reverbSize });
   }
 
   /** Prepare a wavetable's mipmaps and hand them to the audio thread, once per table. */
@@ -336,30 +216,52 @@ export class Engine {
     this.tableLoader.port.postMessage({ id, frames: FRAMES, levels }, levels.map((l) => l.buffer));
   }
 
+  // --- live state of the selected part, for visualisation
+
+  get lfos(): [Lfo, Lfo] {
+    return this.part.lfos;
+  }
+
+  /** The selected part's stages and the shared effects. */
+  get taps(): Record<TapId, AnalyserNode> {
+    return { ...this.part.taps, ...this.sharedTaps };
+  }
+
+  lfoRate(i: number) {
+    return this.part.lfoRate(i);
+  }
+
+  lfoDepths(i: number) {
+    return this.part.lfoDepths(i);
+  }
+
+  modSourceValue(source: ModSource): number | null {
+    return this.part.modSourceValue(source);
+  }
+
+  livePosition() {
+    return this.part.livePosition();
+  }
+
+  voiceStates(): VoiceState[] {
+    return this.part.voiceStates();
+  }
+
+  get modAmount() {
+    return this.part.modAmount;
+  }
+
   /** Where audio is going: null is the normal output, otherwise one tap on its own. */
   get listeningTo() {
     return this.listening;
   }
 
   listen(tap: ListenTap | null) {
-    if (this.listening) this.taps[this.listening].disconnect(this.listenGain);
+    this.listenNode?.disconnect(this.listenGain);
     this.listening = tap;
-    if (tap) this.taps[tap].connect(this.listenGain);
+    this.listenNode = tap ? this.taps[tap] : null;
+    this.listenNode?.connect(this.listenGain);
     this.fx.setMuted(tap !== null);
-  }
-
-  get modAmount() {
-    return this.mod;
-  }
-
-  /** Every voice still making sound, oldest first. */
-  voiceStates(): VoiceState[] {
-    return this.voices.map((v) => ({ note: v.note, velocity: v.velocity, triggeredAt: v.triggeredAt, releasedAt: v.releasedAt, random: v.random }));
-  }
-
-  /** The voice processor gets the parameters once for all its voices. */
-  private applyVoices() {
-    this.bankNode?.port.postMessage({ type: "params", values: this.params });
   }
 
   // --- notes
@@ -367,98 +269,55 @@ export class Engine {
   /**
    * `at` schedules the note ahead (the step sequencer does this); it defaults to now.
    * `slide` glides into the note on mono presets even when the preset's Glide is 0.
-   * `owner` keeps your keys and the sequencer apart: each only retriggers and releases its own notes,
-   * so the sequencer playing C3 doesn't cut off a C3 you are holding in a chord.
+   * `owner` is the part that plays it: your keys, or the step sequencer.
    */
   noteOn(note: number, velocity: number, at?: number, slide = false, owner: NoteOwner = "keys") {
-    if (!this.loaded) return;
-    const t = Math.max(at ?? 0, this.ctx.currentTime);
-    if (this.params.mono) return this.monoNoteOn(note, velocity, t, slide);
-
-    // Retriggering a held note: release the old voice first.
-    for (const v of this.voices) if (v.note === note && v.owner === owner && v.releasedAt === null) this.releaseVoice(v, t);
-    // Make room: within Max Voices, and within what the CPU can make without crackling.
-    const max = Math.round(this.params.maxVoices);
-    const weight = voiceWeight(this.params.unison);
-    while (this.voices.length) {
-      const full = this.voices.length >= max;
-      if (!full && this.weight() + weight <= this.cpuGuard.budget) break;
-      this.cut(t, !full);
-    }
-    const voice = this.newVoice(note, velocity, t);
-    voice.owner = owner;
-    this.voices.push(voice);
+    this.parts[owner].noteOn(note, velocity, Math.max(at ?? 0, this.ctx.currentTime), slide);
   }
 
   noteOff(note: number, at?: number, owner: NoteOwner = "keys") {
-    const t = Math.max(at ?? 0, this.ctx.currentTime);
-    if (this.params.mono) return this.monoNoteOff(note, t);
-    for (const v of this.voices) if (v.note === note && v.owner === owner && v.releasedAt === null) this.releaseVoice(v, t);
-  }
-
-  /** Total weight of the voices still sounding. */
-  private weight() {
-    return this.voices.reduce((sum, v) => sum + v.weight, 0);
-  }
-
-  /** Fade out one voice (see pickVictim for which). */
-  private cut(t: number, forCpu: boolean) {
-    const p = this.params;
-    const amp = { attack: p.attack, decay: p.decay, sustain: p.sustain, release: p.release };
-    const level = (v: Voice) => envelopeAt(amp, t, v.triggeredAt, v.releasedAt).level * (v.velocity / 127);
-    const victim = pickVictim(this.voices, level);
-    if (!victim) return;
-    victim.kill(t);
-    this.voices.splice(this.voices.indexOf(victim), 1);
-    if (forCpu) this.cpuCuts++;
-  }
-
-  private releaseVoice(v: Voice, t: number) {
-    const end = v.release(this.params, t);
-    v.stop(end);
-    setTimeout(() => {
-      const i = this.voices.indexOf(v);
-      if (i >= 0) this.voices.splice(i, 1);
-    }, (end - this.ctx.currentTime) * 1000 + 50);
-  }
-
-  private monoNoteOn(note: number, velocity: number, t: number, slide: boolean) {
-    this.held = this.held.filter((n) => n !== note);
-    this.held.push(note);
-    const v = this.monoVoice;
-    if (v && v.releasedAt === null) {
-      // Legato
-      v.glideTo(note, slide ? { ...this.params, glide: Math.max(this.params.glide, SLIDE_GLIDE) } : this.params, t);
-    } else if (v) {
-      v.glideTo(note, { ...this.params, glide: 0 }, t);
-      v.retrigger(velocity, t);
-    } else {
-      this.monoVoice = this.newVoice(note, velocity, t);
-      this.voices = [this.monoVoice];
-    }
-  }
-
-  private monoNoteOff(note: number, t: number) {
-    this.held = this.held.filter((n) => n !== note);
-    const v = this.monoVoice;
-    if (!v) return;
-    if (this.held.length) {
-      if (v.note === note) v.glideTo(this.held[this.held.length - 1], this.params, t);
-    } else {
-      // Release but keep the voice alive, so a quick next note can retrigger it.
-      v.release(this.params, t);
-    }
+    this.parts[owner].noteOff(note, Math.max(at ?? 0, this.ctx.currentTime));
   }
 
   allNotesOff() {
-    const t = this.ctx.currentTime;
-    for (const v of this.voices) v.kill(t);
-    this.voices = [];
-    this.monoVoice = null;
-    this.held = [];
+    for (const part of this.allParts) part.allNotesOff();
   }
 
   get activeVoices() {
-    return this.voices.filter((v) => v.releasedAt === null).length;
+    return this.parts.keys.activeVoices + this.parts.seq.activeVoices;
+  }
+
+  /** Total weight of every sounding voice, both parts. */
+  private weight() {
+    return this.allParts.reduce((sum, part) => sum + part.voices.reduce((s, v) => s + v.weight, 0), 0);
+  }
+
+  /**
+   * Before a part starts a voice: keep within its Max Voices (cutting its own notes), and within what
+   * the CPU can make without crackling (cutting from either part).
+   */
+  private makeRoom(part: Part, weight: number, t: number) {
+    const max = Math.round(part.params.maxVoices);
+    while (part.voices.length >= max) if (!this.cutFrom([part], t)) break;
+    while (this.weight() + weight > this.cpuGuard.budget) {
+      if (!this.cutForCpu(t)) break;
+    }
+  }
+
+  /** Cut one note to save CPU. A mono part's single voice is cut only when nothing else is left. */
+  private cutForCpu(t: number) {
+    const poly = this.allParts.filter((p) => !p.mono && p.voices.length);
+    const cut = this.cutFrom(poly.length ? poly : this.allParts, t);
+    if (cut) this.cpuCuts++;
+    return cut;
+  }
+
+  /** Fade out the voice pickVictim chooses among these parts' voices. */
+  private cutFrom(parts: Part[], t: number): boolean {
+    const voices = parts.flatMap((p) => p.voices);
+    const victim = pickVictim(voices, (v) => this.parts[v.owner].level(v, t));
+    if (!victim) return false;
+    this.parts[victim.owner].cut(victim, t);
+    return true;
   }
 }

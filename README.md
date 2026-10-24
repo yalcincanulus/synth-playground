@@ -16,7 +16,8 @@ Pad lights and the screen need the device in **DAW mode** (Shift + Prog).
 
 | MiniLab | Does |
 |---|---|
-| Keys | Play the synth |
+| Keys | Play the Keys part |
+| Shift + any key | Switch which part the knobs, faders, presets and Synth view edit: Keys or Sequencer |
 | Knobs 1–8 | Preset-specific parameters (shown on the OLED while turning) |
 | Faders 1–4 | Amp envelope: attack, decay, sustain, release |
 | Pitch / Mod strips | Pitch bend ±2 semitones / LFO depth to the preset's mod target |
@@ -25,6 +26,14 @@ Pad lights and the screen need the device in **DAW mode** (Shift + Prog).
 | Pads, bank A | Drum kit, recordable into the 16-step loop. Optional "Spectrum lights" turn them into a live 8-band meter |
 | Pads, bank B | Load 8 favourite presets (First Saw, Round Bass, Acid Line, Wobble, Warm Pad, Glass Strings, Brass Stab, Pluck) |
 | Shift + ▶ / ■ / ● / ⟲ / Tap | Play / stop / record the drum loop / clear it / tap tempo |
+
+### Two parts
+
+Two sounds play at once, each with its own preset: **Keys** (what you play) and **Sequencer** (what the step
+sequencer plays), e.g. a pad over a bass line. The switch above the presets (or Shift + any key) picks which part the
+knobs, faders, encoder, favourite pads, Dice and the Synth view edit. The keys always play the Keys part. Each part has
+its own Volume, chorus and delay/reverb amounts; the delay time and feedback and the room size are shared and come
+from the Keys part. The pitch and mod strips move the Keys part.
 
 ### Synth view
 

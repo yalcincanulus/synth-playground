@@ -68,7 +68,7 @@ export function stack(engine: Engine, color: () => string): Draw {
     g.strokeStyle = color();
     g.lineWidth = 2.5;
     g.shadowColor = color();
-    g.shadowBlur = engine.activeVoices > 0 ? 16 : 6;
+    g.shadowBlur = engine.part.activeVoices > 0 ? 16 : 6;
     g.stroke();
     g.shadowBlur = 0;
 

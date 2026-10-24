@@ -1,6 +1,7 @@
 import { SvelteSet } from "svelte/reactivity";
 import { DRUM_NAMES } from "../audio/drums";
 import { Engine, type CpuLoad, type ListenTap } from "../audio/engine";
+import type { NoteOwner } from "../audio/voice";
 import { formatValue, fromControl, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, PARAMS, slotIds, toControl, type ParamId, type ParamValues } from "../audio/params";
 import { WorkerClock } from "../audio/clock";
 import { Sequencer, type Pattern, type SequencerTiming, basicBeat, emptyPattern } from "../audio/sequencer";
@@ -76,6 +77,26 @@ export interface TimingReport {
   sequencer: SequencerTiming | null;
 }
 
+/** The two parts: Keys (what you play) and Sequencer (what the step sequencer plays). */
+export type PartId = NoteOwner;
+export const PART_NAMES: Record<PartId, string> = { keys: "Keys", seq: "Sequencer" };
+/** The Sequencer part starts on this preset, so a bass line plays under the Keys part's sound. */
+const SEQ_START_PRESET = "Round Bass";
+
+/** One part's sound: the preset it is on, its current settings, and whether they were edited since. */
+class PartState {
+  presetIndex = $state(0);
+  values = $state<ParamValues>(presetValues(FACTORY_PRESETS[0]));
+  dirty = $state(false);
+  /** A rolled Dice patch. While set, it is the current preset (not in the list until saved). */
+  dicePreset = $state<Preset | null>(null);
+
+  constructor(index: number) {
+    this.presetIndex = index;
+    this.values = presetValues(FACTORY_PRESETS[index]);
+  }
+}
+
 export class Playground {
   readonly engine = new Engine();
   readonly seq = new Sequencer(this.engine, new WorkerClock());
@@ -83,13 +104,14 @@ export class Playground {
   private freezes = new Freezes();
 
   presets = $state<Preset[]>([...FACTORY_PRESETS, ...loadUserPresets()]);
-  presetIndex = $state(0);
-  values = $state<ParamValues>(presetValues(FACTORY_PRESETS[0]));
-  dirty = $state(false);
+  /** Each part's sound. The knobs, faders, Synth view and preset browser edit the selected part. */
+  readonly parts: Record<PartId, PartState> = {
+    keys: new PartState(0),
+    seq: new PartState(Math.max(0, FACTORY_PRESETS.findIndex((p) => p.name === SEQ_START_PRESET))),
+  };
+  part = $state<PartId>("keys");
   /** Preset highlighted by the encoder but not loaded yet. */
   browseIndex = $state<number | null>(null);
-  /** A rolled Dice patch. While set, it is the current preset (not in the list until saved). */
-  dicePreset = $state<Preset | null>(null);
 
   /** Step mode: pads edit the drum loop (bank A = steps 1-8, bank B = 9-16) for one drum. */
   stepMode = $state(false);
@@ -153,6 +175,8 @@ export class Playground {
   private heldStep: number | null = null;
   private heldStepKeyed = false;
   private auditionNote: number | null = null;
+  /** Keys pressed with Shift to switch part: their release must not stop a note. */
+  private partKeys = new Set<number>();
   /** Keys used to transpose: their release must not stop a note. */
   private transposeKeys = new Set<number>();
   /** Fader pickup after the faders change job: a fader only takes over once it reaches the value it now controls. */
@@ -183,7 +207,8 @@ export class Playground {
     });
     this.noteSequencer.onStep = (step, time) => this.atAudioTime(time, () => this.moveSeqHead(step));
     this.seq.notes = this.noteSequencer;
-    this.engine.setParams(this.values);
+    this.engine.setParams(this.parts.keys.values, "keys");
+    this.engine.setParams(this.parts.seq.values, "seq");
     setInterval(() => (this.cpu = this.engine.cpu), 250);
     this.freezes.observe();
     setInterval(() => this.updateTiming(), 1000);
@@ -199,8 +224,55 @@ export class Playground {
     };
   }
 
+  // The selected part's sound: everything below reads and writes these.
+  get presetIndex() {
+    return this.parts[this.part].presetIndex;
+  }
+  set presetIndex(i: number) {
+    this.parts[this.part].presetIndex = i;
+  }
+  get values() {
+    return this.parts[this.part].values;
+  }
+  set values(v: ParamValues) {
+    this.parts[this.part].values = v;
+  }
+  get dirty() {
+    return this.parts[this.part].dirty;
+  }
+  set dirty(d: boolean) {
+    this.parts[this.part].dirty = d;
+  }
+  get dicePreset() {
+    return this.parts[this.part].dicePreset;
+  }
+  set dicePreset(p: Preset | null) {
+    this.parts[this.part].dicePreset = p;
+  }
+
   get preset(): Preset {
-    return this.dicePreset ?? this.presets[this.presetIndex];
+    return this.presetOf(this.part);
+  }
+
+  /** The preset a part is on. */
+  presetOf(part: PartId): Preset {
+    const s = this.parts[part];
+    return s.dicePreset ?? this.presets[s.presetIndex];
+  }
+
+  /** Edit and show another part: the knobs, faders, Synth view and preset browser follow it. */
+  selectPart(part: PartId) {
+    if (part === this.part) return;
+    this.part = part;
+    this.engine.select(part);
+    this.browseIndex = null;
+    this.faderLive.fill(false);
+    this.syncHardware();
+    this.showMessage("Part", `${PART_NAMES[part]}: ${this.preset.name}`);
+  }
+
+  togglePart() {
+    this.selectPart(this.part === "keys" ? "seq" : "keys");
   }
 
   async startAudio() {
@@ -256,10 +328,15 @@ export class Playground {
 
   deleteUserPreset() {
     if (!this.isUserPreset()) return;
+    const deleted = this.presetIndex;
     const user = loadUserPresets();
-    user.splice(this.presetIndex - FACTORY_PRESETS.length, 1);
+    user.splice(deleted - FACTORY_PRESETS.length, 1);
     saveUserPresets(user);
     this.presets = [...FACTORY_PRESETS, ...user];
+    // The other part keeps its sound; if it was on the deleted preset, it now counts as edited.
+    const other = this.parts[this.part === "keys" ? "seq" : "keys"];
+    if (other.presetIndex === deleted) other.dirty = true;
+    if (other.presetIndex >= deleted) other.presetIndex = Math.max(0, Math.min(other.presetIndex - (other.presetIndex > deleted ? 1 : 0), this.presets.length - 1));
     this.loadPreset(Math.min(this.presetIndex, this.presets.length - 1));
   }
 
@@ -893,6 +970,12 @@ export class Playground {
   private handle(e: ControlEvent) {
     switch (e.type) {
       case "key":
+        // Shift + a key switches part; that key doesn't play (nor does its release).
+        if (e.on && this.shift) {
+          this.partKeys.add(e.note);
+          return this.togglePart();
+        }
+        if (!e.on && this.partKeys.delete(e.note)) return;
         return e.on ? this.noteOn(e.note, e.velocity) : this.noteOff(e.note);
       case "knob": {
         this.notePrgm(e.program);
@@ -1069,7 +1152,7 @@ export class Playground {
   showHome() {
     const n = this.presets.length;
     const where = this.dicePreset ? "Dice" : `${this.presetIndex + 1}/${n}`;
-    this.sendDisplay(`${where} ${this.preset.category}`, this.preset.name);
+    this.sendDisplay(`${this.part === "keys" ? "Keys" : "Seq"} ${where}`, this.preset.name);
   }
 
   private messageTimer = 0;

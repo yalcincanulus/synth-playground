@@ -1,69 +1,49 @@
 /**
- * Effects and master chain:
+ * Effects and master chain. Each part (see part.ts) has its own way in, with its own volume, chorus
+ * and sends; the delay, reverb and master are shared:
  *
- *   synthIn -> chorus -> post --+--> master -> limiter -> analyser -> destination
- *                                +--> delay send --^
- *                                +--> reverb send -^
- *   drumIn  ---------------------+--> master (and a smaller reverb send)
+ *   part -> volume -> chorus -> post --+--> master -> limiter -> analyser -> destination
+ *                                      +--> delay send --> delay -^
+ *                                      +--> reverb send -> reverb -^
+ *   drumIn ----------------------------+--> master (and a smaller reverb send)
  */
 export class Fx {
-  readonly synthIn: GainNode;
   readonly drumIn: GainNode;
   readonly analyser: AnalyserNode;
-  /** Points inside the chain, for visualisation: after chorus, delay's wet output, reverb's wet output. */
-  readonly chorusOut: AudioNode;
+  /** The shared effects' wet outputs, for visualisation. */
   readonly delayOut: AudioNode;
   readonly reverbOut: AudioNode;
 
-  private chorusWet: GainNode;
-  private chorusDry: GainNode;
   private delay: DelayNode;
-  private delaySend: GainNode;
+  private delayIn: GainNode;
   private delayFeedback: GainNode;
   private reverb: ConvolverNode;
-  private reverbSend: GainNode;
+  private reverbIn: GainNode;
   private drumReverbSend: GainNode;
   private master: GainNode;
   private reverbSeconds = 0;
 
   constructor(private ctx: AudioContext) {
-    this.synthIn = new GainNode(ctx);
-    this.drumIn = new GainNode(ctx);
-    const post = new GainNode(ctx);
-    this.chorusOut = post;
     this.master = new GainNode(ctx);
-
-    // Chorus: two delay lines swept by slow LFOs in opposite phase, panned apart.
-    this.chorusDry = new GainNode(ctx);
-    this.chorusWet = new GainNode(ctx, { gain: 0 });
-    this.synthIn.connect(this.chorusDry).connect(post);
-    for (const [rate, pan] of [[0.31, -0.7], [0.43, 0.7]] as const) {
-      const d = new DelayNode(ctx, { delayTime: 0.015, maxDelayTime: 0.05 });
-      const lfo = new OscillatorNode(ctx, { frequency: rate });
-      const depth = new GainNode(ctx, { gain: 0.004 });
-      lfo.connect(depth).connect(d.delayTime);
-      lfo.start();
-      this.synthIn.connect(d).connect(new StereoPannerNode(ctx, { pan })).connect(this.chorusWet);
-    }
-    this.chorusWet.connect(post);
-    post.connect(this.master);
+    // The drums play at the level the old shared master gave them at the default volume (0.7, squared).
+    this.drumIn = new GainNode(ctx, { gain: 0.49 });
 
     // Delay with a darkening filter in the feedback loop.
     this.delay = new DelayNode(ctx, { maxDelayTime: 4 });
-    this.delaySend = new GainNode(ctx, { gain: 0 });
+    this.delayIn = new GainNode(ctx);
     this.delayFeedback = new GainNode(ctx, { gain: 0.35 });
     const tone = new BiquadFilterNode(ctx, { type: "lowpass", frequency: 3500 });
-    post.connect(this.delaySend).connect(this.delay).connect(tone).connect(this.delayFeedback).connect(this.delay);
+    this.delayIn.connect(this.delay).connect(tone).connect(this.delayFeedback).connect(this.delay);
     tone.connect(this.master);
     this.delayOut = tone;
 
     // Reverb: convolution with a generated noise-decay impulse.
     this.reverb = new ConvolverNode(ctx);
-    this.reverbSend = new GainNode(ctx, { gain: 0 });
+    this.reverbIn = new GainNode(ctx);
     this.drumReverbSend = new GainNode(ctx, { gain: 0 });
-    post.connect(this.reverbSend).connect(this.reverb).connect(this.master);
+    this.reverbIn.connect(this.reverb).connect(this.master);
     this.reverbOut = this.reverb;
-    this.drumIn.connect(this.drumReverbSend).connect(this.reverb);
+    this.drumIn.connect(this.drumReverbSend).connect(this.reverbIn);
     this.drumIn.connect(this.master);
 
     const limiter = new DynamicsCompressorNode(ctx, { threshold: -6, knee: 3, ratio: 20, attack: 0.002, release: 0.15 });
@@ -74,29 +54,22 @@ export class Fx {
 
   private mute: GainNode;
 
+  /** A new way in for one part. */
+  addPart(): PartFx {
+    return new PartFx(this.ctx, this.master, this.delayIn, this.reverbIn);
+  }
+
   /** Silence the main output (the output analyser still sees the signal). */
   setMuted(muted: boolean) {
     this.mute.gain.setTargetAtTime(muted ? 0 : 1, this.ctx.currentTime, 0.01);
   }
 
-  set(opts: {
-    chorus: number;
-    delayMix: number;
-    delaySeconds: number;
-    delayFeedback: number;
-    reverbMix: number;
-    reverbSize: number;
-    volume: number;
-  }) {
+  /** The shared settings (the Keys part's): delay time and feedback, room size, the drums' reverb. */
+  setShared(opts: { delaySeconds: number; delayFeedback: number; reverbMix: number; reverbSize: number }) {
     const t = this.ctx.currentTime;
-    this.chorusWet.gain.setTargetAtTime(opts.chorus * 0.8, t, 0.02);
-    this.chorusDry.gain.setTargetAtTime(1 - opts.chorus * 0.3, t, 0.02);
-    this.delaySend.gain.setTargetAtTime(opts.delayMix * 0.7, t, 0.02);
     this.delay.delayTime.setTargetAtTime(opts.delaySeconds, t, 0.05);
     this.delayFeedback.gain.setTargetAtTime(opts.delayFeedback, t, 0.02);
-    this.reverbSend.gain.setTargetAtTime(opts.reverbMix, t, 0.02);
     this.drumReverbSend.gain.setTargetAtTime(opts.reverbMix * 0.4, t, 0.02);
-    this.master.gain.setTargetAtTime(opts.volume * opts.volume, t, 0.02);
     this.setReverbSize(opts.reverbSize);
   }
 
@@ -121,6 +94,58 @@ export class Fx {
     this.pendingReverb = build;
     if (this.reverbSeconds === 0) build();
     else this.reverbTimer = window.setTimeout(build, 120);
+  }
+}
+
+/** One part's way into the effects: its volume, its own chorus, and its sends to the shared delay and reverb. */
+export class PartFx {
+  /** The part's voices go in here. */
+  readonly input: GainNode;
+  /** After the chorus, for visualisation. */
+  readonly chorusOut: AudioNode;
+  private chorusWet: GainNode;
+  private chorusDry: GainNode;
+  private delaySend: GainNode;
+  private reverbSend: GainNode;
+
+  constructor(
+    private ctx: AudioContext,
+    master: AudioNode,
+    delayIn: AudioNode,
+    reverbIn: AudioNode,
+  ) {
+    this.input = new GainNode(ctx);
+    const post = new GainNode(ctx);
+    this.chorusOut = post;
+
+    // Chorus: two delay lines swept by slow LFOs in opposite phase, panned apart.
+    this.chorusDry = new GainNode(ctx);
+    this.chorusWet = new GainNode(ctx, { gain: 0 });
+    this.input.connect(this.chorusDry).connect(post);
+    for (const [rate, pan] of [[0.31, -0.7], [0.43, 0.7]] as const) {
+      const d = new DelayNode(ctx, { delayTime: 0.015, maxDelayTime: 0.05 });
+      const lfo = new OscillatorNode(ctx, { frequency: rate });
+      const depth = new GainNode(ctx, { gain: 0.004 });
+      lfo.connect(depth).connect(d.delayTime);
+      lfo.start();
+      this.input.connect(d).connect(new StereoPannerNode(ctx, { pan })).connect(this.chorusWet);
+    }
+    this.chorusWet.connect(post);
+    post.connect(master);
+
+    this.delaySend = new GainNode(ctx, { gain: 0 });
+    this.reverbSend = new GainNode(ctx, { gain: 0 });
+    post.connect(this.delaySend).connect(delayIn);
+    post.connect(this.reverbSend).connect(reverbIn);
+  }
+
+  set(opts: { chorus: number; delayMix: number; reverbMix: number; volume: number }) {
+    const t = this.ctx.currentTime;
+    this.chorusWet.gain.setTargetAtTime(opts.chorus * 0.8, t, 0.02);
+    this.chorusDry.gain.setTargetAtTime(1 - opts.chorus * 0.3, t, 0.02);
+    this.delaySend.gain.setTargetAtTime(opts.delayMix * 0.7, t, 0.02);
+    this.reverbSend.gain.setTargetAtTime(opts.reverbMix, t, 0.02);
+    this.input.gain.setTargetAtTime(opts.volume * opts.volume, t, 0.02);
   }
 }
 

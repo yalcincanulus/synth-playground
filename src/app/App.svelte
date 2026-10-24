@@ -10,7 +10,7 @@
   import Scope from "./components/Scope.svelte";
   import SeqGrid from "./components/SeqGrid.svelte";
   import Spectrum from "./components/Spectrum.svelte";
-  import { Playground } from "./playground.svelte";
+  import { PART_NAMES, Playground } from "./playground.svelte";
   import SynthView from "./synth/SynthView.svelte";
   import WavetableView from "./wavetable/WavetableView.svelte";
   import AboutPage from "./about/AboutPage.svelte";
@@ -135,6 +135,14 @@
   </header>
 
   <section class="presets">
+    <div class="parts" role="group" aria-label="Part" title="Which sound the knobs, faders and presets edit (Shift + any key on the MiniLab)">
+      {#each ["keys", "seq"] as const as part (part)}
+        <button class:active={pg.part === part} onclick={() => pg.selectPart(part)}>
+          <span class="part-name">{PART_NAMES[part]}</span>
+          <span class="part-preset">{pg.presetOf(part).name}</span>
+        </button>
+      {/each}
+    </div>
     <button onclick={() => pg.loadPreset(pg.presetIndex - 1)} aria-label="Previous preset">◀</button>
     <!-- `selected` per option rather than select.value: the Dice option appears in the same update that selects it. -->
     <select onchange={(e) => pg.loadPreset(+e.currentTarget.value)}>
@@ -187,7 +195,7 @@
         <div class="center"></div>
         <span>Pitch</span>
       </div>
-      <div class="strip" title="Mod strip: adds LFO to {LFO_TARGETS[pg.values.modTarget]}">
+      <div class="strip" title="Mod strip: adds LFO to {LFO_TARGETS[pg.parts.keys.values.modTarget]} (Keys part)">
         <div class="mod" style:height="{pg.mod * 100}%"></div>
         <span>Mod</span>
       </div>
@@ -349,6 +357,12 @@
   .bpm input::-webkit-inner-spin-button, .bpm input::-webkit-outer-spin-button { appearance: none; margin: 0; }
 
   .presets { display: flex; align-items: center; gap: 6px; }
+  .parts { display: flex; gap: 2px; margin-right: 8px; }
+  .parts button { display: grid; text-align: left; padding: 2px 10px; line-height: 1.2; }
+  .parts button.active { border-color: var(--accent); }
+  .part-name { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); }
+  .parts button.active .part-name { color: var(--accent); }
+  .part-preset { font-size: 12.5px; }
   .presets select { min-width: 260px; font-size: 14px; padding: 5px 8px; }
   .browse { color: var(--accent); font-size: 12px; }
   .dirty { color: var(--dim); font-size: 12px; font-style: italic; }

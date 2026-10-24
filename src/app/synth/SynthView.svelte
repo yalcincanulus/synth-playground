@@ -11,7 +11,8 @@
   let { pg, accent }: { pg: Playground; accent: string } = $props();
 
   let engine = $derived(pg.engine);
-  let taps = $derived(engine.taps);
+  // The selected part's stages: follows the part switch.
+  let taps = $derived((pg.part, engine.taps));
   const color = () => accent;
   const values = () => pg.values;
   const noise = () => () => Math.random() * 2 - 1;
