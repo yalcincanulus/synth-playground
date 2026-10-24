@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { formatValue, PARAMS, toControl, type ParamId } from "../audio/params";
+  import { formatValue, LFO_TARGETS, PARAMS, toControl, type ParamId } from "../audio/params";
   import { FADERS } from "../presets/presets";
   import EnvelopeView from "./components/EnvelopeView.svelte";
   import Fader from "./components/Fader.svelte";
@@ -159,7 +159,7 @@
         <div class="center"></div>
         <span>Pitch</span>
       </div>
-      <div class="strip" title="Mod strip: adds LFO to {['pitch', 'filter', 'amp'][pg.values.modTarget]}">
+      <div class="strip" title="Mod strip: adds LFO to {LFO_TARGETS[pg.values.modTarget]}">
         <div class="mod" style:height="{pg.mod * 100}%"></div>
         <span>Mod</span>
       </div>

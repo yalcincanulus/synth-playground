@@ -16,7 +16,8 @@ export interface Preset {
 export const FADERS: [ParamId, ParamId, ParamId, ParamId] = ["attack", "decay", "sustain", "release"];
 
 // Wave indices: 0 sine, 1 triangle, 2 saw, 3 square.
-// Filter: 0 lowpass, 1 highpass, 2 bandpass. LFO/mod target: 0 pitch, 1 filter, 2 amp.
+// Filter: 0 lowpass, 1 highpass, 2 bandpass. LFO/mod target: 0 pitch, 1 filter, 2 amp, 3 pulse width.
+// Pitch envelope target: 0 both oscillators, 1 Osc 2 only.
 // Delay div: 0 1/16, 1 1/8, 2 3/16, 3 1/4, 4 3/8, 5 1/2.
 
 export const FACTORY_PRESETS: Preset[] = [
@@ -194,6 +195,48 @@ export const FACTORY_PRESETS: Preset[] = [
     color: [0, 127, 90],
     knobs: ["cutoff", "resonance", "osc2Semi", "osc2Detune", "lfoRate", "lfoDepth", "drive", "reverbSize"],
     values: { osc1Wave: 2, osc2Wave: 3, osc2Semi: -5, osc2Detune: 30, unison: 3, subLevel: 0.3, filterType: 2, cutoff: 600, resonance: 8, filterEnvAmt: 0, keyTrack: 0.6, lfoTarget: 1, lfoRate: 0.3, lfoDepth: 0.5, modTarget: 0, attack: 1.5, decay: 1, sustain: 1, release: 4, drive: 0.5, chorus: 0.3, delayMix: 0.25, delayDiv: 5, delayFeedback: 0.55, reverbMix: 0.55, reverbSize: 7, volume: 0.85 },
+  },
+  {
+    name: "Sync Lead",
+    category: "Lead",
+    color: [127, 30, 0],
+    knobs: ["pitchEnvAmt", "pitchEnvDecay", "osc2Semi", "oscMix", "cutoff", "resonance", "delayMix", "glide"],
+    values: { mono: 1, glide: 0.05, osc1Wave: 2, osc2Wave: 2, oscSync: 1, osc2Semi: 7, osc2Detune: 0, oscMix: 0.75, pitchEnvAmt: 24, pitchEnvDecay: 0.7, pitchEnvTarget: 1, cutoff: 5000, resonance: 1.5, filterEnvAmt: 0.5, filterDecay: 0.4, filterSustain: 0.6, keyTrack: 0.5, attack: 0.003, decay: 0.3, sustain: 0.9, release: 0.2, lfoRate: 5.5, modTarget: 0, drive: 0.2, delayMix: 0.25, delayDiv: 4, delayFeedback: 0.35, reverbMix: 0.15, volume: 0.6 },
+  },
+  {
+    name: "FM Bell",
+    category: "Keys",
+    color: [90, 127, 127],
+    knobs: ["fmAmount", "osc2Semi", "cutoff", "filterEnvAmt", "filterDecay", "decay", "reverbMix", "reverbSize"],
+    values: { osc1Wave: 0, osc2Wave: 0, osc2Semi: 22, osc2Detune: 0, oscMix: 0, fmAmount: 0.45, cutoff: 900, resonance: 0.7, filterEnvAmt: 4, filterAttack: 0.001, filterDecay: 1.4, filterSustain: 0.1, filterRelease: 1.5, keyTrack: 1, attack: 0.001, decay: 2.5, sustain: 0, release: 2, velocity: 0.8, chorus: 0.2, reverbMix: 0.4, reverbSize: 4, volume: 0.8 },
+  },
+  {
+    name: "PWM Strings",
+    category: "Pad",
+    color: [127, 70, 110],
+    knobs: ["pulseWidth", "lfo2Rate", "lfo2Depth", "cutoff", "osc2Detune", "chorus", "attack", "reverbMix"],
+    values: { osc1Wave: 3, osc2Wave: 3, osc2Detune: 9, pulseWidth: 0.3, unison: 2, cutoff: 2600, resonance: 0.8, filterEnvAmt: 0.5, filterAttack: 0.5, filterDecay: 1, filterSustain: 0.7, keyTrack: 0.5, lfo2Target: 3, lfo2Wave: 0, lfo2Rate: 0.35, lfo2Depth: 0.45, lfoRate: 5, modTarget: 0, attack: 0.45, decay: 1, sustain: 0.9, release: 1.3, velocity: 0.3, chorus: 0.5, reverbMix: 0.4, reverbSize: 4, volume: 0.65 },
+  },
+  {
+    name: "Pulse Bass",
+    category: "Bass",
+    color: [40, 127, 40],
+    knobs: ["pulseWidth", "cutoff", "resonance", "filterEnvAmt", "filterDecay", "subLevel", "lfoDepth", "glide"],
+    values: { mono: 1, glide: 0.03, osc1Wave: 3, oscMix: 0, pulseWidth: 0.15, subLevel: 0.5, cutoff: 350, resonance: 3, filterEnvAmt: 2.5, filterDecay: 0.22, filterSustain: 0.15, keyTrack: 0.4, lfoTarget: 3, lfoWave: 1, lfoRate: 0.6, lfoDepth: 0, modTarget: 3, attack: 0.002, decay: 0.3, sustain: 0.8, release: 0.08, drive: 0.25, reverbMix: 0 },
+  },
+  {
+    name: "Laser Zap",
+    category: "FX",
+    color: [127, 0, 60],
+    knobs: ["pitchEnvAmt", "pitchEnvDecay", "osc1Wave", "cutoff", "resonance", "decay", "delayMix", "delayFeedback"],
+    values: { osc1Wave: 3, osc2Wave: 2, osc2Semi: 12, oscMix: 0.3, pulseWidth: 0.25, pitchEnvAmt: 40, pitchEnvDecay: 0.3, cutoff: 6000, resonance: 4, filterEnvAmt: 0, keyTrack: 0.5, attack: 0.001, decay: 0.35, sustain: 0, release: 0.2, velocity: 0.5, delayMix: 0.3, delayDiv: 2, delayFeedback: 0.5, reverbMix: 0.15, volume: 0.6 },
+  },
+  {
+    name: "Synth Toms",
+    category: "FX",
+    color: [127, 90, 0],
+    knobs: ["pitchEnvAmt", "pitchEnvDecay", "decay", "noiseLevel", "cutoff", "drive", "osc1Wave", "reverbMix"],
+    values: { osc1Wave: 0, oscMix: 0, noiseLevel: 0.12, pitchEnvAmt: 14, pitchEnvDecay: 0.18, cutoff: 3000, resonance: 0.7, filterEnvAmt: 1.5, filterDecay: 0.08, filterSustain: 0, keyTrack: 0.5, attack: 0.001, decay: 0.45, sustain: 0, release: 0.4, velocity: 0.9, drive: 0.3, reverbMix: 0.2, reverbSize: 1.5, volume: 0.9 },
   },
 ];
 

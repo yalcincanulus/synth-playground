@@ -111,7 +111,7 @@ export class Playground {
   }
 
   async startAudio() {
-    await this.engine.resume();
+    await Promise.all([this.engine.resume(), this.engine.ready]);
     this.audioRunning = this.engine.ctx.state === "running";
   }
 

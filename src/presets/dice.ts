@@ -51,7 +51,7 @@ export function rollDice(): Preset {
     drive: chance(0.5) ? rand(0, 0.5) : 0,
     keyTrack: rand(0.2, 0.8),
     velocity: rand(0.3, 0.8),
-    lfoTarget: pick([0, 1, 1, 2]),
+    lfoTarget: pick([0, 1, 1, 2, 3]),
     lfoWave: pick([0, 1, 1, 2, 3, 4]),
     lfoSync: chance(0.3) ? pick([3, 4, 5]) : 0,
     lfoRate: expRand(0.1, 8),
@@ -62,6 +62,12 @@ export function rollDice(): Preset {
     lfo2Rate: expRand(0.05, 2),
     lfo2Depth: chance(0.35) ? rand(0.1, 0.4) : 0,
     modTarget: pick([0, 0, 1]),
+    pulseWidth: chance(0.4) ? rand(0.1, 0.5) : 0.5,
+    oscSync: archetype === "lead" && chance(0.3) ? 1 : 0,
+    fmAmount: chance(0.15) ? rand(0.1, 0.5) : 0,
+    pitchEnvAmt: chance(0.2) ? pick([rand(-2, 2), rand(5, 24)]) : 0,
+    pitchEnvDecay: expRand(0.03, 0.6),
+    pitchEnvTarget: 0,
     chorus: chance(0.5) ? rand(0.1, 0.7) : 0,
     delayMix: chance(0.45) ? rand(0.1, 0.4) : 0,
     delayDiv: pick([1, 2, 3, 4]),
@@ -99,14 +105,19 @@ export function rollDice(): Preset {
       break;
   }
 
+  // Sync on its own changes little: pair it with a pitch envelope on Osc 2 for the sweep.
+  if (v.oscSync) Object.assign(v, { pitchEnvAmt: rand(8, 30), pitchEnvDecay: expRand(0.2, 1.2), pitchEnvTarget: 1, oscMix: rand(0.5, 0.9) });
+
   // The filter usually closes a little faster or slower than the volume fades.
   v.filterRelease = (v.release ?? 0.3) * rand(0.5, 1.5);
 
   // Knobs: the filter core, then four of the parameters this roll actually uses.
-  const optional: ParamId[] = ["osc2Detune", "osc2Semi", "oscMix", "lfoRate", "lfoDepth", "drive", "chorus", "delayMix", "reverbMix", "subLevel", "glide"];
+  const optional: ParamId[] = ["pitchEnvAmt", "fmAmount", "pulseWidth", "osc2Detune", "osc2Semi", "oscMix", "lfoRate", "lfoDepth", "drive", "chorus", "delayMix", "reverbMix", "subLevel", "glide"];
   const used = optional.filter((id) => {
     if (id === "lfoRate") return (v.lfoDepth ?? 0) > 0;
     if (id === "glide") return mono;
+    if (id === "pulseWidth") return v.osc1Wave === 3 || v.osc2Wave === 3;
+    if (id === "pitchEnvAmt") return Math.abs(v.pitchEnvAmt ?? 0) > 0;
     if (id === "osc2Semi" || id === "osc2Detune" || id === "oscMix") return true;
     return (v[id] ?? 0) > 0;
   });

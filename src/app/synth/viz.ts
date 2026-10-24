@@ -4,7 +4,8 @@
 import { envelopeAt, type Adsr, type EnvPoint } from "../../audio/envelope";
 import { Engine, LFO_FILTER_CENTS } from "../../audio/engine";
 import { biquadMagnitude } from "../../audio/filterResponse";
-import { DELAY_DIV_BEATS, DELAY_DIVS, LFO_SYNCS, toControl, WAVES, type ParamValues } from "../../audio/params";
+import { naive, shapeAt as oscShapeAt } from "../../audio/oscCore";
+import { DELAY_DIV_BEATS, DELAY_DIVS, LFO_SYNCS, toControl, type ParamValues } from "../../audio/params";
 import { filterBase } from "../../audio/voice";
 import { freqX, FREQ_GRID, grid, xFreq, type Surface } from "../components/canvas";
 
@@ -23,14 +24,21 @@ function label(g: CanvasRenderingContext2D, text: string, x: number, y: number, 
   g.textAlign = "left";
 }
 
-/** One cycle of an ideal wave, phase 0..1 -> -1..1. */
-export function idealWave(wave: number): (phase: number) => number {
-  switch (WAVES[wave]) {
-    case "sine": return (p) => Math.sin(2 * Math.PI * p);
-    case "triangle": return (p) => (p < 0.25 ? 4 * p : p < 0.75 ? 2 - 4 * p : 4 * p - 4);
-    case "sawtooth": return (p) => (p < 0.5 ? 2 * p : 2 * p - 2);
-    default: return (p) => (p < 0.5 ? 1 : -1);
-  }
+/** Two cycles of an ideal wave, x 0..1 -> -1..1. */
+export function idealWave(wave: number, width = 0.5): (x: number) => number {
+  return (x) => naive(wave, (x * 2) % 1, width);
+}
+
+/**
+ * What Osc 1 or Osc 2 would produce, over two cycles of Osc 1: with pulse width,
+ * sync (Osc 2 restarting with Osc 1) and FM (Osc 2 bending Osc 1) applied.
+ */
+export function oscIdeal(v: ParamValues, which: 0 | 1): (x: number) => number {
+  const shape = {
+    wave1: v.osc1Wave, wave2: v.osc2Wave, width: v.pulseWidth, sync: v.oscSync === 1, fm: v.fmAmount,
+    ratio: Math.pow(2, (v.osc2Semi * 100 + v.osc2Detune) / 1200),
+  };
+  return (x) => oscShapeAt(shape, x)[which];
 }
 
 // ---------------------------------------------------------------- live scope
@@ -56,7 +64,7 @@ export function scope(analyser: () => AnalyserNode, color: () => string, ideal?:
       g.lineWidth = 1.5;
       g.beginPath();
       for (let x = 0; x <= w; x++) {
-        const y = h / 2 - f(((x / w) * 2) % 1) * h * 0.38;
+        const y = h / 2 - f(x / w) * h * 0.38;
         if (x === 0) g.moveTo(x, y);
         else g.lineTo(x, y);
       }
@@ -300,6 +308,51 @@ export function envelope(engine: Engine, kind: "amp" | "filter", color: () => st
       g.shadowBlur = 0;
     }
     if (kind === "filter" && Math.abs(p.filterEnvAmt) < 0.05) label(g, "Amount is 0: no effect", w / 2, h / 2, "#ffffff70", "center");
+  };
+}
+
+// ---------------------------------------------------------------- pitch envelope
+
+/** Pitch offset over time (starts at Amount, slides to 0), with a dot per sounding note. */
+export function pitchEnvelope(engine: Engine, color: () => string): Draw {
+  return ({ g, w, h }) => {
+    const p = engine.params;
+    const amt = p.pitchEnvAmt;
+    const pad = 6;
+    const mid = amt >= 0 ? h - 10 : 14;
+    const far = amt >= 0 ? 14 : h - 10;
+    // Show 1.5 decay times; the curve is close to 0 by one decay time.
+    const span = p.pitchEnvDecay * 1.5;
+    const X = (t: number) => pad + (t / span) * (w - pad * 2);
+    const Y = (st: number) => (amt === 0 ? mid : mid + (st / amt) * (far - mid));
+    const at = (t: number) => amt * Math.exp(-t / (p.pitchEnvDecay / 4));
+    grid(g, w, h, [], [mid]);
+    label(g, "note's pitch", w - 4, mid + (amt >= 0 ? -3 : 10), "#ffffff50", "right");
+    if (Math.abs(amt) < 0.05) return label(g, "Amount is 0: no effect", w / 2, h / 2, "#ffffff70", "center");
+    label(g, `${amt > 0 ? "+" : ""}${amt.toFixed(1)} st`, pad + 4, far + (amt >= 0 ? 8 : -2), "#ffffff90");
+
+    g.beginPath();
+    for (let i = 0; i <= 48; i++) {
+      const t = (span * i) / 48;
+      if (i === 0) g.moveTo(X(t), Y(at(t)));
+      else g.lineTo(X(t), Y(at(t)));
+    }
+    g.strokeStyle = color();
+    g.lineWidth = 2;
+    g.stroke();
+
+    const now = engine.ctx.currentTime;
+    for (const v of engine.voiceStates()) {
+      const t = now - v.triggeredAt;
+      if (t > span || v.releasedAt !== null) continue;
+      g.fillStyle = "#fff";
+      g.shadowColor = color();
+      g.shadowBlur = 10;
+      g.beginPath();
+      g.arc(X(t), Y(at(t)), 4, 0, Math.PI * 2);
+      g.fill();
+      g.shadowBlur = 0;
+    }
   };
 }
 

@@ -14,6 +14,11 @@
     /** Drawn faint: connected but currently doing nothing. */
     idle?: boolean;
     label?: string;
+    /** Where along the side the cable attaches, 0..1 (default: the middle). */
+    fromAt?: number;
+    toAt?: number;
+    /** Most the cable may bulge out from its blocks, in px. */
+    reach?: number;
   }
 </script>
 
@@ -48,20 +53,20 @@
 
   const NORMAL: Record<Side, [number, number]> = { l: [-1, 0], r: [1, 0], t: [0, -1], b: [0, 1] };
 
-  function anchor(r: Rect, side: Side): [number, number] {
-    if (side === "l") return [r.x, r.y + r.h / 2];
-    if (side === "r") return [r.x + r.w, r.y + r.h / 2];
-    if (side === "t") return [r.x + r.w / 2, r.y];
-    return [r.x + r.w / 2, r.y + r.h];
+  function anchor(r: Rect, side: Side, at = 0.5): [number, number] {
+    if (side === "l") return [r.x, r.y + r.h * at];
+    if (side === "r") return [r.x + r.w, r.y + r.h * at];
+    if (side === "t") return [r.x + r.w * at, r.y];
+    return [r.x + r.w * at, r.y + r.h];
   }
 
   function path(c: Cable): string | null {
     const a = rects[c.from];
     const b = rects[c.to];
     if (!a || !b) return null;
-    const [x0, y0] = anchor(a, c.fromSide);
-    const [x3, y3] = anchor(b, c.toSide);
-    const k = Math.max(28, Math.hypot(x3 - x0, y3 - y0) * 0.35);
+    const [x0, y0] = anchor(a, c.fromSide, c.fromAt);
+    const [x3, y3] = anchor(b, c.toSide, c.toAt);
+    const k = Math.min(c.reach ?? Infinity, Math.max(28, Math.hypot(x3 - x0, y3 - y0) * 0.35));
     const [n0x, n0y] = NORMAL[c.fromSide];
     const [n3x, n3y] = NORMAL[c.toSide];
     return `M ${x0} ${y0} C ${x0 + n0x * k} ${y0 + n0y * k}, ${x3 + n3x * k} ${y3 + n3y * k}, ${x3} ${y3}`;

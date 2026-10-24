@@ -8,7 +8,8 @@
   const SHORT: Record<string, string> = {
     sine: "Sine", triangle: "Tri", sawtooth: "Saw", square: "Sqr",
     lowpass: "LP", highpass: "HP", bandpass: "BP",
-    pitch: "Pitch", filter: "Filter", amp: "Amp", poly: "Poly", mono: "Mono",
+    pitch: "Pitch", filter: "Filter", amp: "Amp", width: "Width", poly: "Poly", mono: "Mono",
+    off: "Off", on: "On", both: "Both", "osc 2": "Osc 2",
   };
 
   let def: ParamDef = $derived(PARAMS[id]);
@@ -25,7 +26,8 @@
     </select>
   </label>
 {:else if def.options}
-  <div class="enum" class:hot={pg.touched?.param === id}>
+  <!-- Two-way switches fit in one cell, next to a knob; longer lists take the whole row. -->
+  <div class="enum" class:short={def.options.length <= 2} class:hot={pg.touched?.param === id}>
     <div class="label">{#if knob}<span class="k" title="MiniLab knob {knob}">{knob}</span>{/if}{def.label}</div>
     <div class="options">
       {#each def.options as option, i}
@@ -50,6 +52,7 @@
 
 <style>
   .enum { display: flex; flex-direction: column; gap: 3px; grid-column: 1 / -1; }
+  .enum.short { grid-column: auto; align-items: center; padding-top: 6px; }
   .select { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; }
   .select select { font-size: 11px; padding: 1px 4px; max-width: 60%; }
   .label { font-size: 11px; color: var(--text); }

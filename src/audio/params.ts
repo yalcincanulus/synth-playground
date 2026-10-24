@@ -17,7 +17,7 @@ export interface ParamDef {
 
 export const WAVES = ["sine", "triangle", "sawtooth", "square"] as const;
 export const FILTER_TYPES = ["lowpass", "highpass", "bandpass"] as const;
-export const LFO_TARGETS = ["pitch", "filter", "amp"] as const;
+export const LFO_TARGETS = ["pitch", "filter", "amp", "width"] as const;
 export const LFO_WAVES = ["sine", "triangle", "saw", "square", "random"] as const;
 /** LFO tempo sync: "off" uses the Rate knob, otherwise one cycle lasts this many beats. */
 export const LFO_SYNCS = ["off", "2 bars", "1 bar", "1/2", "1/4", "1/8", "1/16"] as const;
@@ -43,6 +43,9 @@ export const PARAMS = {
   oscMix: { label: "Osc Mix", min: 0, max: 1, curve: "lin", default: 0.5, format: (v) => `${Math.round((1 - v) * 100)}/${Math.round(v * 100)}` },
   subLevel: { label: "Sub Osc", min: 0, max: 1, curve: "lin", default: 0, format: pct },
   noiseLevel: { label: "Noise", min: 0, max: 1, curve: "lin", default: 0, format: pct },
+  pulseWidth: { label: "PulseWidth", min: 0.05, max: 0.5, curve: "lin", default: 0.5, format: pct },
+  oscSync: enumParam("Sync", ["off", "on"], 0),
+  fmAmount: { label: "FM Amount", min: 0, max: 1, curve: "lin", default: 0, format: pct },
   unison: { label: "Unison", min: 1, max: 3, curve: "int", default: 1, format: (v) => `${v} voice${v > 1 ? "s" : ""}` },
 
   // Filter
@@ -56,6 +59,11 @@ export const PARAMS = {
   filterSustain: { label: "F Sustain", min: 0, max: 1, curve: "lin", default: 0.2, format: pct },
   filterRelease: { label: "F Release", min: 0.01, max: 8, curve: "exp", default: 0.3, format: sec },
   keyTrack: { label: "Key Track", min: 0, max: 1, curve: "lin", default: 0.5, format: pct },
+
+  // Pitch envelope
+  pitchEnvAmt: { label: "Pitch Env", min: -48, max: 48, curve: "lin", default: 0, format: signed(" st", 1) },
+  pitchEnvDecay: { label: "P Decay", min: 0.005, max: 3, curve: "exp", default: 0.15, format: sec },
+  pitchEnvTarget: enumParam("P Env To", ["both", "osc 2"], 0),
 
   // Amp envelope (on the faders)
   attack: { label: "Attack", min: 0.001, max: 5, curve: "exp", default: 0.005, format: sec },

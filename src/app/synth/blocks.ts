@@ -4,7 +4,7 @@ import type { ParamId } from "../../audio/params";
 export type BlockId =
   | "osc1" | "osc2" | "subNoise" | "mixer" | "drive" | "filter" | "amp"
   | "chorus" | "delay" | "reverb" | "output"
-  | "lfo" | "lfo2" | "filterEnv" | "ampEnv" | "perf";
+  | "lfo" | "lfo2" | "filterEnv" | "ampEnv" | "pitchEnv" | "perf";
 
 export interface BlockDef {
   title: string;
@@ -22,16 +22,16 @@ export const BLOCKS: Record<BlockId, BlockDef> = {
   osc1: {
     title: "Oscillator 1",
     short: "Makes the raw tone. The wave shape sets its character.",
-    explain: "Makes the raw tone. The wave shape sets its character: sine is pure, triangle mellow, sawtooth bright and buzzy, square hollow.",
-    tryThis: "Hold a note and switch the wave shape. Watch the picture change and listen.",
-    params: ["osc1Wave"],
+    explain: "Makes the raw tone. The wave shape sets its character: sine is pure, triangle mellow, sawtooth bright and buzzy, square hollow. Pulse Width changes the square: at 50% it is an even square, narrower pulses sound thinner and more nasal (it applies to the square wave of both oscillators). Moving the width slowly with an LFO ('PWM') gives the lush, animated sound of classic analog strings.",
+    tryThis: "Pick the square wave, hold a note and turn Pulse Width down from 50%. Then set LFO 2 to Width with a slow sine to hear PWM.",
+    params: ["osc1Wave", "pulseWidth"],
   },
   osc2: {
     title: "Oscillator 2",
-    short: "A second tone you can shift in pitch or detune.",
-    explain: "A second tone. Shift its pitch (12 semitones = one octave) or detune it slightly against Osc 1 for a thicker, moving sound.",
-    tryThis: "Set Osc Mix to the middle, then slowly raise Detune: the two tones start to 'beat' against each other.",
-    params: ["osc2Wave", "osc2Semi", "osc2Detune"],
+    short: "A second tone you can shift in pitch, sync or use for FM.",
+    explain: "A second tone. Shift its pitch (12 semitones = one octave) or detune it slightly against Osc 1 for a thicker, moving sound. Sync restarts Osc 2's wave every time Osc 1 starts a cycle: Osc 2's pitch then changes its tone instead of its note, which gives the 'screaming' sync sound. FM uses Osc 2 to wobble Osc 1's pitch hundreds of times a second: too fast to hear as wobble, it turns into new, often metallic or bell-like tones (Osc 1's picture shows the bent wave).",
+    tryThis: "Sync: turn Sync on, set Osc Mix towards Osc 2, hold a note and sweep Osc2 Pitch. FM: set both oscillators to sine, Osc Mix to Osc 1, Osc2 Pitch to +19 and raise FM Amount.",
+    params: ["osc2Wave", "osc2Semi", "osc2Detune", "oscSync", "fmAmount"],
   },
   subNoise: {
     title: "Sub & Noise",
@@ -124,6 +124,13 @@ export const BLOCKS: Record<BlockId, BlockDef> = {
     tryThis: "A long Attack makes a slow swell. Sustain 0 with a short Decay makes a pluck.",
     params: ["attack", "decay", "sustain", "release"],
   },
+  pitchEnv: {
+    title: "Pitch Envelope",
+    short: "Bends each note's pitch at its start.",
+    explain: "Starts every note off its pitch by Amount (in semitones; negative starts below) and slides it back to the note's real pitch in the Decay time. Big amounts with a short decay make laser zaps and synth drums; a small amount gives a little 'scoop' into each note. 'Osc 2' moves only Osc 2: combined with Sync, that sweeps Osc 2's tone at the start of every note, the classic sync lead.",
+    tryThis: "Set Amount to +24 and Decay to 100 ms, then play low notes: a synth tom. Then try +48 with 300 ms for a laser.",
+    params: ["pitchEnvAmt", "pitchEnvDecay", "pitchEnvTarget"],
+  },
   perf: {
     title: "Playing",
     short: "How your playing shapes the sound.",
@@ -151,6 +158,11 @@ export const KNOB_PAGES: KnobPage[] = [
     name: "Filter",
     knobs: ["cutoff", "resonance", "filterType", "keyTrack", "drive", "filterEnvAmt", "filterAttack", "filterDecay"],
     blocks: ["drive", "filter"],
+  },
+  {
+    name: "Osc Tricks",
+    knobs: ["pulseWidth", "oscSync", "fmAmount", "osc2Semi", "pitchEnvAmt", "pitchEnvDecay", "pitchEnvTarget", "oscMix"],
+    blocks: ["pitchEnv"],
   },
   {
     name: "Envelopes",

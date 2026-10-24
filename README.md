@@ -29,13 +29,14 @@ Pad lights and the screen need the device in **DAW mode** (Shift + Prog).
 ### Synth view
 
 The **Synth** tab draws the whole synth as blocks in signal order (oscillators → mixer → drive → filter →
-amp → effects → output), with the modulators below (playing, two LFOs, filter and amp envelopes). Every
+amp → effects → output), with the modulators below (pitch envelope, playing, two LFOs, filter and amp
+envelopes). The oscillators also do pulse width (and PWM from an LFO), hard sync and FM. Every
 block shows its live signal and all its controls, and coloured cables show what modulates what. Short
 explanations are on each block; the selected block's full explanation and a "Try this" are in the strip
 at the top. The 🎧 button on a block (or an encoder click) lets you hear the sound at that point only.
 
 In this view the MiniLab knobs follow the selected block: click a block, or turn the encoder to step
-through the knob pages (Sources, Filter, Envelopes, LFO 1, LFO 2, Playing, Effects). Shift + encoder
+through the knob pages (Sources, Filter, Osc Tricks, Envelopes, LFO 1, LFO 2, Playing, Effects). Shift + encoder
 switches between the playground's waveform, spectrum and the Synth view.
 
 Without a MiniLab, the computer keyboard plays notes (A row; Z/X change octave), and every control works with the mouse.
@@ -43,7 +44,8 @@ Without a MiniLab, the computer keyboard plays notes (A row; Z/X change octave),
 ## Layout
 
 - `src/minilab/`: MiniLab 3 protocol (decoding, SysEx builders) and the port connection. See `docs/minilab3-protocol.md`.
-- `src/audio/`: Web Audio engine: voices, effects, drums, sequencer, parameter definitions.
+- `src/audio/`: Web Audio engine: voices, effects, drums, sequencer, parameter definitions. The oscillators
+  are an AudioWorklet (`osc.worklet.ts`, anti-aliased with polyBLEP) so they can do sync and FM.
 - `src/presets/`: factory presets; user presets are stored in localStorage.
 - `src/app/`: Svelte UI. `playground.svelte.ts` connects the device, the engine and the UI.
 - `src/probe/`: the raw MIDI probe page used to map the device.

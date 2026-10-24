@@ -21,6 +21,8 @@
   const FENV = "#ff7ab6";
   const AENV = "#7ab8ff";
   const PLAY = "#b388ff";
+  const PENV = "#5ee0a0";
+  const OSC = "#ff6b6b";
 
   let container = $state<HTMLElement>();
 
@@ -32,7 +34,7 @@
     const list: Cable[] = [
       audio("osc1", "mixer", "r", "l"),
       audio("osc2", "mixer", "r", "l"),
-      audio("subNoise", "mixer", "r", "l"),
+      audio("subNoise", "mixer", "b", "t"),
       audio("mixer", "drive", "b", "t"),
       audio("drive", "filter", "r", "l"),
       audio("filter", "amp", "r", "l"),
@@ -46,7 +48,9 @@
     ];
 
     // LFOs: depth per target (the mod strip adds to LFO 1's mod target); dash speed follows the LFO.
-    const lfoTargets: [number, string, Cable["toSide"], string][] = [[0, "osc2", "r", "pitch"], [1, "filter", "b", "filter cutoff"], [2, "amp", "l", "volume"]];
+    const lfoTargets: [number, string, Cable["toSide"], string][] = [
+      [0, "osc2", "r", "pitch"], [1, "filter", "b", "filter cutoff"], [2, "amp", "l", "volume"], [3, "osc1", "r", "pulse width"],
+    ];
     const lfoSetups = [
       { from: "lfo", color: LFO, target: v.lfoTarget, depth: v.lfoDepth, rate: v.lfoRate, sync: v.lfoSync, mod: true },
       { from: "lfo2", color: LFO2, target: v.lfo2Target, depth: v.lfo2Depth, rate: v.lfo2Rate, sync: v.lfo2Sync, mod: false },
@@ -63,7 +67,16 @@
     const envAmt = Math.abs(v.filterEnvAmt);
     list.push({ from: "filterEnv", to: "filter", fromSide: "t", toSide: "b", kind: "mod", color: FENV, width: 1.5 + Math.min(1, envAmt / 4) * 5, idle: envAmt < 0.05, label: "Filter envelope → cutoff" });
     list.push({ from: "ampEnv", to: "amp", fromSide: "t", toSide: "l", kind: "mod", color: AENV, width: 4, label: "Amp envelope → volume" });
-    list.push({ from: "perf", to: "subNoise", fromSide: "t", toSide: "b", kind: "mod", color: PLAY, width: 1.5 + Math.abs(pg.bend) * 4, idle: pg.bend === 0, label: "Pitch strip → oscillator pitch" });
+    // Pitch envelope: up the left edge into the oscillators it moves.
+    const penv = Math.abs(v.pitchEnvAmt);
+    list.push({
+      from: "pitchEnv", to: v.pitchEnvTarget ? "osc2" : "osc1", fromSide: "l", toSide: "l", reach: 26, kind: "mod", color: PENV,
+      width: 1.5 + Math.min(1, penv / 24) * 5, period: 0.8, idle: penv < 0.05, label: `Pitch envelope → ${v.pitchEnvTarget ? "Osc 2" : "both oscillators'"} pitch`,
+    });
+    // Oscillator to oscillator, at audio speed: two short cables in the gap between Osc 1 and Osc 2.
+    list.push({ from: "osc1", to: "osc2", fromSide: "b", toSide: "t", fromAt: 0.3, toAt: 0.3, kind: "mod", color: OSC, width: 3, period: 0.15, idle: !v.oscSync, label: "Sync: Osc 1 restarts Osc 2" });
+    list.push({ from: "osc2", to: "osc1", fromSide: "t", toSide: "b", fromAt: 0.7, toAt: 0.7, kind: "mod", color: OSC, width: 1.5 + v.fmAmount * 5, period: 0.15, idle: v.fmAmount < 0.01, label: "FM: Osc 2 bends Osc 1's pitch" });
+    list.push({ from: "perf", to: "osc2", fromSide: "t", toSide: "b", kind: "mod", color: PLAY, width: 1.5 + Math.abs(pg.bend) * 4, idle: pg.bend === 0, label: "Pitch strip → oscillator pitch" });
     list.push({ from: "perf", to: "lfo", fromSide: "r", toSide: "l", kind: "mod", color: PLAY, width: 1.5 + pg.mod * 5, idle: pg.mod === 0, label: "Mod strip → LFO depth" });
     return list;
   });
@@ -80,6 +93,8 @@
       <span><i class="dash" style:color={LFO2}></i>LFO 2</span>
       <span><i class="dash" style:color={FENV}></i>filter envelope</span>
       <span><i class="dash" style:color={AENV}></i>amp envelope</span>
+      <span><i class="dash" style:color={PENV}></i>pitch envelope</span>
+      <span><i class="dash" style:color={OSC}></i>sync / FM</span>
       <span><i class="dash" style:color={PLAY}></i>your playing</span>
     </div>
     {#if pg.listening}
@@ -113,10 +128,13 @@
 
   <div class="diagram" bind:this={container}>
     <div class="col">
-      <Block {pg} id="osc1"><LiveCanvas height={40} draw={viz.scope(() => taps.osc1, color, () => viz.idealWave(pg.values.osc1Wave))} /></Block>
-      <Block {pg} id="osc2" inactive={pg.values.oscMix < 0.01 ? "mixed out" : null}>
-        <LiveCanvas height={40} draw={viz.scope(() => taps.osc2, color, () => viz.idealWave(pg.values.osc2Wave))} />
+      <Block {pg} id="osc1"><LiveCanvas height={40} draw={viz.scope(() => taps.osc1, color, () => viz.oscIdeal(pg.values, 0))} /></Block>
+      <Block {pg} id="osc2" inactive={pg.values.oscMix < 0.01 ? (pg.values.fmAmount >= 0.01 ? "FM only" : "mixed out") : null}>
+        <LiveCanvas height={40} draw={viz.scope(() => taps.osc2, color, () => viz.oscIdeal(pg.values, 1))} />
       </Block>
+    </div>
+
+    <div class="col">
       <Block {pg} id="subNoise" inactive={pg.values.subLevel < 0.01 && pg.values.noiseLevel < 0.01 ? "both at 0" : null}>
         <div class="pair">
           {#each [["sub", "Sub"], ["noise", "Noise"]] as const as [tap, name] (tap)}
@@ -136,9 +154,6 @@
           {/each}
         </div>
       </Block>
-    </div>
-
-    <div class="col">
       <Block {pg} id="mixer">
         <LiveCanvas height={50} draw={viz.mixer(values, color)} />
         <LiveCanvas height={34} draw={viz.scope(() => taps.mix, color)} />
@@ -170,19 +185,12 @@
       <Block {pg} id="reverb" inactive={pg.values.reverbMix < 0.01 ? "off" : null}><LiveCanvas height={36} draw={viz.reverb(values, color)} /></Block>
     </div>
 
-    <div class="col mods">
+    <div class="mods">
+      <Block {pg} id="pitchEnv"><LiveCanvas height={56} draw={viz.pitchEnvelope(engine, () => PENV)} /></Block>
       <Block {pg} id="perf"><LiveCanvas height={60} draw={viz.playing(engine, () => pg.bend, () => pg.mod, () => PLAY)} /></Block>
-    </div>
-    <div class="col mods">
       <Block {pg} id="lfo"><LiveCanvas height={56} draw={viz.lfo(engine, 0, () => LFO)} /></Block>
-    </div>
-    <div class="col mods">
       <Block {pg} id="lfo2"><LiveCanvas height={56} draw={viz.lfo(engine, 1, () => LFO2)} /></Block>
-    </div>
-    <div class="col mods">
       <Block {pg} id="filterEnv"><LiveCanvas height={70} draw={viz.envelope(engine, "filter", () => FENV)} /></Block>
-    </div>
-    <div class="col mods">
       <Block {pg} id="ampEnv"><LiveCanvas height={70} draw={viz.envelope(engine, "amp", () => AENV)} /></Block>
     </div>
 
@@ -215,7 +223,8 @@
   .listen-mini { position: absolute; top: -2px; right: 0; padding: 0 3px; font-size: 10px; line-height: 14px; background: none; opacity: 0.55; }
   .listen-mini.on { opacity: 1; background: #ffcc33; border-color: #ffcc33; }
   .listening { flex: 1; text-align: left; background: #ffcc3322; border-color: #ffcc33; color: #ffe08a; font-size: 12px; }
-  .mods { grid-row: 2; }
+  /* The modulators: one row of six under the signal path. */
+  .mods { grid-row: 2; grid-column: 1 / -1; display: grid; grid-template-columns: repeat(6, 1fr); gap: 34px; align-items: start; }
   .detail {
     display: grid; grid-template-columns: 1.6fr 1fr 1.3fr; gap: 20px; align-items: start;
     background: #10171a; border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; font-size: 12px; line-height: 1.4;

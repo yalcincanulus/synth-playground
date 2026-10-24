@@ -1,4 +1,4 @@
-import { FILTER_TYPES, WAVES, type ParamValues } from "./params";
+import { FILTER_TYPES, type ParamValues } from "./params";
 
 /** Shared nodes a voice plugs into. Owned by the engine. */
 export interface VoiceContext {
@@ -9,6 +9,8 @@ export interface VoiceContext {
   pitchMod: AudioNode;
   /** Filter modulation in cents (LFO), added to every filter's detune. */
   filterMod: AudioNode;
+  /** Pulse width modulation (LFO), added to every oscillator's width. */
+  widthMod: AudioNode;
   driveCurve: (drive: number) => Float32Array<ArrayBuffer> | null;
   /** Shared analysers that every voice also feeds, so each stage can be visualised. */
   taps: VoiceTaps;
@@ -37,6 +39,9 @@ export function filterBase(p: ParamValues, note: number) {
   return Math.min(20000, p.cutoff * Math.pow(2, ((note - 60) / 12) * p.keyTrack));
 }
 
+/** Unison copies are spread this many cents either side (at least), so they never sound like one. */
+export const unisonSpread = (p: ParamValues) => Math.max(p.osc2Detune, 8);
+
 /** Freeze an automated param at its current value (cancelAndHoldAtTime is missing in Firefox). */
 function hold(param: AudioParam, t: number) {
   if (param.cancelAndHoldAtTime) param.cancelAndHoldAtTime(t);
@@ -56,9 +61,8 @@ export class Voice {
   triggeredAt: number;
   velocity: number;
 
-  private osc1: OscillatorNode[] = [];
-  private osc2: OscillatorNode[] = [];
-  private sub: OscillatorNode;
+  /** Osc 1, Osc 2 and the sub, made together on the audio thread (see osc.worklet.ts). */
+  private osc: AudioWorkletNode;
   private noise: AudioBufferSourceNode;
   private osc1Gain: GainNode;
   private osc2Gain: GainNode;
@@ -68,6 +72,7 @@ export class Voice {
   private filter: BiquadFilterNode;
   private amp: GainNode;
   private mix: GainNode;
+  private unison: number;
   private peak = 1;
 
   constructor(
@@ -82,7 +87,6 @@ export class Voice {
     this.startedAt = t;
     this.triggeredAt = t;
     this.velocity = velocity;
-    const freq = midiToHz(note);
 
     this.osc1Gain = new GainNode(ctx);
     this.osc2Gain = new GainNode(ctx);
@@ -92,16 +96,19 @@ export class Voice {
     this.filter = new BiquadFilterNode(ctx);
     this.amp = new GainNode(ctx, { gain: 0 });
 
-    const unison = Math.round(p.unison);
-    const unisonGain = 1 / Math.sqrt(unison);
-    for (let i = 0; i < unison; i++) {
-      this.osc1.push(this.makeOsc(freq, this.osc1Gain));
-      this.osc2.push(this.makeOsc(freq, this.osc2Gain));
-    }
-    this.osc1Gain.gain.value = unisonGain;
-    this.osc2Gain.gain.value = unisonGain;
-    this.sub = this.makeOsc(freq / 2, this.subGain);
-    this.sub.type = "square";
+    const unison = (this.unison = Math.round(p.unison));
+    this.osc = new AudioWorkletNode(ctx, "synth-osc", {
+      numberOfInputs: 0,
+      numberOfOutputs: 3,
+      outputChannelCount: [1, 1, 1],
+      processorOptions: { unison },
+    });
+    this.param("frequency").value = midiToHz(note);
+    this.osc.connect(this.osc1Gain, 0);
+    this.osc.connect(this.osc2Gain, 1);
+    this.osc.connect(this.subGain, 2);
+    vc.pitchMod.connect(this.param("detune"));
+    vc.widthMod.connect(this.param("width"));
 
     this.noise = new AudioBufferSourceNode(ctx, { buffer: vc.noise, loop: true });
     this.noise.connect(this.noiseGain);
@@ -114,54 +121,59 @@ export class Voice {
     vc.filterMod.connect(this.filter.detune);
 
     const { taps } = vc;
-    for (const o of this.osc1) o.connect(taps.osc1);
-    for (const o of this.osc2) o.connect(taps.osc2);
-    this.sub.connect(taps.sub);
+    this.osc.connect(taps.osc1, 0);
+    this.osc.connect(taps.osc2, 1);
+    this.osc.connect(taps.sub, 2);
     this.noise.connect(taps.noise);
     mix.connect(taps.mix);
     this.shaper.connect(taps.drive);
     this.filter.connect(taps.filter);
 
     this.apply(p, t);
-    for (const o of [...this.osc1, ...this.osc2, this.sub]) o.start(t);
+    this.startEnvelopes(p, velocity, t, false);
+  }
 
-    // Amp envelope
+  private param(name: string) {
+    return this.osc.parameters.get(name)!;
+  }
+
+  /** Start (or, in mono, restart from where they are) the amp, filter and pitch envelopes. */
+  private startEnvelopes(p: ParamValues, velocity: number, t: number, retrigger: boolean) {
+    const start = (param: AudioParam) => (retrigger ? hold(param, t) : param.setValueAtTime(0, t));
     const vel = velocity / 127;
     this.peak = 1 - p.velocity + p.velocity * vel;
     const a = this.amp.gain;
-    a.setValueAtTime(0, t);
+    start(a);
     a.linearRampToValueAtTime(this.peak, t + p.attack);
     a.setTargetAtTime(this.peak * p.sustain, t + p.attack, p.decay / 4);
 
     // Filter envelope, in cents on filter.detune so the LFO and cutoff knob stay independent.
     const amount = p.filterEnvAmt * 1200 * (0.5 + 0.5 * (p.velocity > 0 ? vel : 1));
     const d = this.filter.detune;
-    d.setValueAtTime(0, t);
+    start(d);
     d.linearRampToValueAtTime(amount, t + p.filterAttack);
     d.setTargetAtTime(amount * p.filterSustain, t + p.filterAttack, p.filterDecay / 4);
-  }
 
-  private makeOsc(freq: number, dest: AudioNode) {
-    const o = new OscillatorNode(this.vc.ctx, { frequency: freq });
-    this.vc.pitchMod.connect(o.detune);
-    o.connect(dest);
-    return o;
+    // Pitch envelope: jump to Amount, then slide back to the note's own pitch.
+    const pe = this.param("pitchEnv");
+    pe.cancelScheduledValues(t);
+    pe.setValueAtTime(p.pitchEnvAmt * 100, t);
+    pe.setTargetAtTime(0, t, p.pitchEnvDecay / 4);
   }
 
   /** Update sound parameters on a sounding voice. Envelopes keep their current shape. */
   apply(p: ParamValues, t = this.vc.ctx.currentTime) {
-    const unison = this.osc1.length;
-    const spread = (i: number) => (unison === 1 ? 0 : (i / (unison - 1) - 0.5) * 2 * Math.max(p.osc2Detune, 8));
-    this.osc1.forEach((o, i) => {
-      o.type = WAVES[p.osc1Wave];
-      o.detune.setTargetAtTime(spread(i), t, 0.01);
-    });
-    this.osc2.forEach((o, i) => {
-      o.type = WAVES[p.osc2Wave];
-      o.detune.setTargetAtTime(p.osc2Semi * 100 + p.osc2Detune + spread(i), t, 0.01);
-    });
-    this.osc1Gain.gain.setTargetAtTime((1 - p.oscMix) / Math.sqrt(unison), t, 0.01);
-    this.osc2Gain.gain.setTargetAtTime(p.oscMix / Math.sqrt(unison), t, 0.01);
+    const set = (name: string, v: number) => this.param(name).setValueAtTime(v, t);
+    set("wave1", p.osc1Wave);
+    set("wave2", p.osc2Wave);
+    set("sync", p.oscSync);
+    set("envTarget", p.pitchEnvTarget);
+    this.param("osc2Detune").setTargetAtTime(p.osc2Semi * 100 + p.osc2Detune, t, 0.01);
+    this.param("spread").setTargetAtTime(unisonSpread(p), t, 0.01);
+    this.param("width").setTargetAtTime(p.pulseWidth, t, 0.01);
+    this.param("fm").setTargetAtTime(p.fmAmount, t, 0.01);
+    this.osc1Gain.gain.setTargetAtTime((1 - p.oscMix) / Math.sqrt(this.unison), t, 0.01);
+    this.osc2Gain.gain.setTargetAtTime(p.oscMix / Math.sqrt(this.unison), t, 0.01);
     this.subGain.gain.setTargetAtTime(p.subLevel * 0.8, t, 0.01);
     this.noiseGain.gain.setTargetAtTime(p.noiseLevel, t, 0.01);
     this.shaper.curve = this.vc.driveCurve(p.drive);
@@ -173,14 +185,10 @@ export class Voice {
   /** Mono mode: move to a new note without retriggering envelopes. */
   glideTo(note: number, p: ParamValues, t: number) {
     this.note = note;
-    const freq = midiToHz(note);
     const glide = Math.max(0.001, p.glide / 3);
-    for (const o of [...this.osc1, ...this.osc2]) {
-      hold(o.frequency, t);
-      o.frequency.setTargetAtTime(freq, t, glide);
-    }
-    hold(this.sub.frequency, t);
-    this.sub.frequency.setTargetAtTime(freq / 2, t, glide);
+    const f = this.param("frequency");
+    hold(f, t);
+    f.setTargetAtTime(midiToHz(note), t, glide);
     this.filter.frequency.setTargetAtTime(filterBase(p, note), t, glide);
   }
 
@@ -189,17 +197,7 @@ export class Voice {
     this.releasedAt = null;
     this.triggeredAt = t;
     this.velocity = velocity;
-    const vel = velocity / 127;
-    this.peak = 1 - p.velocity + p.velocity * vel;
-    const a = this.amp.gain;
-    hold(a, t);
-    a.linearRampToValueAtTime(this.peak, t + p.attack);
-    a.setTargetAtTime(this.peak * p.sustain, t + p.attack, p.decay / 4);
-    const amount = p.filterEnvAmt * 1200 * (0.5 + 0.5 * (p.velocity > 0 ? vel : 1));
-    const d = this.filter.detune;
-    hold(d, t);
-    d.linearRampToValueAtTime(amount, t + p.filterAttack);
-    d.setTargetAtTime(amount * p.filterSustain, t + p.filterAttack, p.filterDecay / 4);
+    this.startEnvelopes(p, velocity, t, true);
   }
 
   /** Start the release stage. Returns the time the voice falls silent. */
@@ -220,18 +218,19 @@ export class Voice {
   }
 
   stop(at: number) {
-    for (const o of [...this.osc1, ...this.osc2, this.sub, this.noise]) {
-      try {
-        o.stop(at);
-      } catch {
-        // already stopped
-      }
+    // The worklet has no stop(): it is told when to end, and then lets itself be removed.
+    this.osc.port.postMessage({ stopAt: at });
+    try {
+      this.noise.stop(at);
+    } catch {
+      // already stopped
     }
     // The shared modulation sources hold references to every voice they feed: unplug them.
     this.noise.onended = () => {
-      for (const o of [...this.osc1, ...this.osc2, this.sub]) this.vc.pitchMod.disconnect(o.detune);
+      this.vc.pitchMod.disconnect(this.param("detune"));
+      this.vc.widthMod.disconnect(this.param("width"));
       this.vc.filterMod.disconnect(this.filter.detune);
-      for (const n of [...this.osc1, ...this.osc2, this.sub, this.noise, this.mix, this.shaper, this.filter, this.amp]) n.disconnect();
+      for (const n of [this.osc, this.noise, this.mix, this.shaper, this.filter, this.amp]) n.disconnect();
     };
   }
 }
