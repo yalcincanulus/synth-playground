@@ -110,6 +110,16 @@ export function rollDice(): Preset {
     Object.assign(v, { osc1Wave: 4, wtTable: Math.floor(Math.random() * 8), wtPos: rand(0, 1), lfo2Target: 4, lfo2Depth: rand(0.3, 0.9), lfo2Rate: expRand(0.08, 1.5) });
   }
 
+  // A few mod matrix routes. Sources: 6 mod env, 7 velocity, 10 random; destinations: 0 pitch, 2 cutoff, 5 wt pos.
+  const routes: [number, number, number][] = [];
+  if (chance(0.4)) routes.push([7, 2, rand(0.2, 0.6)]);
+  if (v.osc1Wave === 4 && chance(0.5)) {
+    routes.push([6, 5, rand(0.4, 0.9) * (chance(0.8) ? 1 : -1)]);
+    Object.assign(v, { modEnvAttack: 0.001, modEnvDecay: expRand(0.1, 1.5), modEnvSustain: rand(0, 0.3), wtPos: rand(0, 0.3) });
+  }
+  if (chance(0.2)) routes.push([10, 0, rand(0.002, 0.008)]);
+  routes.forEach(([src, dst, amt], i) => Object.assign(v, { [`mod${i + 1}Src`]: src, [`mod${i + 1}Dst`]: dst, [`mod${i + 1}Amt`]: amt }));
+
   // Sync on its own changes little: pair it with a pitch envelope on Osc 2 for the sweep.
   if (v.oscSync) Object.assign(v, { pitchEnvAmt: rand(8, 30), pitchEnvDecay: expRand(0.2, 1.2), pitchEnvTarget: 1, oscMix: rand(0.5, 0.9) });
 

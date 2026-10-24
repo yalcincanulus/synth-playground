@@ -6,7 +6,16 @@ import { Engine, LFO_FILTER_CENTS } from "../../audio/engine";
 import { biquadMagnitude } from "../../audio/filterResponse";
 import { naive, shapeAt as oscShapeAt } from "../../audio/oscCore";
 import { frameAt, tableFrames } from "../../audio/wavetables";
-import { DELAY_DIV_BEATS, DELAY_DIVS, LFO_SYNCS, toControl, type ParamValues } from "../../audio/params";
+import { DELAY_DIV_BEATS, DELAY_DIVS, LFO_SYNCS, MOD_SLOTS, MOD_SOURCES, slotIds, toControl, type ModSource, type ParamId, type ParamValues } from "../../audio/params";
+
+/** Whether a mod matrix route from this source is active. */
+function routed(p: ParamValues, source: ModSource) {
+  for (let n = 1; n <= MOD_SLOTS; n++) {
+    const ids = slotIds(n);
+    if (MOD_SOURCES[p[ids.src]] === source && p[ids.amt] !== 0) return true;
+  }
+  return false;
+}
 import { filterBase } from "../../audio/voice";
 import { freqX, FREQ_GRID, grid, xFreq, type Surface } from "../components/canvas";
 
@@ -247,19 +256,27 @@ export function filter(engine: Engine, color: () => string): Draw {
 
 // ---------------------------------------------------------------- envelopes
 
-const seg = (id: "attack" | "decay" | "release" | "filterAttack" | "filterDecay" | "filterRelease", v: number) => 0.05 + 0.24 * toControl(id, v);
+const seg = (id: ParamId, v: number) => 0.05 + 0.24 * toControl(id, v);
 const SUSTAIN_W = 0.18;
 
 /** Envelope shape plus a dot for every sounding note, showing where it is right now. */
-export function envelope(engine: Engine, kind: "amp" | "filter", color: () => string): Draw {
+const ENV_IDS = {
+  amp: ["attack", "decay", "release"],
+  filter: ["filterAttack", "filterDecay", "filterRelease"],
+  mod: ["modEnvAttack", "modEnvDecay", "modEnvRelease"],
+} as const;
+
+export function envelope(engine: Engine, kind: "amp" | "filter" | "mod", color: () => string): Draw {
   return ({ g, w, h }) => {
     const p = engine.params;
-    const env: Adsr = kind === "amp"
-      ? { attack: p.attack, decay: p.decay, sustain: p.sustain, release: p.release }
+    const env: Adsr =
+      kind === "amp" ? { attack: p.attack, decay: p.decay, sustain: p.sustain, release: p.release }
+      : kind === "mod" ? { attack: p.modEnvAttack, decay: p.modEnvDecay, sustain: p.modEnvSustain, release: p.modEnvRelease }
       : filterEnvShape(p);
-    const aW = seg(kind === "amp" ? "attack" : "filterAttack", env.attack);
-    const dW = seg(kind === "amp" ? "decay" : "filterDecay", env.decay);
-    const rW = seg(kind === "amp" ? "release" : "filterRelease", env.release);
+    const [aId, dId, rId] = ENV_IDS[kind];
+    const aW = seg(aId, env.attack);
+    const dW = seg(dId, env.decay);
+    const rW = seg(rId, env.release);
     const pad = 6;
     const W = w - pad * 2;
     const top = 14;
@@ -311,7 +328,8 @@ export function envelope(engine: Engine, kind: "amp" | "filter", color: () => st
       g.fill();
       g.shadowBlur = 0;
     }
-    if (kind === "filter" && Math.abs(p.filterEnvAmt) < 0.05) label(g, "Amount is 0: no effect", w / 2, h / 2, "#ffffff70", "center");
+    if (kind === "filter" && Math.abs(p.filterEnvAmt) < 0.05) label(g, "Amount 0: no effect", w / 2, h / 2, "#ffffff70", "center");
+    if (kind === "mod" && !routed(p, "mod env")) label(g, "Not patched yet", w / 2, h / 2, "#ffffff70", "center");
   };
 }
 
@@ -332,7 +350,7 @@ export function pitchEnvelope(engine: Engine, color: () => string): Draw {
     const at = (t: number) => amt * Math.exp(-t / (p.pitchEnvDecay / 4));
     grid(g, w, h, [], [mid]);
     label(g, "note's pitch", w - 4, mid + (amt >= 0 ? -3 : 10), "#ffffff50", "right");
-    if (Math.abs(amt) < 0.05) return label(g, "Amount is 0: no effect", w / 2, h / 2, "#ffffff70", "center");
+    if (Math.abs(amt) < 0.05) return label(g, "Amount 0: no effect", w / 2, h / 2, "#ffffff70", "center");
     label(g, `${amt > 0 ? "+" : ""}${amt.toFixed(1)} st`, pad + 4, far + (amt >= 0 ? 8 : -2), "#ffffff90");
 
     g.beginPath();
@@ -416,7 +434,7 @@ export function lfo(engine: Engine, index: number, color: () => string): Draw {
     const sync = index === 0 ? p.lfoSync : p.lfo2Sync;
     const rate = unit.rate;
     label(g, `${rate.toFixed(rate < 1 ? 2 : 1)} Hz${sync ? ` · synced ${LFO_SYNCS[sync]}` : ""}`, 4, 11);
-    if (depth === 0) label(g, "Depth is 0: no effect", w / 2, h - 5, "#ffffff70", "center");
+    if (depth === 0) label(g, "Depth 0: no effect", w / 2, h - 5, "#ffffff70", "center");
   };
 }
 

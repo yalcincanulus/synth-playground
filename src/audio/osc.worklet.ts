@@ -123,12 +123,12 @@ class SynthOsc extends AudioWorkletProcessor {
       { name: "pitchEnv", defaultValue: 0, automationRate: "a-rate" },
       { name: "envTarget", defaultValue: 0, automationRate: "k-rate" },
       /** Cents, Osc 2's offset from Osc 1 (its pitch and detune). */
-      { name: "osc2Detune", defaultValue: 0, automationRate: "k-rate" },
+      { name: "osc2Detune", defaultValue: 0, automationRate: "a-rate" },
       /** Cents between the outer unison copies and the middle. */
       { name: "spread", defaultValue: 0, automationRate: "k-rate" },
       /** Pulse width for square waves; the LFO's width modulation is connected here. */
       { name: "width", defaultValue: 0.5, automationRate: "a-rate" },
-      { name: "fm", defaultValue: 0, minValue: 0, maxValue: 1, automationRate: "k-rate" },
+      { name: "fm", defaultValue: 0, automationRate: "a-rate" },
       { name: "sync", defaultValue: 0, automationRate: "k-rate" },
       { name: "wave1", defaultValue: 2, automationRate: "k-rate" },
       { name: "wave2", defaultValue: 2, automationRate: "k-rate" },
@@ -176,8 +176,10 @@ class SynthOsc extends AudioWorkletProcessor {
     const wave2 = Math.round(params.wave2[0]);
     const sync = params.sync[0] >= 0.5;
     const envOnBoth = params.envTarget[0] < 0.5;
-    const fmK = (Math.max(0, params.fm[0]) * FM_INDEX) / (2 * Math.PI);
-    const osc2Mul = Math.pow(2, params.osc2Detune[0] / 1200);
+    const FM_K = FM_INDEX / (2 * Math.PI);
+    // Osc 2's offset and the FM amount can move during the block (mod matrix), so they are read per sample.
+    const osc2Cents = params.osc2Detune;
+    let osc2Mul = Math.pow(2, osc2Cents[0] / 1200);
     const spread = params.spread[0];
     const spreadMul = new Float32Array(n);
     for (let u = 0; u < n; u++) spreadMul[u] = Math.pow(2, (n === 1 ? 0 : (u / (n - 1) - 0.5) * 2 * spread) / 1200);
@@ -197,6 +199,8 @@ class SynthOsc extends AudioWorkletProcessor {
       const cents = at(params.detune, i);
       const env = at(params.pitchEnv, i);
       const f1 = base * Math.pow(2, (cents + (envOnBoth ? env : 0)) / 1200);
+      if (osc2Cents.length > 1) osc2Mul = Math.pow(2, osc2Cents[i] / 1200);
+      const fmK = Math.min(2, Math.max(0, at(params.fm, i))) * FM_K;
       const f2 = base * Math.pow(2, (cents + env) / 1200) * osc2Mul;
       const width = clampWidth(at(params.width, i));
       position = at(params.position, i);

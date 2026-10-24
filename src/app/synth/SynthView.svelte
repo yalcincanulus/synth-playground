@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { formatValue, LFO_SYNC_BEATS, PARAMS } from "../../audio/params";
+  import { formatValue, LFO_SYNC_BEATS, MOD_DESTS, MOD_SOURCES, PARAMS, slotIds } from "../../audio/params";
   import type { Playground } from "../playground.svelte";
   import Block from "./Block.svelte";
-  import { BLOCKS, KNOB_PAGES, TAP_NAMES } from "./blocks";
+  import { BLOCKS, DEST_BLOCK, KNOB_PAGES, paramLabel, SOURCE_BLOCK, TAP_NAMES } from "./blocks";
+  import MatrixPanel from "./MatrixPanel.svelte";
   import Cables, { type Cable } from "./Cables.svelte";
   import LiveCanvas from "./LiveCanvas.svelte";
   import * as viz from "./viz";
@@ -23,6 +24,11 @@
   const PLAY = "#b388ff";
   const PENV = "#5ee0a0";
   const OSC = "#ff6b6b";
+  const MENV = "#c6f05e";
+  /** Each modulator block's colour, for its cables and matrix routes. */
+  const COLORS: Record<string, string> = { lfo: LFO, lfo2: LFO2, filterEnv: FENV, ampEnv: AENV, pitchEnv: PENV, modEnv: MENV, perf: PLAY };
+  /** Where matrix route cables land on each destination block. */
+  const DEST_SIDE: Partial<Record<string, Cable["toSide"]>> = { osc1: "r", osc2: "r", filter: "b", amp: "l", mixer: "r" };
 
   let container = $state<HTMLElement>();
 
@@ -76,6 +82,22 @@
     // Oscillator to oscillator, at audio speed: two short cables in the gap between Osc 1 and Osc 2.
     list.push({ from: "osc1", to: "osc2", fromSide: "b", toSide: "t", fromAt: 0.3, toAt: 0.3, kind: "mod", color: OSC, width: 3, period: 0.15, idle: !v.oscSync, label: "Sync: Osc 1 restarts Osc 2" });
     list.push({ from: "osc2", to: "osc1", fromSide: "t", toSide: "b", fromAt: 0.7, toAt: 0.7, kind: "mod", color: OSC, width: 1.5 + v.fmAmount * 5, period: 0.15, idle: v.fmAmount < 0.01, label: "FM: Osc 2 bends Osc 1's pitch" });
+    // Mod matrix routes: from the source's block to the destination's, in the source's colour.
+    for (const n of pg.routes) {
+      const ids = slotIds(n);
+      const src = MOD_SOURCES[v[ids.src]];
+      if (src === "off") continue;
+      const dest = MOD_DESTS[v[ids.dst]];
+      const from = SOURCE_BLOCK[src];
+      const to = DEST_BLOCK[dest];
+      const amt = Math.abs(v[ids.amt]);
+      const lfoIndex = src === "lfo 1" ? 0 : src === "lfo 2" ? 1 : -1;
+      const period = lfoIndex >= 0 ? Math.min(8, Math.max(0.15, 1 / engine.lfoRate(lfoIndex))) : 1.2;
+      list.push({
+        from, to, fromSide: "t", toSide: DEST_SIDE[to] ?? "b", toAt: 0.2 + 0.08 * n, kind: "mod", color: COLORS[from],
+        width: 1.5 + amt * 5, period, idle: amt === 0, label: `Route ${n}: ${src} → ${dest} (${formatValue(ids.amt, v[ids.amt])})`,
+      });
+    }
     list.push({ from: "perf", to: "osc2", fromSide: "t", toSide: "b", kind: "mod", color: PLAY, width: 1.5 + Math.abs(pg.bend) * 4, idle: pg.bend === 0, label: "Pitch strip → oscillator pitch" });
     list.push({ from: "perf", to: "lfo", fromSide: "r", toSide: "l", kind: "mod", color: PLAY, width: 1.5 + pg.mod * 5, idle: pg.mod === 0, label: "Mod strip → LFO depth" });
     return list;
@@ -94,6 +116,7 @@
       <span><i class="dash" style:color={FENV}></i>filter envelope</span>
       <span><i class="dash" style:color={AENV}></i>amp envelope</span>
       <span><i class="dash" style:color={PENV}></i>pitch envelope</span>
+      <span><i class="dash" style:color={MENV}></i>mod envelope</span>
       <span><i class="dash" style:color={OSC}></i>sync / FM</span>
       <span><i class="dash" style:color={PLAY}></i>your playing</span>
     </div>
@@ -119,12 +142,14 @@
         {#each page.knobs as id, i (i)}
           <li class:hot={id && pg.touched?.param === id}>
             <span class="n">{i + 1}</span>
-            {#if id}{PARAMS[id].label}<span class="v">{formatValue(id, pg.values[id])}</span>{:else}<span class="v">—</span>{/if}
+            {#if id}{paramLabel(id, pg.values, PARAMS[id].label)}<span class="v">{formatValue(id, pg.values[id])}</span>{:else}<span class="v">—</span>{/if}
           </li>
         {/each}
       </ol>
     </div>
   </aside>
+
+  <MatrixPanel {pg} colors={COLORS} />
 
   <div class="diagram" bind:this={container}>
     <div class="col">
@@ -192,6 +217,7 @@
       <Block {pg} id="lfo2"><LiveCanvas height={56} draw={viz.lfo(engine, 1, () => LFO2)} /></Block>
       <Block {pg} id="filterEnv"><LiveCanvas height={70} draw={viz.envelope(engine, "filter", () => FENV)} /></Block>
       <Block {pg} id="ampEnv"><LiveCanvas height={70} draw={viz.envelope(engine, "amp", () => AENV)} /></Block>
+      <Block {pg} id="modEnv"><LiveCanvas height={70} draw={viz.envelope(engine, "mod", () => MENV)} /></Block>
     </div>
 
     {#if container}<Cables {container} {cables} />{/if}
@@ -201,10 +227,10 @@
 <style>
   .synth { display: grid; gap: 10px; }
   .bar { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
-  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--dim); }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--dim); }
   .legend i { display: inline-block; width: 18px; height: 3px; margin-right: 6px; vertical-align: middle; border-radius: 2px; }
   .legend i.dash { background: repeating-linear-gradient(90deg, currentColor 0 5px, transparent 5px 9px); }
-  .hint { color: var(--dim); font-size: 12px; flex: 1; }
+  .hint { color: var(--dim); font-size: 12px; flex: 1 1 320px; }
   .explain-toggle { font-size: 12px; display: flex; align-items: center; gap: 6px; }
 
   .diagram {
@@ -223,8 +249,8 @@
   .listen-mini { position: absolute; top: -2px; right: 0; padding: 0 3px; font-size: 10px; line-height: 14px; background: none; opacity: 0.55; }
   .listen-mini.on { opacity: 1; background: #ffcc33; border-color: #ffcc33; }
   .listening { flex: 1; text-align: left; background: #ffcc3322; border-color: #ffcc33; color: #ffe08a; font-size: 12px; }
-  /* The modulators: one row of six under the signal path. */
-  .mods { grid-row: 2; grid-column: 1 / -1; display: grid; grid-template-columns: repeat(6, 1fr); gap: 34px; align-items: start; }
+  /* The modulators: one row of seven under the signal path. */
+  .mods { grid-row: 2; grid-column: 1 / -1; display: grid; grid-template-columns: repeat(7, 1fr); gap: 22px; align-items: start; }
   .detail {
     display: grid; grid-template-columns: 1.6fr 1fr 1.3fr; gap: 20px; align-items: start;
     background: #10171a; border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; font-size: 12px; line-height: 1.4;

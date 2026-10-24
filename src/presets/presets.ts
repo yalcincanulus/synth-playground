@@ -19,6 +19,8 @@ export const FADERS: [ParamId, ParamId, ParamId, ParamId] = ["attack", "decay", 
 // Wavetables: 0 Shapes, 1 PWM, 2 Sync, 3 Fold, 4 Formant, 5 Vowels, 6 Organ, 7 Digital.
 // Filter: 0 lowpass, 1 highpass, 2 bandpass. LFO/mod target: 0 pitch, 1 filter, 2 amp, 3 pulse width.
 // Pitch envelope target: 0 both oscillators, 1 Osc 2 only.
+// Mod matrix sources: 1 LFO 1, 2 LFO 2, 3 filter env, 4 amp env, 5 pitch env, 6 mod env, 7 velocity, 8 key, 9 mod strip, 10 random.
+// Destinations: 0 pitch, 1 osc 2 pitch, 2 cutoff, 3 resonance, 4 volume, 5 wt pos, 6 width, 7 fm, 8 osc mix, 9 sub, 10 noise.
 // Delay div: 0 1/16, 1 1/8, 2 3/16, 3 1/4, 4 3/8, 5 1/2.
 
 /** Presets in the order they were added; FACTORY_PRESETS below groups them by category. */
@@ -267,6 +269,27 @@ const ALL_PRESETS: Preset[] = [
     color: [0, 127, 127],
     knobs: ["wtPos", "lfo2Depth", "lfo2Sync", "cutoff", "filterDecay", "decay", "delayMix", "reverbMix"],
     values: { osc1Wave: 4, wtTable: 7, wtPos: 0.4, osc2Wave: 0, osc2Semi: 12, oscMix: 0.2, lfo2Target: 4, lfo2Wave: 4, lfo2Sync: 5, lfo2Depth: 0.5, cutoff: 1400, resonance: 1.2, filterEnvAmt: 3, filterDecay: 0.35, filterSustain: 0.2, keyTrack: 0.8, attack: 0.002, decay: 0.9, sustain: 0.3, release: 0.5, velocity: 0.8, chorus: 0.3, delayMix: 0.25, delayDiv: 2, delayFeedback: 0.4, reverbMix: 0.25, volume: 1 },
+  },
+  {
+    name: "Table Pluck",
+    category: "Keys",
+    color: [110, 127, 30],
+    knobs: ["mod1Amt", "modEnvDecay", "wtPos", "wtTable", "mod2Amt", "cutoff", "delayMix", "reverbMix"],
+    values: { osc1Wave: 4, wtTable: 4, wtPos: 0.05, osc2Wave: 0, osc2Semi: -12, oscMix: 0.2, unison: 2, osc2Detune: 8, mod1Src: 6, mod1Dst: 5, mod1Amt: 0.75, modEnvAttack: 0.001, modEnvDecay: 0.45, modEnvSustain: 0, modEnvRelease: 0.3, mod2Src: 7, mod2Dst: 2, mod2Amt: 0.3, cutoff: 6000, resonance: 0.8, filterEnvAmt: 0, keyTrack: 0.3, attack: 0.001, decay: 0.9, sustain: 0.15, release: 0.4, velocity: 0.7, delayMix: 0.25, delayDiv: 2, delayFeedback: 0.35, reverbMix: 0.3, volume: 1 },
+  },
+  {
+    name: "Velocity Bass",
+    category: "Bass",
+    color: [127, 40, 40],
+    knobs: ["mod1Amt", "mod2Amt", "cutoff", "resonance", "filterEnvAmt", "filterDecay", "subLevel", "glide"],
+    values: { mono: 1, glide: 0.02, osc1Wave: 2, osc2Wave: 0, osc2Detune: 0, oscMix: 0, mod1Src: 7, mod1Dst: 2, mod1Amt: 0.5, mod2Src: 7, mod2Dst: 7, mod2Amt: 0.45, subLevel: 0.4, cutoff: 300, resonance: 2, filterEnvAmt: 2, filterDecay: 0.25, filterSustain: 0.2, keyTrack: 0.4, attack: 0.002, decay: 0.35, sustain: 0.8, release: 0.08, velocity: 0.5, drive: 0.2, reverbMix: 0 },
+  },
+  {
+    name: "Drift Pad",
+    category: "Pad",
+    color: [80, 60, 127],
+    knobs: ["mod1Amt", "mod2Amt", "mod3Amt", "mod4Amt", "wtPos", "lfo2Depth", "chorus", "reverbMix"],
+    values: { osc1Wave: 4, wtTable: 0, wtPos: 0.4, osc2Wave: 2, osc2Detune: 10, oscMix: 0.4, unison: 2, mod1Src: 10, mod1Dst: 0, mod1Amt: 0.006, mod2Src: 10, mod2Dst: 2, mod2Amt: 0.2, mod3Src: 10, mod3Dst: 5, mod3Amt: 0.3, mod4Src: 8, mod4Dst: 2, mod4Amt: 0.3, lfo2Target: 4, lfo2Wave: 0, lfo2Rate: 0.08, lfo2Depth: 0.4, cutoff: 1800, resonance: 0.9, filterEnvAmt: 0.6, filterAttack: 1, filterDecay: 2, filterSustain: 0.6, keyTrack: 0.2, attack: 1, decay: 1.5, sustain: 0.9, release: 3, velocity: 0.3, chorus: 0.4, reverbMix: 0.55, reverbSize: 6, volume: 0.6 },
   },
 ];
 

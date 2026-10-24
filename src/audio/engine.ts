@@ -1,10 +1,11 @@
 import { Drums } from "./drums";
 import { Fx } from "./fx";
 import { Lfo } from "./lfo";
-import { DELAY_DIV_BEATS, LFO_SYNC_BEATS, defaultValues, type ParamId, type ParamValues } from "./params";
+import { envelopeAt } from "./envelope";
+import { DELAY_DIV_BEATS, LFO_SYNC_BEATS, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, defaultValues, slotIds, type ModSource, type ParamId, type ParamValues } from "./params";
 import oscWorkletUrl from "./osc.worklet.ts?worker&url";
 import { buildMips, FRAMES, tableFrames, WAVETABLES } from "./wavetables";
-import { Voice, type VoiceContext, type VoiceTaps } from "./voice";
+import { keySource, MOD_RANGE, Voice, type VoiceContext, type VoiceTaps } from "./voice";
 
 const MAX_VOICES = 10;
 export const BEND_RANGE_CENTS = 200;
@@ -29,6 +30,7 @@ export interface VoiceState {
   velocity: number;
   triggeredAt: number;
   releasedAt: number | null;
+  random: number;
 }
 
 export class Engine {
@@ -53,6 +55,8 @@ export class Engine {
   private held: number[] = [];
 
   private bend: ConstantSourceNode;
+  /** The mod strip as a mod matrix source (0..1). */
+  private modStrip: ConstantSourceNode;
   /** Two LFOs, each with a gain per target: [pitch, filter, amp, width]. */
   readonly lfos: [Lfo, Lfo];
   private lfoGains: PerTarget<GainNode>[];
@@ -87,6 +91,8 @@ export class Engine {
     this.bend = new ConstantSourceNode(ctx, { offset: 0 });
     this.bend.connect(pitchMod);
     this.bend.start();
+    this.modStrip = new ConstantSourceNode(ctx, { offset: 0 });
+    this.modStrip.start();
     this.tremolo = new GainNode(ctx);
     this.lfos = [new Lfo(ctx, 5), new Lfo(ctx, 0.5)];
     this.lfoGains = this.lfos.map((lfo) => {
@@ -124,6 +130,7 @@ export class Engine {
       filterMod,
       widthMod,
       positionMod,
+      globalSources: { "lfo 1": this.lfos[0].out, "lfo 2": this.lfos[1].out, "mod strip": this.modStrip },
       driveCurve: (d) => this.driveCurve(d),
       taps: this.taps,
     };
@@ -172,6 +179,7 @@ export class Engine {
   /** 0..1 */
   setMod(value: number) {
     this.mod = value;
+    this.modStrip.offset.setTargetAtTime(value, this.ctx.currentTime, 0.005);
     this.applyLfo();
   }
 
@@ -226,10 +234,42 @@ export class Engine {
     return LFO_SCALE.map((_, t) => Math.min(1, (target === t ? depth : 0) + extra(t))) as PerTarget<number>;
   }
 
-  /** Wavetable position 0..1 right now, with the LFOs' position modulation. */
+  /**
+   * A mod matrix source's value right now, for the meters: per-note sources follow the newest
+   * sounding note (null when none is playing).
+   */
+  modSourceValue(source: ModSource): number | null {
+    const p = this.params;
+    if (source === "off") return null;
+    if (source === "lfo 1") return this.lfos[0].value();
+    if (source === "lfo 2") return this.lfos[1].value();
+    if (source === "mod strip") return this.mod;
+    const v = this.voices[this.voices.length - 1];
+    if (!v) return null;
+    const now = this.ctx.currentTime;
+    const env = (attack: number, decay: number, sustain: number, release: number) => envelopeAt({ attack, decay, sustain, release }, now, v.triggeredAt, v.releasedAt).level;
+    switch (source) {
+      case "filter env": return env(p.filterAttack, p.filterDecay, p.filterSustain, p.filterRelease);
+      case "amp env": return env(p.attack, p.decay, p.sustain, p.release);
+      case "mod env": return env(p.modEnvAttack, p.modEnvDecay, p.modEnvSustain, p.modEnvRelease);
+      case "pitch env": return Math.exp(-(now - v.triggeredAt) / (p.pitchEnvDecay / 4));
+      case "velocity": return v.velocity / 127;
+      case "key": return keySource(v.note);
+      case "random": return v.random;
+    }
+  }
+
+  /** Wavetable position 0..1 right now, with the LFOs' and mod matrix's position modulation. */
   livePosition() {
-    let pos = this.params.wtPos;
+    const p = this.params;
+    let pos = p.wtPos;
     this.lfos.forEach((lfo, i) => (pos += this.lfoDepths(i)[4] * LFO_POSITION * lfo.value()));
+    // Mod matrix routes to WT Pos, as heard on the newest note.
+    for (let n = 1; n <= MOD_SLOTS; n++) {
+      const ids = slotIds(n);
+      if (MOD_DESTS[p[ids.dst]] !== "wt pos") continue;
+      pos += p[ids.amt] * MOD_RANGE["wt pos"] * (this.modSourceValue(MOD_SOURCES[p[ids.src]]) ?? 0);
+    }
     return Math.min(1, Math.max(0, pos));
   }
 
@@ -259,7 +299,7 @@ export class Engine {
 
   /** Every voice still making sound, oldest first. */
   voiceStates(): VoiceState[] {
-    return this.voices.map((v) => ({ note: v.note, velocity: v.velocity, triggeredAt: v.triggeredAt, releasedAt: v.releasedAt }));
+    return this.voices.map((v) => ({ note: v.note, velocity: v.velocity, triggeredAt: v.triggeredAt, releasedAt: v.releasedAt, random: v.random }));
   }
 
   private applyVoices() {

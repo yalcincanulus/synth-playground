@@ -1,7 +1,7 @@
 import { SvelteSet } from "svelte/reactivity";
 import { DRUM_NAMES } from "../audio/drums";
 import { Engine, type ListenTap } from "../audio/engine";
-import { formatValue, fromControl, PARAMS, toControl, type ParamId, type ParamValues } from "../audio/params";
+import { formatValue, fromControl, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, PARAMS, slotIds, toControl, type ParamId, type ParamValues } from "../audio/params";
 import { Sequencer, type Pattern, basicBeat, emptyPattern } from "../audio/sequencer";
 import { TABLE_WAVE } from "../audio/oscCore";
 import { WAVETABLES } from "../audio/wavetables";
@@ -18,7 +18,7 @@ import {
   type Program,
 } from "../minilab/protocol";
 import { rollDice } from "../presets/dice";
-import { BLOCK_TAPS, KNOB_PAGES, pageOf, TAP_NAMES, usesTable, WAVETABLE_KNOBS, type BlockId } from "./synth/blocks";
+import { BLOCK_TAPS, blockDest, blockSource, KNOB_PAGES, MOD_SHORT, pageOf, paramLabel, TAP_NAMES, usesTable, WAVETABLE_KNOBS, type BlockId } from "./synth/blocks";
 import { FACTORY_PRESETS, FADERS, PAD_PRESETS, loadUserPresets, presetValues, saveUserPresets, type Preset, type Rgb } from "../presets/presets";
 
 export type MidiStatus = "idle" | "unsupported" | "denied" | "not-found" | "connected";
@@ -78,6 +78,8 @@ export class Playground {
   focusBlock = $state<BlockId>("filter");
   /** Synth view: the signal heard on its own ("Listen here"), or null for the full sound. */
   listening = $state<ListenTap | null>(null);
+  /** Synth view patching: null when off, "source" while picking a source block, or the picked source. */
+  patch = $state<null | "source" | number>(null);
   /** Synth view: show plain-English explanations on each block. */
   explain = $state(localStorage.getItem(EXPLAIN_KEY) !== "off");
 
@@ -404,6 +406,7 @@ export class Playground {
   setView(view: View) {
     if (this.view === view) return;
     this.view = view;
+    this.patch = null;
     if (view !== "synth") this.listenTo(null);
     this.realignKnobs();
   }
@@ -434,6 +437,50 @@ export class Playground {
     const before = this.focusPage;
     this.focusBlock = block;
     if (this.focusPage !== before) this.announcePage();
+  }
+
+  /** A click on a block: focus its knob page, or, while patching, pick it as a source or destination. */
+  blockClick(block: BlockId) {
+    if (this.patch === null) return this.focus(block);
+    if (this.patch === "source") {
+      const src = blockSource(block);
+      if (src > 0) this.patch = src;
+      return;
+    }
+    const dst = blockDest(block, this.values);
+    if (dst < 0) return;
+    this.addRoute(this.patch, dst);
+    this.patch = null;
+  }
+
+  togglePatch() {
+    this.patch = this.patch === null ? "source" : null;
+  }
+
+  /** Put a route in the first empty slot (or the last one if all are used) and point the knobs at it. */
+  addRoute(src = MOD_SOURCES.indexOf("velocity"), dst = MOD_DESTS.indexOf("cutoff"), amount = 0.5) {
+    let n = 1;
+    while (n < MOD_SLOTS && MOD_SOURCES[this.values[slotIds(n).src]] !== "off") n++;
+    const ids = slotIds(n);
+    this.setParam(ids.src, src);
+    this.setParam(ids.dst, dst);
+    this.setParam(ids.amt, amount);
+    this.focus("matrix");
+    this.showMessage(`Route ${n}`, `${MOD_SHORT[MOD_SOURCES[src]]}>${MOD_SHORT[MOD_DESTS[dst]]}`);
+    this.realignKnobs();
+    return n;
+  }
+
+  removeRoute(n: number) {
+    const ids = slotIds(n);
+    this.setParam(ids.src, 0);
+    this.setParam(ids.amt, 0);
+    this.realignKnobs();
+  }
+
+  /** Slots with a route in them. */
+  get routes(): number[] {
+    return Array.from({ length: MOD_SLOTS }, (_, i) => i + 1).filter((n) => MOD_SOURCES[this.values[slotIds(n).src]] !== "off");
   }
 
   /** Synth view encoder: step through the knob pages. */
@@ -689,7 +736,7 @@ export class Playground {
 
   private popup(id: ParamId, cc?: number) {
     if (cc === undefined || !this.device) return;
-    this.device.send(parameterMessage(cc, PARAMS[id].label, formatValue(id, this.values[id])), "display");
+    this.device.send(parameterMessage(cc, paramLabel(id, this.values, PARAMS[id].label), formatValue(id, this.values[id])), "display");
   }
 
   drumName(i: number) {

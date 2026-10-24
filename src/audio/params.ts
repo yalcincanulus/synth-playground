@@ -24,6 +24,13 @@ export const LFO_WAVES = ["sine", "triangle", "saw", "square", "random"] as cons
 /** LFO tempo sync: "off" uses the Rate knob, otherwise one cycle lasts this many beats. */
 export const LFO_SYNCS = ["off", "2 bars", "1 bar", "1/2", "1/4", "1/8", "1/16"] as const;
 export const LFO_SYNC_BEATS = [0, 8, 4, 2, 1, 0.5, 0.25];
+/** Mod matrix sources and destinations (a route's value is the index). */
+export const MOD_SOURCES = ["off", "lfo 1", "lfo 2", "filter env", "amp env", "pitch env", "mod env", "velocity", "key", "mod strip", "random"] as const;
+export const MOD_DESTS = ["pitch", "osc 2 pitch", "cutoff", "resonance", "volume", "wt pos", "width", "fm", "osc mix", "sub", "noise"] as const;
+export type ModSource = (typeof MOD_SOURCES)[number];
+export type ModDest = (typeof MOD_DESTS)[number];
+export const MOD_SLOTS = 8;
+
 export const DELAY_DIVS = ["1/16", "1/8", "3/16", "1/4", "3/8", "1/2"] as const;
 export const DELAY_DIV_BEATS = [0.25, 0.5, 0.75, 1, 1.5, 2];
 
@@ -35,6 +42,22 @@ const signed = (unit: string, digits = 0) => (v: number) => `${v > 0 ? "+" : ""}
 const enumParam = (label: string, options: readonly string[], def = 0): ParamDef => ({
   label, min: 0, max: options.length - 1, curve: "int", default: def, options,
 });
+
+type SlotIds<N extends number> = `mod${N}Src` | `mod${N}Dst` | `mod${N}Amt`;
+type ModSlotIds = SlotIds<1 | 2 | 3 | 4 | 5 | 6 | 7 | 8>;
+
+function modSlots(): Record<ModSlotIds, ParamDef> {
+  const out: Record<string, ParamDef> = {};
+  for (let n = 1; n <= MOD_SLOTS; n++) {
+    out[`mod${n}Src`] = enumParam(`Mod${n} From`, MOD_SOURCES, 0);
+    out[`mod${n}Dst`] = enumParam(`Mod${n} To`, MOD_DESTS, 2);
+    out[`mod${n}Amt`] = { label: `Mod${n} Amt`, min: -1, max: 1, curve: "lin", default: 0, format: (v) => `${v > 0 ? "+" : ""}${Math.round(v * 100)}%` };
+  }
+  return out as Record<ModSlotIds, ParamDef>;
+}
+
+/** The parameter ids of route n (1..8). */
+export const slotIds = (n: number) => ({ src: `mod${n}Src`, dst: `mod${n}Dst`, amt: `mod${n}Amt` }) as { src: ParamId; dst: ParamId; amt: ParamId };
 
 export const PARAMS = {
   // Oscillators
@@ -90,6 +113,15 @@ export const PARAMS = {
   modTarget: enumParam("Mod To", LFO_TARGETS, 0),
   glide: { label: "Glide", min: 0, max: 1, curve: "lin", default: 0, format: sec },
   mono: enumParam("Voice", ["poly", "mono"], 0),
+
+  // Mod envelope: a fourth envelope, only connected through the mod matrix.
+  modEnvAttack: { label: "M Attack", min: 0.001, max: 5, curve: "exp", default: 0.001, format: sec },
+  modEnvDecay: { label: "M Decay", min: 0.01, max: 5, curve: "exp", default: 0.5, format: sec },
+  modEnvSustain: { label: "M Sustain", min: 0, max: 1, curve: "lin", default: 0, format: pct },
+  modEnvRelease: { label: "M Release", min: 0.01, max: 8, curve: "exp", default: 0.3, format: sec },
+
+  // Mod matrix: 8 routes of source -> destination by amount.
+  ...modSlots(),
 
   // Effects
   chorus: { label: "Chorus", min: 0, max: 1, curve: "lin", default: 0, format: pct },

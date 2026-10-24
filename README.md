@@ -35,8 +35,14 @@ block shows its live signal and all its controls, and coloured cables show what 
 explanations are on each block; the selected block's full explanation and a "Try this" are in the strip
 at the top. The 🎧 button on a block (or an encoder click) lets you hear the sound at that point only.
 
+The **Mod Matrix** strip adds up to 8 extra routes: any source (LFOs, the four envelopes including a spare
+Mod Envelope, velocity, key, the mod strip, a random value per note) to any destination (pitch, cutoff,
+resonance, volume, wavetable position, pulse width, FM, osc mix, sub, noise), each with an amount. Press
+**Patch**, click a source block, then a destination block; each route is drawn as a cable in its source's colour.
+
 In this view the MiniLab knobs follow the selected block: click a block, or turn the encoder to step
-through the knob pages (Sources, Filter, Osc Tricks, Envelopes, LFO 1, LFO 2, Playing, Effects). Shift + encoder
+through the knob pages (Sources, Filter, Osc Tricks, Envelopes, LFO 1, LFO 2, Playing, Mod Env, Matrix, Effects; on the Matrix page
+knobs 1–8 are the amounts of routes 1–8, and the screen names the route, e.g. `MEnv>WTPos`). Shift + encoder
 switches between the playground's waveform, spectrum and the Synth view.
 
 ### Wavetable view

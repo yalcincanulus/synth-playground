@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import type { Playground } from "../playground.svelte";
-  import { BLOCK_TAPS, BLOCKS, KNOB_PAGES, SHOWN_WHEN, type BlockId } from "./blocks";
+  import { BLOCK_TAPS, blockDest, blockSource, BLOCKS, KNOB_PAGES, SHOWN_WHEN, type BlockId } from "./blocks";
   import ParamControl from "./ParamControl.svelte";
 
   interface Props {
@@ -19,12 +19,14 @@
   let onPage = $derived(KNOB_PAGES[pg.focusPage].blocks.includes(id));
   let tap = $derived(BLOCK_TAPS[id]);
   let listening = $derived(!!tap && pg.listening === tap);
+  /** While patching: this block can be clicked as the source (or destination) being picked. */
+  let pickable = $derived(pg.patch === "source" ? blockSource(id) > 0 : pg.patch !== null && blockDest(id, pg.values) >= 0);
 </script>
 
 <!-- Clicking anywhere on a block points the MiniLab knobs at its page. -->
 <!-- Keyboard users reach the block's own controls; the click is a shortcut for focusing the knobs. -->
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-<section role="group" aria-label={def.title} class="block" class:listening class:focused class:on-page={onPage} class:inactive={!!inactive} data-block={id} onclick={() => pg.focus(id)}>
+<section role="group" aria-label={def.title} class="block" class:listening class:focused class:on-page={onPage} class:inactive={!!inactive} class:pickable class:patching={pg.patch !== null} data-block={id} onclick={() => pg.blockClick(id)}>
   <header>
     <h3>{def.title}</h3>
     {#if inactive}<span class="note">{inactive}</span>{/if}
@@ -66,6 +68,8 @@
   .listen { margin-left: auto; padding: 0 5px; font-size: 12px; line-height: 18px; border-radius: 4px; opacity: 0.55; background: none; }
   .listen:hover { opacity: 1; }
   .listen.on { opacity: 1; background: #ffcc33; border-color: #ffcc33; }
+  .block.patching:not(.pickable) > * { opacity: 0.4; }
+  .block.pickable { border-color: #ffcc33; box-shadow: 0 0 0 1px #ffcc33, 0 0 16px #ffcc3344; cursor: crosshair; }
   .block.listening { border-color: #ffcc33; box-shadow: 0 0 0 1px #ffcc33, 0 0 22px #ffcc3355; }
   h3 { margin: 0; font-size: 13px; font-weight: 600; }
   .note { font-size: 10px; color: var(--dim); }

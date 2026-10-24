@@ -1,10 +1,10 @@
 import type { ListenTap } from "../../audio/engine";
-import type { ParamId, ParamValues } from "../../audio/params";
+import { MOD_DESTS, MOD_SOURCES, slotIds, type ModDest, type ModSource, type ParamId, type ParamValues } from "../../audio/params";
 
 export type BlockId =
   | "osc1" | "osc2" | "subNoise" | "mixer" | "drive" | "filter" | "amp"
   | "chorus" | "delay" | "reverb" | "output"
-  | "lfo" | "lfo2" | "filterEnv" | "ampEnv" | "pitchEnv" | "perf";
+  | "lfo" | "lfo2" | "filterEnv" | "ampEnv" | "pitchEnv" | "modEnv" | "perf" | "matrix";
 
 export interface BlockDef {
   title: string;
@@ -131,6 +131,20 @@ export const BLOCKS: Record<BlockId, BlockDef> = {
     tryThis: "Set Amount to +24 and Decay to 100 ms, then play low notes: a synth tom. Then try +48 with 300 ms for a laser.",
     params: ["pitchEnvAmt", "pitchEnvDecay", "pitchEnvTarget"],
   },
+  modEnv: {
+    title: "Mod Envelope",
+    short: "A spare envelope: connect it with the mod matrix.",
+    explain: "A fourth envelope with its own Attack, Decay, Sustain and Release. Unlike the others it isn't wired to anything: patch it to any destination in the mod matrix. Its classic use is the wavetable position: every note sweeps through the table and settles, the 'Serum pluck'.",
+    tryThis: "Set Osc 1 to Table, press Patch, click this block, then Oscillator 1 (it picks WT Pos if a table is playing). Set Decay to 400 ms and Sustain to 0, then play short notes.",
+    params: ["modEnvAttack", "modEnvDecay", "modEnvSustain", "modEnvRelease"],
+  },
+  matrix: {
+    title: "Mod Matrix",
+    short: "Extra connections: any source to any destination.",
+    explain: "Each route connects a source (an LFO, an envelope, how hard you play, which key, the mod strip, or a random value per note) to a destination (pitch, cutoff, wavetable position…), by an Amount. Negative amounts move the destination the other way. Routes add to the synth's normal wiring and show as cables in the source's colour.",
+    tryThis: "Add a route Velocity → Cutoff at +50%, then play soft and hard notes: harder notes are brighter. Knobs 1–8 set the amounts of routes 1–8.",
+    params: [],
+  },
   perf: {
     title: "Playing",
     short: "How your playing shapes the sound.",
@@ -196,6 +210,16 @@ export const KNOB_PAGES: KnobPage[] = [
     blocks: ["perf"],
   },
   {
+    name: "Mod Env",
+    knobs: ["modEnvAttack", "modEnvDecay", "modEnvSustain", "modEnvRelease", "mod1Amt", "mod2Amt", "mod3Amt", "mod4Amt"],
+    blocks: ["modEnv"],
+  },
+  {
+    name: "Matrix",
+    knobs: [1, 2, 3, 4, 5, 6, 7, 8].map((n) => slotIds(n).amt),
+    blocks: ["matrix"],
+  },
+  {
     name: "Effects",
     knobs: ["chorus", "delayMix", "delayDiv", "delayFeedback", "reverbMix", "reverbSize", "volume", null],
     blocks: ["chorus", "delay", "reverb", "output"],
@@ -203,6 +227,48 @@ export const KNOB_PAGES: KnobPage[] = [
 ];
 
 export const pageOf = (block: BlockId) => KNOB_PAGES.findIndex((p) => p.blocks.includes(block));
+
+// ------------------------------------------------------------------ mod matrix
+
+/** The block each mod source lives in (velocity, key, random and the mod strip are your playing). */
+export const SOURCE_BLOCK: Record<Exclude<ModSource, "off">, BlockId> = {
+  "lfo 1": "lfo", "lfo 2": "lfo2", "filter env": "filterEnv", "amp env": "ampEnv", "pitch env": "pitchEnv", "mod env": "modEnv",
+  velocity: "perf", key: "perf", "mod strip": "perf", random: "perf",
+};
+
+/** The block each destination is in. */
+export const DEST_BLOCK: Record<ModDest, BlockId> = {
+  pitch: "osc1", "osc 2 pitch": "osc2", cutoff: "filter", resonance: "filter", volume: "amp",
+  "wt pos": "osc1", width: "osc1", fm: "osc2", "osc mix": "mixer", sub: "mixer", noise: "mixer",
+};
+
+/** Patching: the source a block gives (its first one; change it in the route afterwards). */
+export const blockSource = (block: BlockId) => MOD_SOURCES.findIndex((s) => s !== "off" && SOURCE_BLOCK[s] === block);
+
+/** Patching: the destination a block takes, picking what fits the current sound (WT Pos when a table plays). */
+export function blockDest(block: BlockId, v: ParamValues): number {
+  if (block === "osc1" && usesTable(v)) return MOD_DESTS.indexOf("wt pos");
+  if (block === "osc1" && (v.osc1Wave === 3 || v.osc2Wave === 3)) return MOD_DESTS.indexOf("width");
+  return MOD_DESTS.findIndex((d) => DEST_BLOCK[d] === block);
+}
+
+/** Short names, for the OLED (route labels fit its 10 characters). */
+export const MOD_SHORT: Record<string, string> = {
+  off: "off", "lfo 1": "LFO1", "lfo 2": "LFO2", "filter env": "FEnv", "amp env": "AEnv", "pitch env": "PEnv", "mod env": "MEnv",
+  velocity: "Vel", key: "Key", "mod strip": "Strip", random: "Rand",
+  pitch: "Pitch", "osc 2 pitch": "O2Pit", cutoff: "Cut", resonance: "Res", volume: "Vol", "wt pos": "WTPos", width: "Width",
+  fm: "FM", "osc mix": "Mix", sub: "Sub", noise: "Noise",
+};
+
+/** A param's label; route amounts are named by their route ("LFO1>WTPos"). */
+export function paramLabel(id: ParamId, v: ParamValues, fallback: string): string {
+  const m = /^mod(\d)Amt$/.exec(id);
+  if (!m) return fallback;
+  const ids = slotIds(+m[1]);
+  const src = MOD_SOURCES[v[ids.src]];
+  if (src === "off") return `${m[1]}: empty`;
+  return `${MOD_SHORT[src]}>${MOD_SHORT[MOD_DESTS[v[ids.dst]]]}`.slice(0, 10);
+}
 
 /** The signal tap each block can be listened to at ("Listen here"). */
 export const BLOCK_TAPS: Partial<Record<BlockId, ListenTap>> = {
