@@ -99,7 +99,7 @@ What the browser still limits, whatever we do:
 - The sequencer and drum clock tick from a Web Worker, so page work and background tabs can't delay it. Notes are still sent ahead with exact times.
 - Measure key-to-sound latency. If the page itself slows MIDI down, make the visualisers cheaper (lower frame rate, less work per frame).
 - **Done when:** the sequencer stays in time while switching views quickly, while the tab is in the background, and during heavy patches.
-- Status: built 2026-10-24, waiting for the hardware check (done together with slice 5).
+- Status: done 2026-10-24 (checked on the MiniLab together with slice 5).
   - **Clock:** `clock.worker.ts` ticks every 25 ms from a Web Worker, which background tabs don't slow down. The sequencer still plans notes 100 ms ahead on the main thread, with exact times.
   - **Late steps:** a step found more than 20 ms in the past is skipped (drums and the note sequencer alike) instead of played late, so after a freeze the loop stays on the beat. A forced 250 ms freeze skipped one step; every step that played was planned at least 39 ms ahead.
   - **Not solved by a worker:** the planning itself still runs on the page, so a freeze longer than about 75 ms still loses steps (now cleanly). Fully fixing that means running the sequencer, the drums and voice allocation on the audio thread; worth doing only if the About page shows real freezes.
@@ -110,7 +110,7 @@ What the browser still limits, whatever we do:
 
 - A **max voices** setting. When it's reached, or when the CPU meter gets close to the limit, the quietest or oldest notes are cut first, with a short fade.
 - **Done when:** heavy patches (unison 3, tables, routes) never crackle; they lose notes instead.
-- Status: built 2026-10-24, waiting for the hardware check (together with slice 4).
+- Status: done 2026-10-24 (checked on the MiniLab together with slice 4).
   - **Max Voices** (1–16, default 10, as before) is a preset setting in the Playing block, also on its knob page.
   - **Which note goes** (`voiceLimit.ts`): released notes first, the quietest of them; then the step sequencer's oldest note; then your oldest. Cut notes fade over 5 ms.
   - **CPU limit:** the meter's clock is whole milliseconds in Chromium, too coarse to react block by block, so the engine predicts instead. Each voice has a weight (1 + its unison copies); the processor reports its average load and weight together, and `CpuGuard` learns the cost per unit of weight. Before a note starts, notes are cut until the total fits 60% of the time available. Above 80% measured (say, a route added to held notes), one note is cut per report. The meter's tooltip counts the notes cut.
