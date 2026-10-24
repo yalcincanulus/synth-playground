@@ -47,4 +47,5 @@ export const MOD_RANGE: Record<ModDest, number> = {
   "osc mix": 1,
   sub: 0.8,
   noise: 1,
+  pan: 1, // -1 hard left .. +1 hard right
 };

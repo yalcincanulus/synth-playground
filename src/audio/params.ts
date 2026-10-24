@@ -26,7 +26,7 @@ export const LFO_SYNCS = ["off", "2 bars", "1 bar", "1/2", "1/4", "1/8", "1/16"]
 export const LFO_SYNC_BEATS = [0, 8, 4, 2, 1, 0.5, 0.25];
 /** Mod matrix sources and destinations (a route's value is the index). */
 export const MOD_SOURCES = ["off", "lfo 1", "lfo 2", "filter env", "amp env", "pitch env", "mod env", "velocity", "key", "mod strip", "random"] as const;
-export const MOD_DESTS = ["pitch", "osc 2 pitch", "cutoff", "resonance", "volume", "wt pos", "width", "fm", "osc mix", "sub", "noise"] as const;
+export const MOD_DESTS = ["pitch", "osc 2 pitch", "cutoff", "resonance", "volume", "wt pos", "width", "fm", "osc mix", "sub", "noise", "pan"] as const;
 export type ModSource = (typeof MOD_SOURCES)[number];
 export type ModDest = (typeof MOD_DESTS)[number];
 export const MOD_SLOTS = 8;
@@ -74,6 +74,8 @@ export const PARAMS = {
   oscSync: enumParam("Sync", ["off", "on"], 0),
   fmAmount: { label: "FM Amount", min: 0, max: 1, curve: "lin", default: 0, format: pct },
   unison: { label: "Unison", min: 1, max: 3, curve: "int", default: 1, format: (v) => `${v} voice${v > 1 ? "s" : ""}` },
+  /** How far the unison copies spread left and right (0: all in the middle). */
+  stereoWidth: { label: "Stereo", min: 0, max: 1, curve: "lin", default: 0.6, format: pct },
 
   // Filter
   filterType: enumParam("Filter", FILTER_TYPES, 0),

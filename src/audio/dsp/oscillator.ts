@@ -98,13 +98,17 @@ class Blep {
 
 /**
  * Record the jumps of `wave` while its phase moves from `a` (0..1) forward by `delta`,
- * over the part of the sample from time `t0` to `t0 + span`.
+ * over the part of the sample from time `t0` to `t0 + span`. With `side`, the same jumps scaled by
+ * `k` (the copy's stereo position) go there too.
  */
-function jumps(wave: number, width: number, a: number, delta: number, t0: number, span: number, blep: Blep) {
+function jumps(wave: number, width: number, a: number, delta: number, t0: number, span: number, blep: Blep, side: Blep | null = null, k = 0) {
   if ((wave !== 2 && wave !== 3) || delta <= 0 || delta >= 1) return; // only the saw and pulse jump
   const b = a + delta;
   const hit = (c: number, h: number) => {
-    if (c > a && c <= b) blep.add(h, 1 - (t0 + ((c - a) / delta) * span));
+    if (c <= a || c > b) return;
+    const d = 1 - (t0 + ((c - a) / delta) * span);
+    blep.add(h, d);
+    side?.add(h * k, d);
   };
   if (wave === 2) hit(1, -2);
   else {
@@ -116,6 +120,22 @@ function jumps(wave: number, width: number, a: number, delta: number, t0: number
 
 const at = (values: Float32Array, i: number) => (values.length === 1 ? values[0] : values[i]);
 
+/**
+ * Where unison copy `u` of `n` sits, -1 (left) .. 1 (right): the flattest copy on the left, the sharpest
+ * on the right. Osc 2's copies sit the other way round, so each side has a flat and a sharp copy.
+ */
+export const copyPosition = (u: number, n: number) => (n === 1 ? 0 : (u / (n - 1)) * 2 - 1);
+
+/**
+ * The stereo part of Osc 1 and Osc 2: each copy times its position (see copyPosition). With the sum
+ * S and this D, a stereo width w gives left = S - w·D and right = S + w·D, so (left + right) / 2 is
+ * always S: the sound in mono doesn't change with the width.
+ */
+export interface SideOutputs {
+  osc1: Float32Array;
+  osc2: Float32Array;
+}
+
 export class Oscillator {
   private copies: number;
   private p1: Float32Array;
@@ -125,6 +145,7 @@ export class Oscillator {
   private pm1: Float32Array;
   private sub = 0;
   private blep = [new Blep(), new Blep(), new Blep()];
+  private sideBlep = [new Blep(), new Blep()];
   private reader1: TableReader;
   private reader2: TableReader;
 
@@ -149,11 +170,17 @@ export class Oscillator {
     this.reader2 = new TableReader(tables, sampleRate);
   }
 
+  /** How many unison copies each oscillator has. */
+  get unison() {
+    return this.copies;
+  }
+
   /**
    * Fill samples `from` to `to` (default: the whole block) of Osc 1, Osc 2 and the sub, each the sum of
-   * its copies. Per-sample params are read at the same positions; one-value params apply throughout.
+   * its copies, and, when `side` is given, the oscillators' stereo parts (see SideOutputs). Per-sample
+   * params are read at the same positions; one-value params apply throughout.
    */
-  render(params: OscParams, out1: Float32Array, out2: Float32Array, outSub: Float32Array, from = 0, to = out1.length) {
+  render(params: OscParams, out1: Float32Array, out2: Float32Array, outSub: Float32Array, from = 0, to = out1.length, side: SideOutputs | null = null) {
     const n = this.copies;
     const wave1 = Math.round(params.wave1[0]);
     const wave2 = Math.round(params.wave2[0]);
@@ -167,6 +194,7 @@ export class Oscillator {
     const spreadMul = new Float32Array(n);
     for (let u = 0; u < n; u++) spreadMul[u] = Math.pow(2, (n === 1 ? 0 : (u / (n - 1) - 0.5) * 2 * spread) / 1200);
     const [b1, b2, bs] = this.blep;
+    const [d1, d2] = side ? this.sideBlep : [null, null];
     const inv = 1 / this.sampleRate;
     const table = Math.round(params.table[0]);
     const first = (values: Float32Array) => at(values, from);
@@ -190,8 +218,12 @@ export class Oscillator {
       position = at(params.position, i);
       let s1 = 0;
       let s2 = 0;
+      let side1 = 0;
+      let side2 = 0;
 
       for (let u = 0; u < n; u++) {
+        const k1 = copyPosition(u, n);
+        const k2 = -k1;
         const dt1 = f1 * spreadMul[u] * inv;
         const dt2 = f2 * spreadMul[u] * inv;
         const t1 = this.p1[u] + dt1;
@@ -201,27 +233,32 @@ export class Oscillator {
         let p2 = this.p2[u];
         if (sync && wrapped && dt1 > 0) {
           const te = (1 - this.p1[u]) / dt1;
-          jumps(wave2, width, p2, dt2 * te, 0, te, b2);
+          jumps(wave2, width, p2, dt2 * te, 0, te, b2, d2, k2);
           p2 = (p2 + dt2 * te) % 1;
-          b2.add(v2(0, width) - v2(p2, width), 1 - te);
-          jumps(wave2, width, 0, dt2 * (1 - te), te, 1 - te, b2);
+          const reset = v2(0, width) - v2(p2, width);
+          b2.add(reset, 1 - te);
+          d2?.add(reset * k2, 1 - te);
+          jumps(wave2, width, 0, dt2 * (1 - te), te, 1 - te, b2, d2, k2);
           p2 = (dt2 * (1 - te)) % 1;
         } else {
-          jumps(wave2, width, p2, dt2, 0, 1, b2);
+          jumps(wave2, width, p2, dt2, 0, 1, b2, d2, k2);
           p2 = (p2 + dt2) % 1;
         }
         this.p2[u] = p2;
         const o2 = v2(p2, width);
         s2 += o2;
+        side2 += o2 * k2;
 
         // Osc 1, read at a phase pushed back and forth by Osc 2 (FM; offset 0 when off).
         this.p1[u] = wrapped ? t1 - 1 : t1;
         const pm = fmK * o2;
         const read = (((this.p1[u] + pm) % 1) + 1) % 1;
-        jumps(wave1, width, this.read1[u], dt1 + pm - this.pm1[u], 0, 1, b1);
+        jumps(wave1, width, this.read1[u], dt1 + pm - this.pm1[u], 0, 1, b1, d1, k1);
         this.read1[u] = read;
         this.pm1[u] = pm;
-        s1 += v1(read, width);
+        const o1 = v1(read, width);
+        s1 += o1;
+        side1 += o1 * k1;
       }
 
       // Sub: a square one octave below Osc 1.
@@ -238,6 +275,13 @@ export class Oscillator {
       b2.prev = b2.cur + s2;
       bs.prev = bs.cur + ss;
       b1.cur = b2.cur = bs.cur = 0;
+      if (side && d1 && d2) {
+        side.osc1[i] = d1.prev;
+        side.osc2[i] = d2.prev;
+        d1.prev = d1.cur + side1;
+        d2.prev = d2.cur + side2;
+        d1.cur = d2.cur = 0;
+      }
     }
   }
 }

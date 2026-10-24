@@ -54,6 +54,11 @@ export interface Analysis {
   envelope: number[];
   /** Average level in dB per third-octave band during the chord. */
   bands: number[];
+  /**
+   * How wide the sound is: the level of what differs between left and right, as a share of what they
+   * share (%). 0 is mono. Missing in references saved before stereo.
+   */
+  width?: number;
   issues: Issue[];
 }
 
@@ -99,8 +104,22 @@ export function analyse(channels: Float32Array[], sampleRate: number, phrase: Ph
     rmsDb: round1(db(rms)),
     envelope: envelope(mid, sampleRate),
     bands: bands(mid, sampleRate, CHORD_FROM, CHORD_TO),
+    width: stereoWidth(channels),
     issues: dedupe(issues),
   };
+}
+
+/** Side level over mid level, in % (0 for mono). */
+export function stereoWidth(channels: Float32Array[]): number {
+  if (channels.length < 2) return 0;
+  const [l, r] = channels;
+  let mid = 0;
+  let side = 0;
+  for (let i = 0; i < l.length; i++) {
+    mid += ((l[i] + r[i]) / 2) ** 2;
+    side += ((l[i] - r[i]) / 2) ** 2;
+  }
+  return mid > 0 ? Math.round(Math.sqrt(side / mid) * 100) : 0;
 }
 
 /** Same kind within 10 ms (e.g. on both channels) counts once. */

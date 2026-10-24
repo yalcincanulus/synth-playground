@@ -10,14 +10,18 @@ function bank(over: Partial<ParamValues> = {}) {
   return new VoiceBank(SR, { ...defaultValues(), ...over });
 }
 
-/** Render `seconds`; `messages` are posted up front (they carry their own times). */
-function render(b: VoiceBank, messages: BankMessage[], seconds: number, taps?: Float32Array[]) {
+/** Render `seconds` in stereo; `messages` are posted up front (they carry their own times). */
+function renderStereo(b: VoiceBank, messages: BankMessage[], seconds: number, taps?: Float32Array[]) {
   for (const m of messages) b.post(m);
   const n = Math.ceil((seconds * SR) / BLOCK) * BLOCK;
-  const out = new Float32Array(n);
-  for (let i = 0; i < n; i += BLOCK) b.render(out.subarray(i, i + BLOCK), i, taps?.map((t) => t.subarray(i, i + BLOCK)) ?? null);
-  return out;
+  const left = new Float32Array(n);
+  const right = new Float32Array(n);
+  for (let i = 0; i < n; i += BLOCK) b.render(left.subarray(i, i + BLOCK), right.subarray(i, i + BLOCK), i, taps?.map((t) => t.subarray(i, i + BLOCK)) ?? null);
+  return { left, right, mid: left.map((l, i) => (l + right[i]) / 2), side: left.map((l, i) => (right[i] - l) / 2) };
 }
+
+/** The sound in mono, (left + right) / 2. */
+const render = (b: VoiceBank, messages: BankMessage[], seconds: number, taps?: Float32Array[]) => renderStereo(b, messages, seconds, taps).mid;
 
 /** Route n (1..8) as parameter values. */
 const route = (n: number, source: (typeof MOD_SOURCES)[number], dest: (typeof MOD_DESTS)[number], amount: number): Partial<ParamValues> => {
@@ -147,9 +151,10 @@ describe("VoiceBank mod matrix", () => {
     const b = bank({ ...SINE });
     b.post(on(1, 0));
     const out = new Float32Array(BLOCK);
-    for (let i = 0; i < 0.1 * SR; i += BLOCK) b.render(out, i);
+    const right = new Float32Array(BLOCK);
+    for (let i = 0; i < 0.1 * SR; i += BLOCK) b.render(out, right, i);
     b.post({ type: "params", values: { ...defaultValues(), ...SINE, ...route(1, "velocity", "volume", -1) } });
-    b.render(out, frame(0.1));
+    b.render(out, right, frame(0.1));
     // About 128 samples into a 10 ms glide toward silence: quieter, but not silent yet.
     expect(peak(out)).toBeGreaterThan(0.05);
   });
@@ -223,5 +228,37 @@ describe("VoiceBank taps", () => {
     // No drive: the drive stage passes the mix through.
     expect(tap.drive).toEqual(tap.mix);
     expect(peak(x)).toBeGreaterThan(0.05);
+  });
+});
+
+describe("VoiceBank stereo", () => {
+  const PAD: Partial<ParamValues> = { osc1Wave: 2, osc2Wave: 2, unison: 3, sustain: 1, cutoff: 3000, filterEnvAmt: 0 };
+  const unisonOn = () => [{ ...on(1, 0, 48), unison: 3, phases: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6] }] as BankMessage[];
+
+  test("unison copies spread left and right with Stereo Width", () => {
+    const wide = renderStereo(bank({ ...PAD, stereoWidth: 1 }), unisonOn(), 0.5);
+    const narrow = renderStereo(bank({ ...PAD, stereoWidth: 0 }), unisonOn(), 0.5);
+    expect(rms(wide.side, frame(0.1))).toBeGreaterThan(rms(wide.mid, frame(0.1)) * 0.2);
+    expect(peak(narrow.side)).toBe(0);
+  });
+
+  test("in mono it sounds the same at any width", () => {
+    const wide = renderStereo(bank({ ...PAD, stereoWidth: 1 }), unisonOn(), 0.5).mid;
+    const narrow = renderStereo(bank({ ...PAD, stereoWidth: 0 }), unisonOn(), 0.5).mid;
+    for (let i = 0; i < wide.length; i++) expect(Math.abs(wide[i] - narrow[i])).toBeLessThan(1e-5);
+  });
+
+  test("a voice without unison copies stays in the middle", () => {
+    const x = renderStereo(bank({ stereoWidth: 1 }), [on(1, 0)], 0.2);
+    expect(peak(x.side)).toBe(0);
+  });
+
+  test("random -> pan places each note, and keeps the mono sound", () => {
+    const p = { ...SINE, ...route(1, "random", "pan", 1) };
+    const right = renderStereo(bank(p), [{ ...on(1, 0), random: 1 }], 0.2);
+    const centre = renderStereo(bank(p), [{ ...on(1, 0), random: 0 }], 0.2);
+    expect(peak(right.left)).toBeLessThan(1e-6);
+    expect(peak(right.right)).toBeGreaterThan(0.1);
+    for (let i = 0; i < right.mid.length; i++) expect(Math.abs(right.mid[i] - centre.mid[i])).toBeLessThan(1e-6);
   });
 });

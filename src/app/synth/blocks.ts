@@ -92,8 +92,8 @@ export const BLOCKS: Record<BlockId, BlockDef> = {
   output: {
     title: "Output",
     short: "The final sound, with a limiter.",
-    explain: "The final sound. A limiter keeps it from getting too loud and distorting. Volume is this part's own level, so you can balance the Keys and Sequencer parts.",
-    tryThis: "Watch the meter while you play: the limiter catches the loudest peaks.",
+    explain: "The final sound. A limiter keeps it from getting too loud and distorting. Volume is this part's own level, so you can balance the Keys and Sequencer parts. The meters show left and right; the stereo picture below draws the sound's shape: a vertical line is mono (both sides the same), a wide cloud is a wide stereo sound.",
+    tryThis: "Load a pad with unison and play a chord: the stereo picture spreads out. Turn Stereo (in Playing) to 0 and it closes to a vertical line: mono.",
     params: ["volume"],
   },
   lfo: {
@@ -148,9 +148,9 @@ export const BLOCKS: Record<BlockId, BlockDef> = {
   perf: {
     title: "Playing",
     short: "How your playing shapes the sound.",
-    explain: "How you shape the sound while playing: pitch strip bends notes, mod strip adds LFO movement, Mono plays one note at a time, Glide slides between notes, Unison stacks copies. Max Voices is how many notes can sound at once: when you play more, the quietest fading note (or else the oldest) makes way. If the computer gets too busy, fewer notes sound, so the sound never crackles.",
+    explain: "How you shape the sound while playing: pitch strip bends notes, mod strip adds LFO movement, Mono plays one note at a time, Glide slides between notes, Unison stacks copies, and Stereo spreads them from left to right (in mono, they sound the same as without it). Max Voices is how many notes can sound at once: when you play more, the quietest fading note (or else the oldest) makes way. If the computer gets too busy, fewer notes sound, so the sound never crackles.",
     tryThis: "Switch to mono, raise Glide, and play overlapping notes.",
-    params: ["modTarget", "mono", "glide", "unison", "maxVoices"],
+    params: ["modTarget", "mono", "glide", "unison", "stereoWidth", "maxVoices"],
   },
 };
 
@@ -160,6 +160,7 @@ export const usesTable = (v: ParamValues) => v.osc1Wave === 4 || v.osc2Wave === 
 export const SHOWN_WHEN: Partial<Record<BlockId, Partial<Record<ParamId, (v: ParamValues) => boolean>>>> = {
   osc1: { pulseWidth: (v) => v.osc1Wave === 3 || v.osc2Wave === 3, wtTable: (v) => v.osc1Wave === 4, wtPos: (v) => v.osc1Wave === 4 },
   osc2: { wtTable: (v) => v.osc2Wave === 4 && v.osc1Wave !== 4, wtPos: (v) => v.osc2Wave === 4 && v.osc1Wave !== 4 },
+  perf: { stereoWidth: (v) => v.unison > 1 },
 };
 
 /** The Wavetable tab's knobs. */
@@ -206,7 +207,7 @@ export const KNOB_PAGES: KnobPage[] = [
   },
   {
     name: "Playing",
-    knobs: ["velocity", "glide", "mono", "unison", "keyTrack", "modTarget", "maxVoices", null],
+    knobs: ["velocity", "glide", "mono", "unison", "keyTrack", "modTarget", "maxVoices", "stereoWidth"],
     blocks: ["perf"],
   },
   {
@@ -239,7 +240,7 @@ export const SOURCE_BLOCK: Record<Exclude<ModSource, "off">, BlockId> = {
 /** The block each destination is in. */
 export const DEST_BLOCK: Record<ModDest, BlockId> = {
   pitch: "osc1", "osc 2 pitch": "osc2", cutoff: "filter", resonance: "filter", volume: "amp",
-  "wt pos": "osc1", width: "osc1", fm: "osc2", "osc mix": "mixer", sub: "mixer", noise: "mixer",
+  "wt pos": "osc1", width: "osc1", fm: "osc2", "osc mix": "mixer", sub: "mixer", noise: "mixer", pan: "output",
 };
 
 /** Patching: the source a block gives (its first one; change it in the route afterwards). */
@@ -257,7 +258,7 @@ export const MOD_SHORT: Record<string, string> = {
   off: "off", "lfo 1": "LFO1", "lfo 2": "LFO2", "filter env": "FEnv", "amp env": "AEnv", "pitch env": "PEnv", "mod env": "MEnv",
   velocity: "Vel", key: "Key", "mod strip": "Strip", random: "Rand",
   pitch: "Pitch", "osc 2 pitch": "O2Pit", cutoff: "Cut", resonance: "Res", volume: "Vol", "wt pos": "WTPos", width: "Width",
-  fm: "FM", "osc mix": "Mix", sub: "Sub", noise: "Noise",
+  fm: "FM", "osc mix": "Mix", sub: "Sub", noise: "Noise", pan: "Pan",
 };
 
 /** A param's label; route amounts are named by their route ("LFO1>WTPos"). */

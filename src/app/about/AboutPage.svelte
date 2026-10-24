@@ -107,7 +107,7 @@
         <li><strong>Background tabs:</strong> browsers slow down hidden tabs. The sequencer and drums keep time (their clock runs in a worker thread, which isn't slowed down), but the visuals pause.</li>
         <li><strong>A busy page:</strong> notes are planned 100 ms ahead. If the page freezes for longer, the steps it missed are skipped, so the loop stays on the beat instead of stumbling.</li>
         <li><strong>Not a plugin:</strong> it can't load in a DAW. To record it, capture the system audio.</li>
-        <li><strong>Sound quality:</strong> the filter is a clean digital one (an analog-style ladder filter comes later), the regular oscillators are less clean than the wavetables on very high notes, and the sound is mono until the chorus.</li>
+        <li><strong>Sound quality:</strong> the filter is a clean digital one (an analog-style ladder filter comes later), the regular oscillators are less clean than the wavetables on very high notes. Panning keeps the sound in mono unchanged, so a hard-panned note is louder on its side than a centred one.</li>
       </ul>
 
       <h4>The MiniLab</h4>

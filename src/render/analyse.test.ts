@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { analyse, compare, findClicks, findCuts, levelOutliers, type Analysis, type PhraseNote } from "./analyse";
+import { analyse, compare, findClicks, findCuts, levelOutliers, stereoWidth, type Analysis, type PhraseNote } from "./analyse";
 
 const SR = 48000;
 const PHRASE: PhraseNote[] = [{ note: 69, on: 0.1, off: 0.6 }];
@@ -74,5 +74,15 @@ describe("render analysis", () => {
     expect(kinds(results.get("loud")!.issues)).toEqual(["loud"]);
     expect(kinds(results.get("quiet")!.issues)).toEqual(["quiet"]);
     expect(results.get("a")!.issues).toEqual([]);
+  });
+});
+
+describe("stereoWidth", () => {
+  test("is 0 for mono and grows with the difference between the sides", () => {
+    const a = Float32Array.from({ length: 1000 }, (_, i) => Math.sin(i / 10));
+    const b = Float32Array.from({ length: 1000 }, (_, i) => Math.sin(i / 7));
+    expect(stereoWidth([a, a])).toBe(0);
+    expect(stereoWidth([a])).toBe(0);
+    expect(stereoWidth([a, b])).toBeGreaterThan(50);
   });
 });

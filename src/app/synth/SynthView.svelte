@@ -201,8 +201,8 @@
       <Block {pg} id="amp"><LiveCanvas height={56} draw={viz.scope(() => taps.amp, color)} /></Block>
       <Block {pg} id="chorus" inactive={pg.values.chorus < 0.01 ? "off" : null}><LiveCanvas height={34} draw={viz.chorus(engine, color)} /></Block>
       <Block {pg} id="output">
-        <LiveCanvas height={30} draw={viz.output(() => taps.out, color)} />
-        <LiveCanvas height={34} draw={viz.scope(() => taps.out, color)} />
+        <LiveCanvas height={34} draw={viz.stereoMeter(() => engine.fx.meters.left, () => engine.fx.meters.right, color)} />
+        <LiveCanvas height={84} draw={viz.stereoPicture(() => engine.fx.meters.left, () => engine.fx.meters.right, color)} />
       </Block>
     </div>
 

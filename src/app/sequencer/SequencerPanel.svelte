@@ -15,7 +15,7 @@
     Transpose: "A key moves the whole sequence up or down (C4 = no change)",
     Split: "Keys below C4 transpose the sequence (C3 = no change), C4 and up play notes",
   };
-  let mono = $derived(pg.values.mono > 0);
+  let mono = $derived(pg.parts.keys.values.mono > 0);
   const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
 </script>
 
@@ -37,7 +37,7 @@
       {#if s.transpose !== 0}<button class="small" onclick={() => pg.setTranspose(0)}>reset</button>{/if}
     </span>
     {#if mono && pg.keysMode !== "Transpose" && s.enabled}
-      <span class="hint">This preset is mono: one note at a time, shared with the sequencer. Pick a poly preset for chords.</span>
+      <span class="hint">The Keys part's preset is mono: one note at a time. Pick a poly preset for chords.</span>
     {/if}
     {#if pg.seqEdit}
       <span class="hint shifted">Knobs: step notes · Pads A: steps on/off (hold + key: set the note) · Pads B: slides · Faders: length, gate, rate, direction · Encoder click: keys mode</span>

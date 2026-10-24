@@ -44,9 +44,14 @@ block shows its live signal and all its controls, and coloured cables show what 
 explanations are on each block; the selected block's full explanation and a "Try this" are in the strip
 at the top. The 🎧 button on a block (or an encoder click) lets you hear the sound at that point only.
 
+**Stereo:** unison copies spread left and right by **Stereo** (in the Playing block), and the mod matrix's
+**pan** destination moves whole notes (random → pan puts each note somewhere else). Both keep the sound in mono
+unchanged: left and right averaged are always the mono sound (exactly, without drive). The Output block shows
+left and right levels and a stereo picture: a vertical line is mono, a wide cloud is a wide sound.
+
 The **Mod Matrix** strip adds up to 8 extra routes: any source (LFOs, the four envelopes including a spare
 Mod Envelope, velocity, key, the mod strip, a random value per note) to any destination (pitch, cutoff,
-resonance, volume, wavetable position, pulse width, FM, osc mix, sub, noise), each with an amount. Press
+resonance, volume, wavetable position, pulse width, FM, osc mix, sub, noise, pan), each with an amount. Press
 **Patch**, click a source block, then a destination block; each route is drawn as a cable in its source's colour.
 
 In this view the MiniLab knobs follow the selected block: click a block, or turn the encoder to step

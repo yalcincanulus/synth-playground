@@ -18,14 +18,15 @@
         Every preset plays the same phrase offline (a held low note, a held chord, then 8 fast short notes) and the result is
         checked: no NaN, not silent, no clicks at note starts and ends, no sound stopping dead, no level far from the other presets.
         The last columns compare each render with the saved reference: loudness, loudness over time, and the chord's spectrum,
-        in dB. Random parts of the sound (noise, unison phases, the random source, the random LFO wave) are seeded, so every
+        in dB. Loudness over time and the spectrum are measured on the sound in mono, (left + right) / 2, so a change in
+        stereo width alone shows there as 0.0. Random parts of the sound (noise, unison phases, the random source, the random LFO wave) are seeded, so every
         render of a preset is exactly the same until the engine changes.
       </p>
       <p id="reference" class="hint"></p>
       <table>
         <thead>
           <tr>
-            <th>#</th><th>Preset</th><th title="Uses the mod matrix">Routes</th><th>Peak dB</th><th>RMS dB</th><th>Issues</th>
+            <th>#</th><th>Preset</th><th title="Uses the mod matrix">Routes</th><th>Peak dB</th><th>RMS dB</th><th title="Stereo width: the level of what differs between left and right, as a share of what they share">Width</th><th>Issues</th>
             <th title="Loudness difference from the reference">Δ level</th>
             <th title="Average difference of the loudness over time">Δ envelope</th>
             <th title="Average difference of the chord's spectrum">Δ spectrum</th>

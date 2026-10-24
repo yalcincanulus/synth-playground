@@ -1,7 +1,7 @@
 // The synth's audio-thread code (an AudioWorklet module).
 //
 // "synth-voices": one processor runs every voice of a part, with its LFOs (dsp/voiceBank.ts).
-// Output 0 is the mono sum of all voices; outputs 1.. are the stages in TAPS order, for the
+// Output 0 is all voices in stereo; outputs 1.. are the stages (mono) in TAPS order, for the
 // Synth view. Its port also reports what the LFOs are doing, for the drawings.
 //
 // Wavetables are prepared on the main thread (wavetables.ts) and sent once to a
@@ -103,14 +103,14 @@ class SynthVoices extends AudioWorkletProcessor {
 
   process(_inputs: Float32Array[][], outputs: Float32Array[][]) {
     const start = now();
-    const out = outputs[0][0];
+    const [left, right] = outputs[0];
     for (let i = 1; i < outputs.length; i++) this.taps[i - 1] = outputs[i][0];
-    this.bank.render(out, currentFrame, this.taps);
+    this.bank.render(left, right, currentFrame, this.taps);
     if (this.bank.voiceCount) account(now() - start, this.bank.voiceCount, this.bank.units);
     if (currentFrame >= this.lfoReportFrame) {
       this.lfoReportFrame = currentFrame + LFO_REPORT_S * sampleRate;
       // The phases are now at the end of this block.
-      this.port.postMessage({ type: "lfo", time: (currentFrame + out.length) / sampleRate, ...this.bank.lfoState() });
+      this.port.postMessage({ type: "lfo", time: (currentFrame + left.length) / sampleRate, ...this.bank.lfoState() });
     }
     return true;
   }

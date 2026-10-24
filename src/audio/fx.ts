@@ -10,6 +10,8 @@
 export class Fx {
   readonly drumIn: GainNode;
   readonly analyser: AnalyserNode;
+  /** The final sound's left and right channels, for the stereo meter. */
+  readonly meters: { left: AnalyserNode; right: AnalyserNode };
   /** The shared effects' wet outputs, for visualisation. */
   readonly delayOut: AudioNode;
   readonly reverbOut: AudioNode;
@@ -50,6 +52,12 @@ export class Fx {
     this.analyser = new AnalyserNode(ctx, { fftSize: 4096, smoothingTimeConstant: 0.75 });
     this.mute = new GainNode(ctx);
     this.master.connect(limiter).connect(this.analyser).connect(this.mute).connect(ctx.destination);
+    const split = new ChannelSplitterNode(ctx, { numberOfOutputs: 2 });
+    const meter = () => new AnalyserNode(ctx, { fftSize: 2048, channelCount: 1, channelCountMode: "explicit" });
+    this.meters = { left: meter(), right: meter() };
+    limiter.connect(split);
+    split.connect(this.meters.left, 0);
+    split.connect(this.meters.right, 1);
   }
 
   private mute: GainNode;
@@ -118,23 +126,28 @@ export class PartFx {
     const post = new GainNode(ctx);
     this.chorusOut = post;
 
-    // Chorus: two delay lines swept by slow LFOs in opposite phase, panned apart.
+    // Chorus: two delay lines swept by slow LFOs in opposite phase, panned apart. They take the part in
+    // mono, as before the voices were stereo, so the chorus sounds the same at any Stereo Width.
     this.chorusDry = new GainNode(ctx);
     this.chorusWet = new GainNode(ctx, { gain: 0 });
     this.input.connect(this.chorusDry).connect(post);
+    const mono = new GainNode(ctx, { channelCount: 1, channelCountMode: "explicit" });
+    this.input.connect(mono);
     for (const [rate, pan] of [[0.31, -0.7], [0.43, 0.7]] as const) {
       const d = new DelayNode(ctx, { delayTime: 0.015, maxDelayTime: 0.05 });
       const lfo = new OscillatorNode(ctx, { frequency: rate });
       const depth = new GainNode(ctx, { gain: 0.004 });
       lfo.connect(depth).connect(d.delayTime);
       lfo.start();
-      this.input.connect(d).connect(new StereoPannerNode(ctx, { pan })).connect(this.chorusWet);
+      mono.connect(d).connect(new StereoPannerNode(ctx, { pan })).connect(this.chorusWet);
     }
     this.chorusWet.connect(post);
     post.connect(master);
 
     this.delaySend = new GainNode(ctx, { gain: 0 });
-    this.reverbSend = new GainNode(ctx, { gain: 0 });
+    // The reverb takes the part in mono (it reverberates each side on its own, so a wide input would change
+    // how it sounds in mono); its output is stereo as before.
+    this.reverbSend = new GainNode(ctx, { gain: 0, channelCount: 1, channelCountMode: "explicit" });
     post.connect(this.delaySend).connect(delayIn);
     post.connect(this.reverbSend).connect(reverbIn);
   }

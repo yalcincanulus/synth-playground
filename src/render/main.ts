@@ -161,10 +161,10 @@ function draw() {
       name.append(category);
       tr.append(cell(String(i + 1), "num"), name, cell(hasRoutes(presetValues(preset)) ? "yes" : "", "routes"));
       if (!a) {
-        tr.append(cell(""), cell(""), cell(""), cell(""), cell(""), cell(""), cell(""));
+        tr.append(cell(""), cell(""), cell(""), cell(""), cell(""), cell(""), cell(""), cell(""));
         return tr;
       }
-      tr.append(cell(a.peakDb.toFixed(1), "num"), cell(a.rmsDb.toFixed(1), "num"));
+      tr.append(cell(a.peakDb.toFixed(1), "num"), cell(a.rmsDb.toFixed(1), "num"), cell(a.width ? `${a.width}%` : "mono", "num"));
       const issues = cell("", a.issues.length ? "issues" : "ok");
       if (!a.issues.length) issues.textContent = "ok";
       for (const issue of a.issues) {

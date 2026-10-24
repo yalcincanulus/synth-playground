@@ -70,7 +70,7 @@ export class Part {
     const node = new AudioWorkletNode(this.host.ctx, "synth-voices", {
       numberOfInputs: 0,
       numberOfOutputs: 1 + TAPS.length,
-      outputChannelCount: Array(1 + TAPS.length).fill(1),
+      outputChannelCount: [2, ...TAPS.map(() => 1)],
       processorOptions: { values: this.params, seed },
     });
     node.connect(this.fx.input);

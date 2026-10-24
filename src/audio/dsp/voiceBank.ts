@@ -3,8 +3,13 @@
 // and in tests.
 //
 // Signal path per voice:
-//   oscillators + sub + noise -> mixer -> drive -> filter -> amp envelope -> volume route
-// then all voices together -> LFO tremolo -> out. Each voice has four envelopes (amp, filter, pitch,
+//   oscillators + sub + noise -> mixer -> drive -> filter -> amp envelope -> volume route -> pan
+// then all voices together -> LFO tremolo -> out (stereo).
+//
+// Stereo: a voice's unison copies spread left and right by Stereo Width, and the pan route moves the
+// whole voice. Both keep (left + right) / 2 equal to the mono sound, so playing in mono sounds the same
+// (exactly, without drive: drive is applied to each side). A voice without unison copies runs its
+// drive and filter once; with copies, once per side. Each voice has four envelopes (amp, filter, pitch,
 // mod), and the mod matrix's routes move its settings sample by sample. The two LFOs, pitch bend and
 // the mod strip are shared by all voices and run here too.
 //
@@ -17,7 +22,7 @@
 import { FILTER_TYPES, LFO_WAVES, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, slotIds, type ParamValues } from "../params";
 import { DRIVE_MIN, Oversampled2x } from "./drive";
 import { LFO_AMP, LFO_AMP_TARGET, LFO_SCALE, LfoCore, lfoDepths } from "./lfo";
-import { Oscillator, type OscParams, type Table } from "./oscillator";
+import { Oscillator, type OscParams, type SideOutputs, type Table } from "./oscillator";
 import { coefFor, Ramp } from "./ramp";
 import { Svf, svfG } from "./svf";
 import { voiceWeight } from "../voiceLimit";
@@ -68,10 +73,10 @@ const MAX_Q_DB = 40;
 const MIN_BANDPASS_Q = 0.05;
 
 // Smoothed per-voice values, by index.
-const G1 = 0, G2 = 1, SUB = 2, NOISE = 3, OSC2 = 4, SPREAD = 5, WIDTH = 6, FM = 7, POS = 8, K = 9, Q = 10, FENV = 11, PENV = 12;
-const SMOOTHED = 13;
+const G1 = 0, G2 = 1, SUB = 2, NOISE = 3, OSC2 = 4, SPREAD = 5, WIDTH = 6, FM = 7, POS = 8, K = 9, Q = 10, FENV = 11, PENV = 12, STEREO = 13;
+const SMOOTHED = 14;
 const PASS1 = [OSC2, SPREAD, WIDTH, FM, POS, PENV];
-const PASS2 = [G1, G2, SUB, NOISE, K, Q, FENV];
+const PASS2 = [G1, G2, SUB, NOISE, K, Q, FENV, STEREO];
 
 // Mod matrix sources and destinations, by their index in MOD_SOURCES / MOD_DESTS.
 const S = (name: (typeof MOD_SOURCES)[number]) => MOD_SOURCES.indexOf(name);
@@ -79,7 +84,7 @@ const S_LFO1 = S("lfo 1"), S_LFO2 = S("lfo 2"), S_FENV = S("filter env"), S_AENV
 const S_MENV = S("mod env"), S_VEL = S("velocity"), S_KEY = S("key"), S_STRIP = S("mod strip"), S_RANDOM = S("random");
 const D = (name: (typeof MOD_DESTS)[number]) => MOD_DESTS.indexOf(name);
 const D_PITCH = D("pitch"), D_OSC2 = D("osc 2 pitch"), D_CUTOFF = D("cutoff"), D_RES = D("resonance"), D_VOLUME = D("volume");
-const D_POS = D("wt pos"), D_WIDTH = D("width"), D_FM = D("fm"), D_MIX = D("osc mix"), D_SUB = D("sub"), D_NOISE = D("noise");
+const D_POS = D("wt pos"), D_WIDTH = D("width"), D_FM = D("fm"), D_MIX = D("osc mix"), D_SUB = D("sub"), D_NOISE = D("noise"), D_PAN = D("pan");
 
 const CENTS_TO_LN = Math.LN2 / 1200;
 const BANDPASS = FILTER_TYPES.indexOf("bandpass");
@@ -117,6 +122,11 @@ class Voice {
   readonly cutoff: Ramp;
   readonly svf = new Svf();
   readonly driver = new Oversampled2x();
+  /** With unison copies the voice is stereo: these are the right side's (the ones above are the left's). */
+  readonly stereo: boolean;
+  private svfR = new Svf();
+  private driverR = new Oversampled2x();
+  private side: SideOutputs | null;
   readonly smooth: Float64Array;
   readonly gainScale: number;
   /** How much work this voice is (see voiceWeight). */
@@ -149,6 +159,8 @@ class Voice {
     this.id = msg.id;
     let k = 0;
     this.osc = new Oscillator(msg.unison, bank.sampleRate, bank.tables, () => (k < phases.length ? phases[k++] : 0));
+    this.stereo = this.osc.unison > 1;
+    this.side = this.stereo ? { osc1: block(), osc2: block() } : null;
     this.freq = new Ramp(midiToHz(msg.note));
     this.key = new Ramp(keySource(msg.note));
     this.cutoff = new Ramp(filterBase(bank.values, msg.note));
@@ -182,7 +194,7 @@ class Voice {
     return (this.noise / 4294967296) * 2 - 1;
   }
 
-  render(bank: VoiceBank, out: Float32Array, taps: Float32Array[] | null, from: number, to: number) {
+  render(bank: VoiceBank, outL: Float32Array, outR: Float32Array, taps: Float32Array[] | null, from: number, to: number) {
     const s = this.smooth;
     const t = bank.targets;
     const c = bank.smoothCoef;
@@ -222,7 +234,7 @@ class Voice {
       p.fm[i] = s[FM] + (mFm ? mFm[i] : 0);
       p.position[i] = s[POS] + position[i] + (mPos ? mPos[i] : 0);
     }
-    this.osc.render(p, this.o1, this.o2, this.os, from, to);
+    this.osc.render(p, this.o1, this.o2, this.os, from, to, this.side);
 
     // Pass 2: mixer, drive, filter, amp.
     const g = this.gainScale;
@@ -231,22 +243,43 @@ class Voice {
     const sr = bank.sampleRate;
     const velScale = velocityFilterScale(v, this.velocity);
     const filterLfo = bank.globals.filter;
-    const mMix = mod(D_MIX), mSub = mod(D_SUB), mNoise = mod(D_NOISE), mCutoff = mod(D_CUTOFF), mRes = mod(D_RES), mVol = mod(D_VOLUME);
+    const mMix = mod(D_MIX), mSub = mod(D_SUB), mNoise = mod(D_NOISE), mCutoff = mod(D_CUTOFF), mRes = mod(D_RES), mVol = mod(D_VOLUME), mPan = mod(D_PAN);
+    const driveOn = drive >= DRIVE_MIN;
+    const side = this.side;
     for (let i = from; i < to; i++) {
       for (const j of PASS2) s[j] = t[j] + (s[j] - t[j]) * c;
       const mix = mMix ? mMix[i] : 0;
       const noise = this.nextNoise();
-      const o1 = this.o1[i] * (s[G1] - mix) * g;
-      const o2 = this.o2[i] * (s[G2] + mix) * g;
+      const g1 = (s[G1] - mix) * g;
+      const g2 = (s[G2] + mix) * g;
       const sub = this.os[i] * (s[SUB] + (mSub ? mSub[i] : 0));
       const nz = noise * (s[NOISE] + (mNoise ? mNoise[i] : 0));
-      const x = 0.5 * (o1 + o2 + sub + nz);
-      const driven = drive >= DRIVE_MIN ? this.driver.process(x, drive) : x;
+      const x = 0.5 * (this.o1[i] * g1 + this.o2[i] * g2 + sub + nz);
       const cents = this.fenvB[i] * s[FENV] * velScale + filterLfo[i] + (mCutoff ? mCutoff[i] : 0);
-      const fc = this.cutoff.tick() * Math.exp(cents * CENTS_TO_LN);
+      const fg = svfG(this.cutoff.tick() * Math.exp(cents * CENTS_TO_LN), sr);
       const k = mRes ? resonanceK(mode, s[Q] + mRes[i]) : s[K];
-      const filtered = this.svf.process(driven, svfG(fc, sr), k, mode);
-      out[i] += filtered * this.ampB[i] * (mVol ? 1 + mVol[i] : 1);
+      let left: number, right: number, driven: number;
+      if (side) {
+        // The copies' spread: half the mixer's sum of the side signals, times the width.
+        const d = 0.5 * (side.osc1[i] * g1 + side.osc2[i] * g2) * s[STEREO];
+        let xl = x - d;
+        let xr = x + d;
+        if (driveOn) {
+          xl = this.driver.process(xl, drive);
+          xr = this.driverR.process(xr, drive);
+        }
+        driven = 0.5 * (xl + xr);
+        left = this.svf.process(xl, fg, k, mode);
+        right = this.svfR.process(xr, fg, k, mode);
+      } else {
+        driven = driveOn ? this.driver.process(x, drive) : x;
+        left = right = this.svf.process(driven, fg, k, mode);
+      }
+      const level = this.ampB[i] * (mVol ? 1 + mVol[i] : 1);
+      // Pan keeps left + right: hard right is the right side twice as loud and the left silent.
+      const pan = mPan ? Math.max(-1, Math.min(1, mPan[i])) : 0;
+      outL[i] += left * level * (1 - pan);
+      outR[i] += right * level * (1 + pan);
       if (taps) {
         taps[T_OSC1][i] += this.o1[i];
         taps[T_OSC2][i] += this.o2[i];
@@ -254,7 +287,7 @@ class Voice {
         taps[T_NOISE][i] += noise;
         taps[T_MIX][i] += x;
         taps[T_DRIVE][i] += driven;
-        taps[T_FILTER][i] += filtered;
+        taps[T_FILTER][i] += 0.5 * (left + right);
       }
     }
   }
@@ -446,24 +479,25 @@ export class VoiceBank {
   }
 
   /**
-   * Render one block starting at absolute frame `startFrame` (the worklet's currentFrame) into `out`,
-   * and each stage into `taps` (TAPS order) when given.
+   * Render one block starting at absolute frame `startFrame` (the worklet's currentFrame) into `left`
+   * and `right`, and each stage (mono) into `taps` (TAPS order) when given.
    */
-  render(out: Float32Array, startFrame: number, taps: Float32Array[] | null = null) {
-    out.fill(0);
+  render(left: Float32Array, right: Float32Array, startFrame: number, taps: Float32Array[] | null = null) {
+    left.fill(0);
+    right.fill(0);
     if (taps) for (const tap of taps) tap.fill(0);
-    const n = out.length;
+    const n = left.length;
     const end = startFrame + n;
     const due = this.events.filter((e) => e.frame < end).sort((a, b) => a.frame - b.frame || a.seq - b.seq);
     if (due.length) this.events = this.events.filter((e) => e.frame >= end);
     let pos = 0;
     for (const e of due) {
       const at = Math.max(0, e.frame - startFrame);
-      if (at > pos) this.renderSegment(out, taps, pos, at, startFrame);
+      if (at > pos) this.renderSegment(left, right, taps, pos, at, startFrame);
       pos = Math.max(pos, at);
       this.apply(e.msg, startFrame + pos);
     }
-    if (pos < n) this.renderSegment(out, taps, pos, n, startFrame);
+    if (pos < n) this.renderSegment(left, right, taps, pos, n, startFrame);
   }
 
   /** The LFOs' phases and rates now, and their random steps since the last call. */
@@ -474,11 +508,14 @@ export class VoiceBank {
     return { phase: lfos.map((l) => l.phase), rate: lfos.map((l) => l.hz), steps };
   }
 
-  private renderSegment(out: Float32Array, taps: Float32Array[] | null, from: number, to: number, startFrame: number) {
+  private renderSegment(left: Float32Array, right: Float32Array, taps: Float32Array[] | null, from: number, to: number, startFrame: number) {
     this.globals.render(from, to, startFrame, this.steps);
-    for (const v of this.voices) v.render(this, out, taps, from, to);
+    for (const v of this.voices) v.render(this, left, right, taps, from, to);
     const tremolo = this.globals.tremolo;
-    for (let i = from; i < to; i++) out[i] *= tremolo[i];
+    for (let i = from; i < to; i++) {
+      left[i] *= tremolo[i];
+      right[i] *= tremolo[i];
+    }
   }
 
   private setParams(p: ParamValues) {
@@ -497,6 +534,7 @@ export class VoiceBank {
     t[Q] = filterQ(p.filterType, p.resonance);
     t[FENV] = p.filterEnvAmt * 1200;
     t[PENV] = p.pitchEnvAmt * 100;
+    t[STEREO] = p.stereoWidth;
     this.routes = activeRoutes(p);
     this.routeBySlot = Array(MOD_SLOTS).fill(null);
     for (const r of this.routes) this.routeBySlot[r.slot] = r;

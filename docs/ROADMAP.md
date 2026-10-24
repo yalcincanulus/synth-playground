@@ -140,6 +140,13 @@ What the browser still limits, whatever we do:
 - A **pan** destination in the mod matrix (e.g. random → pan, so each note sits in a different place).
 - A stereo meter in the Output block.
 - **Done when:** pads sound clearly wider, and switching to mono sounds unchanged.
+- Status: done 2026-10-25 (checked by ear and eye on the MiniLab).
+  - **How:** the oscillator also outputs a "side" signal (each unison copy times its position, flattest copy left, sharpest right, Osc 2 mirrored). Left = sum − width × side, right = sum + width × side, so (left + right) / 2 is always the mono sound. Voices with unison copies run drive and filter once per side; others stay mono inside.
+  - **Stereo** (0–100%, default 60%) is a preset setting in the Playing block (shown when Unison is above 1) and on its knob page. **Pan** is a new mod matrix destination; it uses the same sum-keeping rule, so a hard-panned note is the mono level times two on one side.
+  - **Effects:** the chorus and the reverb take each part in mono (so in mono they sound as before at any width); the delay is stereo.
+  - **Output block:** left and right meters, and a stereo picture (goniometer) with the correlation (+1 mono, 0 wide).
+  - **Render check:** a Width column. Unison pads are 51–62% wide at the default; the mono figures moved by under 1 dB (the output limiter reacts to the higher per-side peaks; drive on Reese Bass and Sci-Fi Drone). Presets without unison moved by at most 0.2 dB, from the chorus reaching the reverb in mono. Reference re-saved. Live: Warm Pad (no effects) is 0% wide at Stereo 0 and 92% at 100%.
+  - **CPU:** the heavy test (10 notes, unison 3, table + saw, drive, 8 routes) went from 0.57 to 0.80 ms per block in bun (21% → 30%), mostly from running drive twice. The CPU limit (slice 5) absorbs it. A later saving: run the mono path when Stereo is 0.
 
 ### 8. Ladder filter
 

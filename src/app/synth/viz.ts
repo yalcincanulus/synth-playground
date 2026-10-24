@@ -517,30 +517,88 @@ export function reverb(values: Values, color: () => string): Draw {
   };
 }
 
-const meterBuf = new Float32Array(2048);
-let meterPeak = 0;
+const stereoL = new Float32Array(2048);
+const stereoR = new Float32Array(2048);
+const meterDb = (x: number) => 20 * Math.log10(x + 1e-9);
 
-export function output(analyser: () => AnalyserNode, color: () => string): Draw {
+/** Left and right level bars, with a falling peak mark each. */
+export function stereoMeter(left: () => AnalyserNode, right: () => AnalyserNode, color: () => string): Draw {
+  const peaks = [0, 0];
   return ({ g, w, h }) => {
-    analyser().getFloatTimeDomainData(meterBuf);
-    let sum = 0;
-    let peak = 0;
-    for (const x of meterBuf) {
-      sum += x * x;
-      peak = Math.max(peak, Math.abs(x));
-    }
-    const rmsDb = 20 * Math.log10(Math.sqrt(sum / meterBuf.length) + 1e-9);
-    meterPeak = Math.max(peak, meterPeak * 0.97);
-    const peakDb = 20 * Math.log10(meterPeak + 1e-9);
-    const X = (db: number) => Math.max(0, Math.min(1, (db + 60) / 60)) * w;
-    g.fillStyle = "#ffffff10";
-    g.fillRect(0, h / 2 - 8, w, 16);
-    g.fillStyle = color();
-    g.fillRect(0, h / 2 - 8, X(rmsDb), 16);
-    g.fillStyle = peakDb > -1 ? "#ff6b6b" : "#fff";
-    g.fillRect(X(peakDb) - 1, h / 2 - 10, 2, 20);
+    const X = (db: number) => Math.max(0, Math.min(1, (db + 60) / 60)) * (w - 14) + 14;
+    [left(), right()].forEach((a, ch) => {
+      const buf = ch ? stereoR : stereoL;
+      a.getFloatTimeDomainData(buf);
+      let sum = 0;
+      let peak = 0;
+      for (const x of buf) {
+        sum += x * x;
+        peak = Math.max(peak, Math.abs(x));
+      }
+      peaks[ch] = Math.max(peak, peaks[ch] * 0.97);
+      const y = 3 + ch * 11;
+      label(g, ch ? "R" : "L", 2, y + 8, "#ffffff90");
+      g.fillStyle = "#ffffff10";
+      g.fillRect(14, y, w - 14, 9);
+      g.fillStyle = color();
+      g.fillRect(14, y, X(meterDb(Math.sqrt(sum / buf.length))) - 14, 9);
+      const peakDb = meterDb(peaks[ch]);
+      g.fillStyle = peakDb > -1 ? "#ff6b6b" : "#fff";
+      g.fillRect(X(peakDb) - 1, y - 1, 2, 11);
+    });
     for (const db of [-48, -24, -12, -6, 0]) label(g, `${db}`, X(db), h - 2, "#ffffff50", "center");
-    label(g, `${rmsDb < -90 ? "-∞" : rmsDb.toFixed(0)} dB`, 2, 10, TEXT);
+  };
+}
+
+/**
+ * The stereo picture (a goniometer): each sample is a dot, up for what both sides share (the mono
+ * sound), sideways for how they differ. Mono is a vertical line; a wide sound is a round cloud.
+ * Also the correlation: +1 is mono, 0 fully wide, below 0 the sides cancel in mono.
+ */
+export function stereoPicture(left: () => AnalyserNode, right: () => AnalyserNode, color: () => string): Draw {
+  return ({ g, w, h }) => {
+    left().getFloatTimeDomainData(stereoL);
+    right().getFloatTimeDomainData(stereoR);
+    let peak = 0;
+    let lr = 0;
+    let ll = 0;
+    let rr = 0;
+    for (let i = 0; i < stereoL.length; i++) {
+      const l = stereoL[i];
+      const r = stereoR[i];
+      peak = Math.max(peak, Math.abs(l), Math.abs(r));
+      lr += l * r;
+      ll += l * l;
+      rr += r * r;
+    }
+    const cx = w / 2;
+    const cy = h / 2;
+    const size = Math.min(w, h) / 2 - 4;
+    // The two diagonals are the left and right channels on their own.
+    g.strokeStyle = "#ffffff18";
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(cx - size, cy - size);
+    g.lineTo(cx + size, cy + size);
+    g.moveTo(cx + size, cy - size);
+    g.lineTo(cx - size, cy + size);
+    g.moveTo(cx, cy - size);
+    g.lineTo(cx, cy + size);
+    g.stroke();
+    label(g, "L", cx - size - 2, cy - size + 8, "#ffffff60", "right");
+    label(g, "R", cx + size + 2, cy - size + 8, "#ffffff60");
+    if (peak < 0.0005) return label(g, "silent", cx, cy + 3, "#ffffff40", "center");
+    const k = size / Math.max(peak, 0.05);
+    g.fillStyle = color();
+    g.globalAlpha = 0.5;
+    for (let i = 0; i < stereoL.length; i += 2) {
+      const l = stereoL[i];
+      const r = stereoR[i];
+      g.fillRect(cx + ((r - l) / 2) * k - 0.75, cy - ((l + r) / 2) * k - 0.75, 1.5, 1.5);
+    }
+    g.globalAlpha = 1;
+    const corr = ll > 0 && rr > 0 ? lr / Math.sqrt(ll * rr) : 1;
+    label(g, `correlation ${corr >= 0 ? "+" : ""}${corr.toFixed(2)}${corr > 0.995 ? " · mono" : ""}`, 2, h - 3, "#ffffff90");
   };
 }
 
