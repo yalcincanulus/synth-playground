@@ -23,7 +23,7 @@ import { FACTORY_PRESETS, FADERS, PAD_PRESETS, loadUserPresets, presetValues, sa
 
 export type MidiStatus = "idle" | "unsupported" | "denied" | "not-found" | "connected";
 export type VizMode = "scope" | "spectrum";
-export type View = "playground" | "synth" | "wavetable";
+export type View = "playground" | "synth" | "wavetable" | "about";
 /** What Shift + encoder cycles through: the playground's two visualisers, then the Synth and Wavetable views. */
 const SCREENS = ["scope", "spectrum", "synth", "wavetable"] as const;
 const SCREEN_NAMES: Record<(typeof SCREENS)[number], string> = { scope: "Waveform", spectrum: "Spectrum", synth: "Synth", wavetable: "Wavetable" };
@@ -380,7 +380,8 @@ export class Playground {
 
   /** Shift + encoder: Waveform -> Spectrum -> Synth -> Wavetable. */
   cycleScreen(delta: number) {
-    const current = this.view === "playground" ? this.vizMode : this.view;
+    // The About page isn't one of the screens: from there, Shift + encoder starts over from the playground.
+    const current = this.view === "playground" || this.view === "about" ? this.vizMode : this.view;
     const next = SCREENS[(SCREENS.indexOf(current) + delta + SCREENS.length) % SCREENS.length];
     if (next === "synth" || next === "wavetable") this.setView(next);
     else {

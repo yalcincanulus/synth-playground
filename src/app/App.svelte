@@ -13,6 +13,7 @@
   import { Playground } from "./playground.svelte";
   import SynthView from "./synth/SynthView.svelte";
   import WavetableView from "./wavetable/WavetableView.svelte";
+  import AboutPage from "./about/AboutPage.svelte";
 
   const pg = new Playground();
   if (import.meta.env.DEV) Object.assign(window, { pg });
@@ -85,6 +86,7 @@
       <button class:active={pg.view === "synth"} onclick={() => pg.setView("synth")} title="Shift + encoder">Synth</button>
       <button class:active={pg.view === "wavetable"} onclick={() => pg.setView("wavetable")} title="Shift + encoder">Wavetable</button>
     </nav>
+    <button class="about-link" class:active={pg.view === "about"} onclick={() => pg.setView("about")}>About</button>
 
     <div class="midi">
       {#if pg.midiStatus === "connected"}
@@ -253,8 +255,10 @@
   </section>
   {:else if pg.view === "synth"}
     <SynthView {pg} {accent} />
-  {:else}
+  {:else if pg.view === "wavetable"}
     <WavetableView {pg} {accent} />
+  {:else}
+    <AboutPage {pg} />
   {/if}
 
   <section class="panel">
@@ -283,6 +287,9 @@
   .views { display: flex; gap: 2px; background: #0b0e10; border: 1px solid var(--line); border-radius: 6px; padding: 2px; }
   .views button { border: none; background: none; font-size: 13px; padding: 4px 14px; border-radius: 4px; color: var(--dim); }
   .views .active { background: var(--accent); color: #0b1314; font-weight: 600; }
+  .about-link { background: none; border: none; color: var(--dim); font-size: 13px; padding: 4px 6px; margin-left: -12px; }
+  .about-link:hover { color: var(--text); }
+  .about-link.active { color: var(--accent); text-decoration: underline; text-underline-offset: 4px; }
   .midi { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
   .pill { border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: 12px; white-space: nowrap; }
   .pill.ok { color: var(--accent); border-color: var(--accent); }
