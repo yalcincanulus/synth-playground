@@ -11,6 +11,8 @@ export interface VoiceContext {
   filterMod: AudioNode;
   /** Pulse width modulation (LFO), added to every oscillator's width. */
   widthMod: AudioNode;
+  /** Wavetable position modulation (LFO), added to every oscillator's position. */
+  positionMod: AudioNode;
   driveCurve: (drive: number) => Float32Array<ArrayBuffer> | null;
   /** Shared analysers that every voice also feeds, so each stage can be visualised. */
   taps: VoiceTaps;
@@ -109,6 +111,7 @@ export class Voice {
     this.osc.connect(this.subGain, 2);
     vc.pitchMod.connect(this.param("detune"));
     vc.widthMod.connect(this.param("width"));
+    vc.positionMod.connect(this.param("position"));
 
     this.noise = new AudioBufferSourceNode(ctx, { buffer: vc.noise, loop: true });
     this.noise.connect(this.noiseGain);
@@ -168,6 +171,8 @@ export class Voice {
     set("wave2", p.osc2Wave);
     set("sync", p.oscSync);
     set("envTarget", p.pitchEnvTarget);
+    set("table", p.wtTable);
+    this.param("position").setTargetAtTime(p.wtPos, t, 0.01);
     this.param("osc2Detune").setTargetAtTime(p.osc2Semi * 100 + p.osc2Detune, t, 0.01);
     this.param("spread").setTargetAtTime(unisonSpread(p), t, 0.01);
     this.param("width").setTargetAtTime(p.pulseWidth, t, 0.01);
@@ -229,6 +234,7 @@ export class Voice {
     this.noise.onended = () => {
       this.vc.pitchMod.disconnect(this.param("detune"));
       this.vc.widthMod.disconnect(this.param("width"));
+      this.vc.positionMod.disconnect(this.param("position"));
       this.vc.filterMod.disconnect(this.filter.detune);
       for (const n of [this.osc, this.noise, this.mix, this.shaper, this.filter, this.amp]) n.disconnect();
     };

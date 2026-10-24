@@ -3,6 +3,8 @@ import { DRUM_NAMES } from "../audio/drums";
 import { Engine, type ListenTap } from "../audio/engine";
 import { formatValue, fromControl, PARAMS, toControl, type ParamId, type ParamValues } from "../audio/params";
 import { Sequencer, type Pattern, basicBeat, emptyPattern } from "../audio/sequencer";
+import { TABLE_WAVE } from "../audio/oscCore";
+import { WAVETABLES } from "../audio/wavetables";
 import { findPorts, isMainPort, MiniLab, requestMidi } from "../minilab/device";
 import {
   CC_MAPS,
@@ -16,14 +18,15 @@ import {
   type Program,
 } from "../minilab/protocol";
 import { rollDice } from "../presets/dice";
-import { BLOCK_TAPS, KNOB_PAGES, pageOf, TAP_NAMES, type BlockId } from "./synth/blocks";
-import { FACTORY_PRESETS, FADERS, loadUserPresets, presetValues, saveUserPresets, type Preset, type Rgb } from "../presets/presets";
+import { BLOCK_TAPS, KNOB_PAGES, pageOf, TAP_NAMES, usesTable, WAVETABLE_KNOBS, type BlockId } from "./synth/blocks";
+import { FACTORY_PRESETS, FADERS, PAD_PRESETS, loadUserPresets, presetValues, saveUserPresets, type Preset, type Rgb } from "../presets/presets";
 
 export type MidiStatus = "idle" | "unsupported" | "denied" | "not-found" | "connected";
 export type VizMode = "scope" | "spectrum";
-export type View = "playground" | "synth";
-/** What Shift + encoder cycles through: the playground's two visualisers, then the Synth view. */
-const SCREENS = ["scope", "spectrum", "synth"] as const;
+export type View = "playground" | "synth" | "wavetable";
+/** What Shift + encoder cycles through: the playground's two visualisers, then the Synth and Wavetable views. */
+const SCREENS = ["scope", "spectrum", "synth", "wavetable"] as const;
+const SCREEN_NAMES: Record<(typeof SCREENS)[number], string> = { scope: "Waveform", spectrum: "Spectrum", synth: "Synth", wavetable: "Wavetable" };
 const EXPLAIN_KEY = "minilab3.explain";
 
 const BROWSE_TIMEOUT_MS = 4000;
@@ -373,16 +376,29 @@ export class Playground {
     this.showMessage("Tempo", `${this.bpm} BPM`);
   }
 
-  /** Shift + encoder: Waveform -> Spectrum -> Synth view. */
+  /** Shift + encoder: Waveform -> Spectrum -> Synth -> Wavetable. */
   cycleScreen(delta: number) {
-    const current = this.view === "synth" ? "synth" : this.vizMode;
+    const current = this.view === "playground" ? this.vizMode : this.view;
     const next = SCREENS[(SCREENS.indexOf(current) + delta + SCREENS.length) % SCREENS.length];
-    if (next === "synth") this.setView("synth");
+    if (next === "synth" || next === "wavetable") this.setView(next);
     else {
       this.vizMode = next;
       this.setView("playground");
     }
-    this.showMessage("View", next === "synth" ? "Synth" : next === "scope" ? "Waveform" : "Spectrum");
+    this.showMessage("View", SCREEN_NAMES[next]);
+  }
+
+  /** Wavetable tab encoder: step through the tables. Picking a table switches Osc 1 to it if no oscillator plays one. */
+  stepTable(delta: number) {
+    const n = WAVETABLES.length;
+    this.selectTable((((this.values.wtTable + delta) % n) + n) % n);
+  }
+
+  selectTable(id: number) {
+    if (!usesTable(this.values)) this.setParam("osc1Wave", TABLE_WAVE);
+    this.setParam("wtTable", id);
+    this.showMessage("Wavetable", WAVETABLES[id].name);
+    this.realignKnobs();
   }
 
   setView(view: View) {
@@ -406,6 +422,7 @@ export class Playground {
 
   /** What the 8 hardware knobs control right now. */
   get knobParams(): (ParamId | null)[] {
+    if (this.view === "wavetable") return WAVETABLE_KNOBS;
     return this.view === "synth" ? KNOB_PAGES[this.focusPage].knobs : this.preset.knobs;
   }
 
@@ -528,13 +545,14 @@ export class Playground {
           this.syncPadLeds();
         }
         if (e.bank === "B" && !this.stepMode) {
-          if (e.on && e.index < this.presets.length) this.loadPreset(e.index);
+          if (e.on) this.loadPreset(PAD_PRESETS[e.index]);
           return;
         }
         return e.on ? this.hitPad(e.index, e.velocity) : this.releasePad(e.index);
       case "encoder":
         if (e.shifted || this.shift) return this.cycleScreen(e.delta);
         if (this.stepMode) return this.selectTrack(this.stepTrack + e.delta);
+        if (this.view === "wavetable") return this.stepTable(e.delta);
         return this.view === "synth" ? this.cycleFocus(e.delta) : this.browse(e.delta);
       case "encoderClick":
         return this.encoderClick(e.pressed, e.shifted || this.shift);
@@ -617,8 +635,8 @@ export class Playground {
     this.spectrumSent.fill(-1);
     LED_IDS.padsA.forEach((id, i) => this.sendLed(id, this.spectrumPads ? [0, 0, 0] : this.drumColor(i)));
     LED_IDS.padsB.forEach((id, i) => {
-      const p = this.presets[i];
-      this.sendLed(id, p ? dim(p.color, i === this.presetIndex && !this.dicePreset ? 1 : 0.15) : [0, 0, 0]);
+      const p = this.presets[PAD_PRESETS[i]];
+      this.sendLed(id, dim(p.color, PAD_PRESETS[i] === this.presetIndex && !this.dicePreset ? 1 : 0.15));
     });
   }
 

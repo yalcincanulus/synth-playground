@@ -5,6 +5,7 @@ import { envelopeAt, type Adsr, type EnvPoint } from "../../audio/envelope";
 import { Engine, LFO_FILTER_CENTS } from "../../audio/engine";
 import { biquadMagnitude } from "../../audio/filterResponse";
 import { naive, shapeAt as oscShapeAt } from "../../audio/oscCore";
+import { frameAt, tableFrames } from "../../audio/wavetables";
 import { DELAY_DIV_BEATS, DELAY_DIVS, LFO_SYNCS, toControl, type ParamValues } from "../../audio/params";
 import { filterBase } from "../../audio/voice";
 import { freqX, FREQ_GRID, grid, xFreq, type Surface } from "../components/canvas";
@@ -33,10 +34,13 @@ export function idealWave(wave: number, width = 0.5): (x: number) => number {
  * What Osc 1 or Osc 2 would produce, over two cycles of Osc 1: with pulse width,
  * sync (Osc 2 restarting with Osc 1) and FM (Osc 2 bending Osc 1) applied.
  */
-export function oscIdeal(v: ParamValues, which: 0 | 1): (x: number) => number {
+export function oscIdeal(v: ParamValues, which: 0 | 1, engine: Engine): (x: number) => number {
+  const frames = tableFrames(v.wtTable);
+  const position = engine.livePosition();
   const shape = {
     wave1: v.osc1Wave, wave2: v.osc2Wave, width: v.pulseWidth, sync: v.oscSync === 1, fm: v.fmAmount,
     ratio: Math.pow(2, (v.osc2Semi * 100 + v.osc2Detune) / 1200),
+    table: (p: number) => frameAt(frames, position, p),
   };
   return (x) => oscShapeAt(shape, x)[which];
 }

@@ -49,7 +49,7 @@
 
     // LFOs: depth per target (the mod strip adds to LFO 1's mod target); dash speed follows the LFO.
     const lfoTargets: [number, string, Cable["toSide"], string][] = [
-      [0, "osc2", "r", "pitch"], [1, "filter", "b", "filter cutoff"], [2, "amp", "l", "volume"], [3, "osc1", "r", "pulse width"],
+      [0, "osc2", "r", "pitch"], [1, "filter", "b", "filter cutoff"], [2, "amp", "l", "volume"], [3, "osc1", "r", "pulse width"], [4, "osc1", "r", "wavetable position"],
     ];
     const lfoSetups = [
       { from: "lfo", color: LFO, target: v.lfoTarget, depth: v.lfoDepth, rate: v.lfoRate, sync: v.lfoSync, mod: true },
@@ -128,9 +128,9 @@
 
   <div class="diagram" bind:this={container}>
     <div class="col">
-      <Block {pg} id="osc1"><LiveCanvas height={40} draw={viz.scope(() => taps.osc1, color, () => viz.oscIdeal(pg.values, 0))} /></Block>
+      <Block {pg} id="osc1"><LiveCanvas height={40} draw={viz.scope(() => taps.osc1, color, () => viz.oscIdeal(pg.values, 0, engine))} /></Block>
       <Block {pg} id="osc2" inactive={pg.values.oscMix < 0.01 ? (pg.values.fmAmount >= 0.01 ? "FM only" : "mixed out") : null}>
-        <LiveCanvas height={40} draw={viz.scope(() => taps.osc2, color, () => viz.oscIdeal(pg.values, 1))} />
+        <LiveCanvas height={40} draw={viz.scope(() => taps.osc2, color, () => viz.oscIdeal(pg.values, 1, engine))} />
       </Block>
     </div>
 

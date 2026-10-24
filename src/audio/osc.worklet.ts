@@ -4,11 +4,15 @@
 // sub, so Osc 2 can be hard-synced to Osc 1 and Osc 1 can be phase-modulated by Osc 2.
 // Outputs: 0 = Osc 1, 1 = Osc 2, 2 = Sub (each the sum of its copies).
 //
+// Wavetables are prepared on the main thread (wavetables.ts) and sent once to a
+// "table-loader" processor, which stores them where every voice's processor can read them.
+//
 // Anti-aliasing: every jump in a wave (the saw's drop, the pulse's edges, a sync reset)
 // is smoothed with a polyBLEP over the two samples around it. That needs the sample
 // before the jump, so the output runs one sample late.
 
-import { clampWidth, FM_INDEX, naive } from "./oscCore";
+import { clampWidth, FM_INDEX, naive, TABLE_WAVE } from "./oscCore";
+import { MIP_LEVELS, mipSize } from "./wavetables";
 
 declare const sampleRate: number;
 declare const currentTime: number;
@@ -16,6 +20,67 @@ declare class AudioWorkletProcessor {
   readonly port: MessagePort;
 }
 declare function registerProcessor(name: string, ctor: new (options: AudioWorkletNodeOptions) => AudioWorkletProcessor): void;
+
+interface Table {
+  frames: number;
+  /** Per mip level: all frames back to back. */
+  levels: Float32Array[];
+}
+
+/** Loaded wavetables by id, shared by every processor in this audio context. */
+const TABLES = new Map<number, Table>();
+
+class TableLoader extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.port.onmessage = (e) => TABLES.set(e.data.id, { frames: e.data.frames, levels: e.data.levels });
+  }
+  process() {
+    return false;
+  }
+}
+
+/** Reads a wavetable for one oscillator: the mip levels for its pitch are picked once per block. */
+class TableReader {
+  private table: Table | undefined;
+  private level = 0;
+  /** Weight of `level`; the rest is level + 1 (blended so moving pitch doesn't jump in brightness). */
+  private weight = 1;
+
+  setup(id: number, freq: number) {
+    this.table = TABLES.get(id);
+    // Level k keeps harmonics up to 1024 >> k: the lowest level whose top harmonic stays under Nyquist.
+    const x = Math.max(0, Math.log2((2048 * Math.max(1, freq)) / sampleRate));
+    this.level = Math.min(MIP_LEVELS - 1, Math.ceil(x));
+    this.weight = this.level >= MIP_LEVELS - 1 ? 1 : Math.min(1, this.level - x);
+    if (x === 0) this.weight = 1;
+  }
+
+  read(position: number, phase: number): number {
+    const t = this.table;
+    if (!t) return 0;
+    const fp = Math.min(1, Math.max(0, position)) * (t.frames - 1);
+    const f0 = Math.floor(fp);
+    const f1 = Math.min(t.frames - 1, f0 + 1);
+    const ff = fp - f0;
+    const a = readLevel(t.levels[this.level], mipSize(this.level), f0, f1, ff, phase);
+    if (this.weight >= 1) return a;
+    const k = this.level + 1;
+    return a * this.weight + readLevel(t.levels[k], mipSize(k), f0, f1, ff, phase) * (1 - this.weight);
+  }
+}
+
+function readLevel(data: Float32Array, size: number, f0: number, f1: number, ff: number, phase: number) {
+  const idx = phase * size;
+  const i0 = Math.floor(idx) % size;
+  const i1 = (i0 + 1) % size;
+  const fr = idx - Math.floor(idx);
+  const b0 = f0 * size;
+  const b1 = f1 * size;
+  const v0 = data[b0 + i0] + (data[b0 + i1] - data[b0 + i0]) * fr;
+  const v1 = data[b1 + i0] + (data[b1 + i1] - data[b1 + i0]) * fr;
+  return v0 + (v1 - v0) * ff;
+}
 
 /** Collects the polyBLEP corrections for one output: on the previous and the current sample. */
 class Blep {
@@ -33,7 +98,7 @@ class Blep {
  * over the part of the sample from time `t0` to `t0 + span`.
  */
 function jumps(wave: number, width: number, a: number, delta: number, t0: number, span: number, blep: Blep) {
-  if (wave < 2 || delta <= 0 || delta >= 1) return; // sine and triangle have no jumps
+  if ((wave !== 2 && wave !== 3) || delta <= 0 || delta >= 1) return; // only the saw and pulse jump
   const b = a + delta;
   const hit = (c: number, h: number) => {
     if (c > a && c <= b) blep.add(h, 1 - (t0 + ((c - a) / delta) * span));
@@ -67,6 +132,9 @@ class SynthOsc extends AudioWorkletProcessor {
       { name: "sync", defaultValue: 0, automationRate: "k-rate" },
       { name: "wave1", defaultValue: 2, automationRate: "k-rate" },
       { name: "wave2", defaultValue: 2, automationRate: "k-rate" },
+      { name: "table", defaultValue: 0, automationRate: "k-rate" },
+      /** Wavetable position 0..1; the LFO's position modulation is connected here. */
+      { name: "position", defaultValue: 0, automationRate: "a-rate" },
     ];
   }
 
@@ -79,6 +147,8 @@ class SynthOsc extends AudioWorkletProcessor {
   private sub = 0;
   private blep = [new Blep(), new Blep(), new Blep()];
   private stopAt = Infinity;
+  private reader1 = new TableReader();
+  private reader2 = new TableReader();
 
   constructor(options: AudioWorkletNodeOptions) {
     super();
@@ -113,6 +183,14 @@ class SynthOsc extends AudioWorkletProcessor {
     for (let u = 0; u < n; u++) spreadMul[u] = Math.pow(2, (n === 1 ? 0 : (u / (n - 1) - 0.5) * 2 * spread) / 1200);
     const [b1, b2, bs] = this.blep;
     const inv = 1 / sampleRate;
+    const table = Math.round(params.table[0]);
+    const freq0 = params.frequency[0] * Math.pow(2, (params.detune[0] + params.pitchEnv[0]) / 1200);
+    if (wave1 === TABLE_WAVE) this.reader1.setup(table, freq0 * (envOnBoth ? 1 : Math.pow(2, -params.pitchEnv[0] / 1200)));
+    if (wave2 === TABLE_WAVE) this.reader2.setup(table, freq0 * osc2Mul);
+    let position = 0;
+    // A wave's value at a phase: the built-in shapes, or the wavetable at the current position.
+    const v1 = (p: number, w: number) => (wave1 === TABLE_WAVE ? this.reader1.read(position, p) : naive(wave1, p, w));
+    const v2 = (p: number, w: number) => (wave2 === TABLE_WAVE ? this.reader2.read(position, p) : naive(wave2, p, w));
 
     for (let i = 0; i < out1.length; i++) {
       const base = at(params.frequency, i);
@@ -121,6 +199,7 @@ class SynthOsc extends AudioWorkletProcessor {
       const f1 = base * Math.pow(2, (cents + (envOnBoth ? env : 0)) / 1200);
       const f2 = base * Math.pow(2, (cents + env) / 1200) * osc2Mul;
       const width = clampWidth(at(params.width, i));
+      position = at(params.position, i);
       let s1 = 0;
       let s2 = 0;
 
@@ -136,7 +215,7 @@ class SynthOsc extends AudioWorkletProcessor {
           const te = (1 - this.p1[u]) / dt1;
           jumps(wave2, width, p2, dt2 * te, 0, te, b2);
           p2 = (p2 + dt2 * te) % 1;
-          b2.add(naive(wave2, 0, width) - naive(wave2, p2, width), 1 - te);
+          b2.add(v2(0, width) - v2(p2, width), 1 - te);
           jumps(wave2, width, 0, dt2 * (1 - te), te, 1 - te, b2);
           p2 = (dt2 * (1 - te)) % 1;
         } else {
@@ -144,7 +223,7 @@ class SynthOsc extends AudioWorkletProcessor {
           p2 = (p2 + dt2) % 1;
         }
         this.p2[u] = p2;
-        const o2 = naive(wave2, p2, width);
+        const o2 = v2(p2, width);
         s2 += o2;
 
         // Osc 1, read at a phase pushed back and forth by Osc 2 (FM; offset 0 when off).
@@ -154,7 +233,7 @@ class SynthOsc extends AudioWorkletProcessor {
         jumps(wave1, width, this.read1[u], dt1 + pm - this.pm1[u], 0, 1, b1);
         this.read1[u] = read;
         this.pm1[u] = pm;
-        s1 += naive(wave1, read, width);
+        s1 += v1(read, width);
       }
 
       // Sub: a square one octave below Osc 1.
@@ -177,3 +256,4 @@ class SynthOsc extends AudioWorkletProcessor {
 }
 
 registerProcessor("synth-osc", SynthOsc);
+registerProcessor("table-loader", TableLoader);

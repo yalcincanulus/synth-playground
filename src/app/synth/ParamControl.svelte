@@ -9,15 +9,18 @@
     sine: "Sine", triangle: "Tri", sawtooth: "Saw", square: "Sqr",
     lowpass: "LP", highpass: "HP", bandpass: "BP",
     pitch: "Pitch", filter: "Filter", amp: "Amp", width: "Width", poly: "Poly", mono: "Mono",
-    off: "Off", on: "On", both: "Both", "osc 2": "Osc 2",
+    off: "Off", on: "On", both: "Both", "osc 2": "Osc 2", table: "Table", position: "WT Pos", saw: "Saw", random: "Random",
   };
+
+  /** Choices always shown as buttons, even when there are more than four. */
+  const BUTTONS = new Set<ParamId>(["osc1Wave", "osc2Wave"]);
 
   let def: ParamDef = $derived(PARAMS[id]);
   /** Which hardware knob (1-8) controls this right now, if any. */
   let knob = $derived(pg.knobParams.indexOf(id) + 1);
 </script>
 
-{#if def.options && def.options.length > 4}
+{#if def.options && def.options.length > 4 && !BUTTONS.has(id)}
   <!-- Long choice lists as a compact dropdown, so blocks stay short. -->
   <label class="select" class:hot={pg.touched?.param === id}>
     <span class="label">{#if knob}<span class="k" title="MiniLab knob {knob}">{knob}</span>{/if}{def.label}</span>

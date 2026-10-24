@@ -105,6 +105,11 @@ export function rollDice(): Preset {
       break;
   }
 
+  // Sometimes a wavetable on Osc 1, with LFO 2 scanning through it.
+  if (chance(0.25)) {
+    Object.assign(v, { osc1Wave: 4, wtTable: Math.floor(Math.random() * 8), wtPos: rand(0, 1), lfo2Target: 4, lfo2Depth: rand(0.3, 0.9), lfo2Rate: expRand(0.08, 1.5) });
+  }
+
   // Sync on its own changes little: pair it with a pitch envelope on Osc 2 for the sweep.
   if (v.oscSync) Object.assign(v, { pitchEnvAmt: rand(8, 30), pitchEnvDecay: expRand(0.2, 1.2), pitchEnvTarget: 1, oscMix: rand(0.5, 0.9) });
 
@@ -112,10 +117,11 @@ export function rollDice(): Preset {
   v.filterRelease = (v.release ?? 0.3) * rand(0.5, 1.5);
 
   // Knobs: the filter core, then four of the parameters this roll actually uses.
-  const optional: ParamId[] = ["pitchEnvAmt", "fmAmount", "pulseWidth", "osc2Detune", "osc2Semi", "oscMix", "lfoRate", "lfoDepth", "drive", "chorus", "delayMix", "reverbMix", "subLevel", "glide"];
+  const optional: ParamId[] = ["wtPos", "pitchEnvAmt", "fmAmount", "pulseWidth", "osc2Detune", "osc2Semi", "oscMix", "lfoRate", "lfoDepth", "drive", "chorus", "delayMix", "reverbMix", "subLevel", "glide"];
   const used = optional.filter((id) => {
     if (id === "lfoRate") return (v.lfoDepth ?? 0) > 0;
     if (id === "glide") return mono;
+    if (id === "wtPos") return v.osc1Wave === 4;
     if (id === "pulseWidth") return v.osc1Wave === 3 || v.osc2Wave === 3;
     if (id === "pitchEnvAmt") return Math.abs(v.pitchEnvAmt ?? 0) > 0;
     if (id === "osc2Semi" || id === "osc2Detune" || id === "oscMix") return true;

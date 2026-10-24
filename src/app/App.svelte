@@ -12,6 +12,7 @@
   import Spectrum from "./components/Spectrum.svelte";
   import { Playground } from "./playground.svelte";
   import SynthView from "./synth/SynthView.svelte";
+  import WavetableView from "./wavetable/WavetableView.svelte";
 
   const pg = new Playground();
   if (import.meta.env.DEV) Object.assign(window, { pg });
@@ -22,10 +23,13 @@
     return `rgb(${r} ${g} ${b})`;
   });
 
-  // Dropdown grouped by category; numbers stay the global index used by the encoder and bank B.
+  // Dropdown grouped by category (factory presets are already in that order); your own presets come last.
   let presetGroups = $derived.by(() => {
     const groups = new Map<string, { p: (typeof pg.presets)[number]; i: number }[]>();
-    pg.presets.forEach((p, i) => groups.set(p.category, [...(groups.get(p.category) ?? []), { p, i }]));
+    pg.presets.forEach((p, i) => {
+      const group = pg.isUserPreset(i) ? "My presets" : p.category;
+      groups.set(group, [...(groups.get(group) ?? []), { p, i }]);
+    });
     return [...groups];
   });
 
@@ -79,6 +83,7 @@
     <nav class="views" aria-label="View">
       <button class:active={pg.view === "playground"} onclick={() => pg.setView("playground")}>Playground</button>
       <button class:active={pg.view === "synth"} onclick={() => pg.setView("synth")} title="Shift + encoder">Synth</button>
+      <button class:active={pg.view === "wavetable"} onclick={() => pg.setView("wavetable")} title="Shift + encoder">Wavetable</button>
     </nav>
 
     <div class="midi">
@@ -200,7 +205,7 @@
         {:else if pg.stepMode}
           <span class="shifted">Step edit · {pg.drumName(pg.stepTrack)} · steps {pg.bank === "A" ? "1–8" : "9–16"}</span>
         {:else}
-          Pads · bank A: drums · bank B: presets 1–8
+          Pads · bank A: drums · bank B: 8 favourite presets
         {/if}
       </div>
       <div class="pad-modes">
@@ -246,8 +251,10 @@
       />
     </div>
   </section>
-  {:else}
+  {:else if pg.view === "synth"}
     <SynthView {pg} {accent} />
+  {:else}
+    <WavetableView {pg} {accent} />
   {/if}
 
   <section class="panel">
@@ -255,7 +262,7 @@
   </section>
 
   <footer>
-    Keys: computer keyboard A–' plays notes, Z / X shifts octave · Encoder: browse presets, click to load, hold for Dice (Synth view: knob pages, click to listen) ·
+    Keys: computer keyboard A–' plays notes, Z / X shifts octave · Encoder: browse presets, click to load, hold for Dice (Synth view: knob pages, click to listen; Wavetable view: pick the table) ·
     Shift + encoder click: step edit (turn to pick the drum) ·
     Shift + pads: ▶ play, ■ stop, ● record, ⟲ clear loop, Tap tempo · Double-click a knob to reset it
   </footer>

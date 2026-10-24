@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import type { Playground } from "../playground.svelte";
-  import { BLOCK_TAPS, BLOCKS, KNOB_PAGES, type BlockId } from "./blocks";
+  import { BLOCK_TAPS, BLOCKS, KNOB_PAGES, SHOWN_WHEN, type BlockId } from "./blocks";
   import ParamControl from "./ParamControl.svelte";
 
   interface Props {
@@ -14,6 +14,7 @@
   let { pg, id, inactive = null, children }: Props = $props();
 
   let def = $derived(BLOCKS[id]);
+  let params = $derived(def.params.filter((p) => SHOWN_WHEN[id]?.[p]?.(pg.values) ?? true));
   let focused = $derived(pg.focusBlock === id);
   let onPage = $derived(KNOB_PAGES[pg.focusPage].blocks.includes(id));
   let tap = $derived(BLOCK_TAPS[id]);
@@ -42,9 +43,9 @@
   </header>
   {#if pg.explain}<p class="explain">{def.short}</p>{/if}
   {@render children()}
-  {#if def.params.length}
+  {#if params.length}
     <div class="params">
-      {#each def.params as param (param)}
+      {#each params as param (param)}
         <ParamControl {pg} id={param} />
       {/each}
     </div>

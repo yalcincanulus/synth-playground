@@ -3,17 +3,20 @@ import { Fx } from "./fx";
 import { Lfo } from "./lfo";
 import { DELAY_DIV_BEATS, LFO_SYNC_BEATS, defaultValues, type ParamId, type ParamValues } from "./params";
 import oscWorkletUrl from "./osc.worklet.ts?worker&url";
+import { buildMips, FRAMES, tableFrames, WAVETABLES } from "./wavetables";
 import { Voice, type VoiceContext, type VoiceTaps } from "./voice";
 
 const MAX_VOICES = 10;
 export const BEND_RANGE_CENTS = 200;
-/** LFO depth 1.0 means: ±60 cents of pitch, ±3 octaves of cutoff, ±50% volume, or ±45% pulse width. */
+/** LFO depth 1.0 means: ±60 cents of pitch, ±3 octaves of cutoff, ±50% volume, ±45% pulse width or ±50% wavetable position. */
 export const LFO_PITCH_CENTS = 60;
 export const LFO_FILTER_CENTS = 3600;
 export const LFO_AMP = 0.5;
 export const LFO_WIDTH = 0.45;
+export const LFO_POSITION = 0.5;
+const LFO_SCALE = [LFO_PITCH_CENTS, LFO_FILTER_CENTS, LFO_AMP, LFO_WIDTH, LFO_POSITION];
 
-type PerTarget<T> = [T, T, T, T];
+type PerTarget<T> = [T, T, T, T, T];
 
 export type TapId = keyof VoiceTaps | "amp" | "chorus" | "delay" | "reverb" | "out";
 
@@ -36,6 +39,9 @@ export class Engine {
   /** Resolves when the oscillator worklet has loaded; notes before that are ignored. */
   readonly ready: Promise<void>;
   private loaded = false;
+  /** Receives prepared wavetables for the oscillators (see osc.worklet.ts). */
+  private tableLoader: AudioWorkletNode | null = null;
+  private tablesSent = new Set<number>();
 
   params: ParamValues = defaultValues();
   bpm = 120;
@@ -59,7 +65,13 @@ export class Engine {
 
   constructor() {
     const ctx = this.ctx;
-    this.ready = ctx.audioWorklet.addModule(oscWorkletUrl).then(() => void (this.loaded = true));
+    this.ready = ctx.audioWorklet.addModule(oscWorkletUrl).then(() => {
+      this.tableLoader = new AudioWorkletNode(ctx, "table-loader", { numberOfInputs: 0, numberOfOutputs: 1 });
+      this.loadTable(this.params.wtTable);
+      this.loaded = true;
+      // The rest in the background (about 15 ms each), so switching tables later is instant.
+      WAVETABLES.forEach((_, i) => setTimeout(() => this.loadTable(i), 300 + i * 80));
+    });
     this.fx = new Fx(ctx);
     this.analyser = this.fx.analyser;
 
@@ -71,17 +83,19 @@ export class Engine {
     const pitchMod = new GainNode(ctx);
     const filterMod = new GainNode(ctx);
     const widthMod = new GainNode(ctx);
+    const positionMod = new GainNode(ctx);
     this.bend = new ConstantSourceNode(ctx, { offset: 0 });
     this.bend.connect(pitchMod);
     this.bend.start();
     this.tremolo = new GainNode(ctx);
     this.lfos = [new Lfo(ctx, 5), new Lfo(ctx, 0.5)];
     this.lfoGains = this.lfos.map((lfo) => {
-      const gains = [0, 1, 2, 3].map(() => new GainNode(ctx, { gain: 0 })) as PerTarget<GainNode>;
+      const gains = LFO_SCALE.map(() => new GainNode(ctx, { gain: 0 })) as PerTarget<GainNode>;
       lfo.out.connect(gains[0]).connect(pitchMod);
       lfo.out.connect(gains[1]).connect(filterMod);
       lfo.out.connect(gains[2]).connect(this.tremolo.gain);
       lfo.out.connect(gains[3]).connect(widthMod);
+      lfo.out.connect(gains[4]).connect(positionMod);
       return gains;
     });
     const voiceBus = new GainNode(ctx, { gain: 1 });
@@ -109,6 +123,7 @@ export class Engine {
       pitchMod,
       filterMod,
       widthMod,
+      positionMod,
       driveCurve: (d) => this.driveCurve(d),
       taps: this.taps,
     };
@@ -162,6 +177,7 @@ export class Engine {
 
   private applyGlobal() {
     const p = this.params;
+    this.loadTable(p.wtTable);
     this.fx.set({
       chorus: p.chorus,
       delayMix: p.delayMix,
@@ -182,13 +198,9 @@ export class Engine {
     this.lfos.forEach((lfo, i) => {
       lfo.setWave(waves[i]);
       lfo.setRate(this.lfoRate(i));
-      const [pitch, filter, amp, width] = this.lfoDepths(i);
-      const [gPitch, gFilter, gAmp, gWidth] = this.lfoGains[i];
-      gPitch.gain.setTargetAtTime(pitch * LFO_PITCH_CENTS, t, 0.02);
-      gFilter.gain.setTargetAtTime(filter * LFO_FILTER_CENTS, t, 0.02);
-      gAmp.gain.setTargetAtTime(amp * LFO_AMP, t, 0.02);
-      gWidth.gain.setTargetAtTime(width * LFO_WIDTH, t, 0.02);
-      tremoloDepth += amp * LFO_AMP;
+      const depths = this.lfoDepths(i);
+      this.lfoGains[i].forEach((g, target) => g.gain.setTargetAtTime(depths[target] * LFO_SCALE[target], t, 0.02));
+      tremoloDepth += depths[2] * LFO_AMP;
     });
     // Tremolo swings the volume around a lowered centre, so it never goes above full.
     this.tremolo.gain.setTargetAtTime(Math.max(0, 1 - tremoloDepth), t, 0.02);
@@ -204,14 +216,29 @@ export class Engine {
   // --- live state, for visualisation
 
   /**
-   * Effective depth (0..1) of LFO `i` per target [pitch, filter, amp, width]. Each LFO's depth
+   * Effective depth (0..1) of LFO `i` per target [pitch, filter, amp, width, position]. Each LFO's depth
    * goes to its target; the mod strip adds depth to LFO 1's mod target.
    */
   lfoDepths(i: number): PerTarget<number> {
     const p = this.params;
     const [target, depth] = i === 0 ? [p.lfoTarget, p.lfoDepth] : [p.lfo2Target, p.lfo2Depth];
     const extra = (t: number) => (i === 0 && p.modTarget === t ? this.mod : 0);
-    return [0, 1, 2, 3].map((t) => Math.min(1, (target === t ? depth : 0) + extra(t))) as PerTarget<number>;
+    return LFO_SCALE.map((_, t) => Math.min(1, (target === t ? depth : 0) + extra(t))) as PerTarget<number>;
+  }
+
+  /** Wavetable position 0..1 right now, with the LFOs' position modulation. */
+  livePosition() {
+    let pos = this.params.wtPos;
+    this.lfos.forEach((lfo, i) => (pos += this.lfoDepths(i)[4] * LFO_POSITION * lfo.value()));
+    return Math.min(1, Math.max(0, pos));
+  }
+
+  /** Prepare a wavetable's mipmaps and hand them to the audio thread, once per table. */
+  private loadTable(id: number) {
+    if (!this.tableLoader || this.tablesSent.has(id)) return;
+    this.tablesSent.add(id);
+    const levels = buildMips(tableFrames(id));
+    this.tableLoader.port.postMessage({ id, frames: FRAMES, levels }, levels.map((l) => l.buffer));
   }
 
   /** Where audio is going: null is the normal output, otherwise one tap on its own. */

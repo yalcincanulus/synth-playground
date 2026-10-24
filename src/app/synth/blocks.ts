@@ -1,5 +1,5 @@
 import type { ListenTap } from "../../audio/engine";
-import type { ParamId } from "../../audio/params";
+import type { ParamId, ParamValues } from "../../audio/params";
 
 export type BlockId =
   | "osc1" | "osc2" | "subNoise" | "mixer" | "drive" | "filter" | "amp"
@@ -22,16 +22,16 @@ export const BLOCKS: Record<BlockId, BlockDef> = {
   osc1: {
     title: "Oscillator 1",
     short: "Makes the raw tone. The wave shape sets its character.",
-    explain: "Makes the raw tone. The wave shape sets its character: sine is pure, triangle mellow, sawtooth bright and buzzy, square hollow. Pulse Width changes the square: at 50% it is an even square, narrower pulses sound thinner and more nasal (it applies to the square wave of both oscillators). Moving the width slowly with an LFO ('PWM') gives the lush, animated sound of classic analog strings.",
+    explain: "Makes the raw tone. The wave shape sets its character: sine is pure, triangle mellow, sawtooth bright and buzzy, square hollow. Table plays a wavetable: a stack of waves that Position moves through (see the Wavetable tab). Pulse Width changes the square: at 50% it is an even square, narrower pulses sound thinner and more nasal (it applies to the square wave of both oscillators). Moving the width slowly with an LFO ('PWM') gives the lush, animated sound of classic analog strings.",
     tryThis: "Pick the square wave, hold a note and turn Pulse Width down from 50%. Then set LFO 2 to Width with a slow sine to hear PWM.",
-    params: ["osc1Wave", "pulseWidth"],
+    params: ["osc1Wave", "pulseWidth", "wtTable", "wtPos"],
   },
   osc2: {
     title: "Oscillator 2",
     short: "A second tone you can shift in pitch, sync or use for FM.",
     explain: "A second tone. Shift its pitch (12 semitones = one octave) or detune it slightly against Osc 1 for a thicker, moving sound. Sync restarts Osc 2's wave every time Osc 1 starts a cycle: Osc 2's pitch then changes its tone instead of its note, which gives the 'screaming' sync sound. FM uses Osc 2 to wobble Osc 1's pitch hundreds of times a second: too fast to hear as wobble, it turns into new, often metallic or bell-like tones (Osc 1's picture shows the bent wave).",
     tryThis: "Sync: turn Sync on, set Osc Mix towards Osc 2, hold a note and sweep Osc2 Pitch. FM: set both oscillators to sine, Osc Mix to Osc 1, Osc2 Pitch to +19 and raise FM Amount.",
-    params: ["osc2Wave", "osc2Semi", "osc2Detune", "oscSync", "fmAmount"],
+    params: ["osc2Wave", "wtTable", "wtPos", "osc2Semi", "osc2Detune", "oscSync", "fmAmount"],
   },
   subNoise: {
     title: "Sub & Noise",
@@ -140,6 +140,17 @@ export const BLOCKS: Record<BlockId, BlockDef> = {
   },
 };
 
+export const usesTable = (v: ParamValues) => v.osc1Wave === 4 || v.osc2Wave === 4;
+
+/** Controls only shown on a block while they do something, so blocks stay short. */
+export const SHOWN_WHEN: Partial<Record<BlockId, Partial<Record<ParamId, (v: ParamValues) => boolean>>>> = {
+  osc1: { pulseWidth: (v) => v.osc1Wave === 3 || v.osc2Wave === 3, wtTable: (v) => v.osc1Wave === 4, wtPos: (v) => v.osc1Wave === 4 },
+  osc2: { wtTable: (v) => v.osc2Wave === 4 && v.osc1Wave !== 4, wtPos: (v) => v.osc2Wave === 4 && v.osc1Wave !== 4 },
+};
+
+/** The Wavetable tab's knobs. */
+export const WAVETABLE_KNOBS: ParamId[] = ["wtPos", "wtTable", "osc1Wave", "osc2Wave", "lfo2Rate", "lfo2Depth", "cutoff", "resonance"];
+
 /** A page of 8 hardware knob assignments, selected by focusing one of its blocks. */
 export interface KnobPage {
   /** Fits the OLED's first line (10 characters). */
@@ -151,7 +162,7 @@ export interface KnobPage {
 export const KNOB_PAGES: KnobPage[] = [
   {
     name: "Sources",
-    knobs: ["osc1Wave", "osc2Wave", "osc2Semi", "osc2Detune", "oscMix", "subLevel", "noiseLevel", "unison"],
+    knobs: ["osc1Wave", "osc2Wave", "osc2Semi", "osc2Detune", "oscMix", "subLevel", "noiseLevel", "wtPos"],
     blocks: ["osc1", "osc2", "subNoise", "mixer"],
   },
   {

@@ -77,7 +77,7 @@
 </script>
 
 {#snippet lines(list: Cable[])}
-  {#each list as c (c.from + c.to)}
+  {#each list as c (c.from + c.to + (c.label ?? ""))}
     {@const d = path(c)}
     {#if d}
       <path {d} class={c.kind} class:idle={c.idle} stroke={c.color} stroke-width={c.width} style:--period="{c.period ?? 1.2}s">

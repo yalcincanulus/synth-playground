@@ -15,12 +15,14 @@ export interface Preset {
 /** Faders 1-4 are the same for every preset, so the envelope is always under your fingers. */
 export const FADERS: [ParamId, ParamId, ParamId, ParamId] = ["attack", "decay", "sustain", "release"];
 
-// Wave indices: 0 sine, 1 triangle, 2 saw, 3 square.
+// Wave indices: 0 sine, 1 triangle, 2 saw, 3 square, 4 wavetable.
+// Wavetables: 0 Shapes, 1 PWM, 2 Sync, 3 Fold, 4 Formant, 5 Vowels, 6 Organ, 7 Digital.
 // Filter: 0 lowpass, 1 highpass, 2 bandpass. LFO/mod target: 0 pitch, 1 filter, 2 amp, 3 pulse width.
 // Pitch envelope target: 0 both oscillators, 1 Osc 2 only.
 // Delay div: 0 1/16, 1 1/8, 2 3/16, 3 1/4, 4 3/8, 5 1/2.
 
-export const FACTORY_PRESETS: Preset[] = [
+/** Presets in the order they were added; FACTORY_PRESETS below groups them by category. */
+const ALL_PRESETS: Preset[] = [
   {
     name: "First Saw",
     category: "Lead",
@@ -238,7 +240,46 @@ export const FACTORY_PRESETS: Preset[] = [
     knobs: ["pitchEnvAmt", "pitchEnvDecay", "decay", "noiseLevel", "cutoff", "drive", "osc1Wave", "reverbMix"],
     values: { osc1Wave: 0, oscMix: 0, noiseLevel: 0.12, pitchEnvAmt: 14, pitchEnvDecay: 0.18, cutoff: 3000, resonance: 0.7, filterEnvAmt: 1.5, filterDecay: 0.08, filterSustain: 0, keyTrack: 0.5, attack: 0.001, decay: 0.45, sustain: 0, release: 0.4, velocity: 0.9, drive: 0.3, reverbMix: 0.2, reverbSize: 1.5, volume: 0.9 },
   },
+  {
+    name: "Vowel Lead",
+    category: "Lead",
+    color: [127, 50, 90],
+    knobs: ["wtPos", "lfo2Rate", "lfo2Depth", "cutoff", "resonance", "glide", "delayMix", "reverbMix"],
+    values: { mono: 1, glide: 0.06, osc1Wave: 4, wtTable: 5, wtPos: 0.5, osc2Wave: 2, osc2Semi: -12, osc2Detune: 4, oscMix: 0.15, lfo2Target: 4, lfo2Wave: 1, lfo2Rate: 0.6, lfo2Depth: 0.9, cutoff: 5000, resonance: 1, filterEnvAmt: 0.5, filterDecay: 0.4, filterSustain: 0.7, keyTrack: 0.5, attack: 0.01, decay: 0.3, sustain: 0.9, release: 0.25, lfoRate: 5.5, modTarget: 0, delayMix: 0.25, delayDiv: 4, reverbMix: 0.2, volume: 0.7 },
+  },
+  {
+    name: "Scan Pad",
+    category: "Pad",
+    color: [60, 90, 127],
+    knobs: ["wtPos", "wtTable", "lfo2Rate", "lfo2Depth", "cutoff", "osc2Detune", "chorus", "reverbMix"],
+    values: { osc1Wave: 4, osc2Wave: 4, wtTable: 4, wtPos: 0.45, osc2Detune: 10, unison: 3, lfo2Target: 4, lfo2Wave: 0, lfo2Rate: 0.12, lfo2Depth: 0.9, cutoff: 6000, resonance: 0.7, filterEnvAmt: 0, keyTrack: 0.3, attack: 0.8, decay: 1.5, sustain: 0.9, release: 2.5, velocity: 0.3, chorus: 0.5, reverbMix: 0.5, reverbSize: 5, volume: 1 },
+  },
+  {
+    name: "Fold Bass",
+    category: "Bass",
+    color: [127, 110, 0],
+    knobs: ["wtPos", "cutoff", "resonance", "filterEnvAmt", "filterDecay", "subLevel", "drive", "glide"],
+    values: { mono: 1, glide: 0.02, osc1Wave: 4, wtTable: 3, wtPos: 0.25, oscMix: 0, subLevel: 0.5, cutoff: 900, resonance: 1.5, filterEnvAmt: 2, filterDecay: 0.25, filterSustain: 0.3, keyTrack: 0.4, modTarget: 4, attack: 0.002, decay: 0.3, sustain: 0.85, release: 0.1, drive: 0.15, reverbMix: 0 },
+  },
+  {
+    name: "Digital Keys",
+    category: "Keys",
+    color: [0, 127, 127],
+    knobs: ["wtPos", "lfo2Depth", "lfo2Sync", "cutoff", "filterDecay", "decay", "delayMix", "reverbMix"],
+    values: { osc1Wave: 4, wtTable: 7, wtPos: 0.4, osc2Wave: 0, osc2Semi: 12, oscMix: 0.2, lfo2Target: 4, lfo2Wave: 4, lfo2Sync: 5, lfo2Depth: 0.5, cutoff: 1400, resonance: 1.2, filterEnvAmt: 3, filterDecay: 0.35, filterSustain: 0.2, keyTrack: 0.8, attack: 0.002, decay: 0.9, sustain: 0.3, release: 0.5, velocity: 0.8, chorus: 0.3, delayMix: 0.25, delayDiv: 2, delayFeedback: 0.4, reverbMix: 0.25, volume: 1 },
+  },
 ];
+
+/** Category order in the preset list and dropdown. */
+const CATEGORIES: Preset["category"][] = ["Lead", "Bass", "Pad", "Brass", "Keys", "FX"];
+
+/** Grouped by category, so the numbers count up within each group (and the encoder browses group by group). */
+export const FACTORY_PRESETS: Preset[] = CATEGORIES.flatMap((c) => ALL_PRESETS.filter((p) => p.category === c));
+
+/** What pad bank B loads: a mix across categories, by name. */
+export const PAD_PRESETS: number[] = ["First Saw", "Round Bass", "Acid Line", "Wobble", "Warm Pad", "Glass Strings", "Brass Stab", "Pluck"].map(
+  (name) => FACTORY_PRESETS.findIndex((p) => p.name === name),
+);
 
 export function presetValues(p: Preset): ParamValues {
   // Presets made before the filter envelope had its own release used the amp's release for it.

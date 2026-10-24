@@ -23,7 +23,7 @@ Pad lights and the screen need the device in **DAW mode** (Shift + Prog).
 | Encoder | Browse presets, click to load. Hold: Dice (random patch). Shift + turn: switch visualiser |
 | Shift + encoder click | Step edit: pads edit the drum loop (bank A = steps 1–8, bank B = 9–16), encoder picks the drum |
 | Pads, bank A | Drum kit, recordable into the 16-step loop. Optional "Spectrum lights" turn them into a live 8-band meter |
-| Pads, bank B | Load presets 1–8 |
+| Pads, bank B | Load 8 favourite presets (First Saw, Round Bass, Acid Line, Wobble, Warm Pad, Glass Strings, Brass Stab, Pluck) |
 | Shift + ▶ / ■ / ● / ⟲ / Tap | Play / stop / record the drum loop / clear it / tap tempo |
 
 ### Synth view
@@ -39,13 +39,21 @@ In this view the MiniLab knobs follow the selected block: click a block, or turn
 through the knob pages (Sources, Filter, Osc Tricks, Envelopes, LFO 1, LFO 2, Playing, Effects). Shift + encoder
 switches between the playground's waveform, spectrum and the Synth view.
 
+### Wavetable view
+
+The **Wavetable** tab shows the current wavetable (a stack of single-cycle waves) in 3D, with the wave playing
+right now lit up, plus that wave and its harmonics. Set an oscillator's wave to **Table**, pick one of the 8
+built-in tables (the encoder steps through them), and move **WT Pos**: by hand, with knob 1, or with an LFO or
+the mod strip set to *WT Pos*. Tables are band-limited per octave, so high notes stay clean.
+
 Without a MiniLab, the computer keyboard plays notes (A row; Z/X change octave), and every control works with the mouse.
 
 ## Layout
 
 - `src/minilab/`: MiniLab 3 protocol (decoding, SysEx builders) and the port connection. See `docs/minilab3-protocol.md`.
 - `src/audio/`: Web Audio engine: voices, effects, drums, sequencer, parameter definitions. The oscillators
-  are an AudioWorklet (`osc.worklet.ts`, anti-aliased with polyBLEP) so they can do sync and FM.
+  are an AudioWorklet (`osc.worklet.ts`, anti-aliased with polyBLEP) so they can do sync and FM;
+  `wavetables.ts` defines the built-in wavetables and prepares their per-octave versions.
 - `src/presets/`: factory presets; user presets are stored in localStorage.
 - `src/app/`: Svelte UI. `playground.svelte.ts` connects the device, the engine and the UI.
 - `src/probe/`: the raw MIDI probe page used to map the device.

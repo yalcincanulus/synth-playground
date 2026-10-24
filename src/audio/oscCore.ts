@@ -1,9 +1,11 @@
 // The oscillator's wave maths, shared by the audio worklet (which makes the sound)
 // and the Synth view (which draws what the oscillators would produce).
 //
-// Wave indices match WAVES in params.ts: 0 sine, 1 triangle, 2 saw, 3 square/pulse.
+// Wave indices match WAVES in params.ts: 0 sine, 1 triangle, 2 saw, 3 square/pulse, 4 wavetable.
 // All waves start at phase 0; sine and triangle start at 0 rising, saw at -1 rising,
 // the pulse is high (+1) from phase 0 until the pulse width, then low (-1).
+
+export const TABLE_WAVE = 4;
 
 /** Narrowest pulse width the oscillator allows (LFO modulation is clamped to this). */
 export const MIN_WIDTH = 0.03;
@@ -30,6 +32,8 @@ export interface OscShape {
   sync: boolean;
   /** 0..1 */
   fm: number;
+  /** The wavetable at its current position, for the table wave. */
+  table?: (phase: number) => number;
 }
 
 /**
@@ -41,7 +45,8 @@ export function shapeAt(s: OscShape, x: number): [number, number] {
   const p1 = t1 % 1;
   // With sync, Osc 2 restarts at every Osc 1 cycle.
   const p2 = ((s.sync ? p1 : t1) * s.ratio) % 1;
-  const o2 = naive(s.wave2, p2, s.width);
+  const wave = (w: number, p: number) => (w === TABLE_WAVE ? (s.table?.(p) ?? 0) : naive(w, p, s.width));
+  const o2 = wave(s.wave2, p2);
   const pm = (s.fm * FM_INDEX * o2) / (2 * Math.PI);
-  return [naive(s.wave1, (((p1 + pm) % 1) + 1) % 1, s.width), o2];
+  return [wave(s.wave1, (((p1 + pm) % 1) + 1) % 1), o2];
 }
