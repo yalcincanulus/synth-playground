@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { fft } from "../../render/analyse";
 import { biquadMagnitude } from "../filterResponse";
-import { filterQ } from "../voice";
+import { filterQ } from "./voiceMath";
 import { BANDPASS, HIGHPASS, LOWPASS, Svf, svfG } from "./svf";
 
 const SR = 48000;
@@ -22,7 +22,7 @@ function svfMagnitude(mode: number, cutoff: number, k: number, freqs: number[]) 
   });
 }
 
-/** The SVF's k (1/Q) for the classic engine's filter type and resonance (lowpass/highpass Q is in dB there). */
+/** The SVF's k (1/Q) for the old engine's filter type and resonance (lowpass/highpass Q is in dB there). */
 const kFor = (type: number, resonance: number) => {
   const q = filterQ(type, resonance);
   return type === BANDPASS ? 1 / q : Math.pow(10, -q / 20);

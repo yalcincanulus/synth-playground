@@ -1,29 +1,24 @@
 import { Drums } from "./drums";
-import { DRIVE_MIN, driveShape } from "./dsp/drive";
+import { LFO_POSITION, lfoDepths, type PerTarget } from "./dsp/lfo";
+import { TAPS, type LfoState, type TapName } from "./dsp/voiceBank";
+import { keySource, MOD_RANGE } from "./dsp/voiceMath";
 import { Fx } from "./fx";
 import { Lfo } from "./lfo";
 import { envelopeAt } from "./envelope";
 import { DELAY_DIV_BEATS, LFO_SYNC_BEATS, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, defaultValues, slotIds, type ModSource, type ParamId, type ParamValues } from "./params";
-import oscWorkletUrl from "./osc.worklet.ts?worker&url";
+import workletUrl from "./synth.worklet.ts?worker&url";
 import { buildMips, FRAMES, tableFrames, WAVETABLES } from "./wavetables";
-import { keySource, MOD_RANGE, Voice, type NoteOwner, type SynthVoice, type VoiceContext, type VoiceTaps } from "./voice";
-import { WorkletVoice } from "./workletVoice";
+import { Voice, type NoteOwner } from "./voice";
+
+export { LFO_AMP, LFO_FILTER_CENTS, LFO_PITCH_CENTS, LFO_POSITION, LFO_WIDTH } from "./dsp/lfo";
 
 const MAX_VOICES = 10;
 /** Shortest glide used for a sequencer slide on a mono preset, in Glide units (seconds). */
 const SLIDE_GLIDE = 0.12;
 export const BEND_RANGE_CENTS = 200;
-/** LFO depth 1.0 means: ±60 cents of pitch, ±3 octaves of cutoff, ±50% volume, ±45% pulse width or ±50% wavetable position. */
-export const LFO_PITCH_CENTS = 60;
-export const LFO_FILTER_CENTS = 3600;
-export const LFO_AMP = 0.5;
-export const LFO_WIDTH = 0.45;
-export const LFO_POSITION = 0.5;
-const LFO_SCALE = [LFO_PITCH_CENTS, LFO_FILTER_CENTS, LFO_AMP, LFO_WIDTH, LFO_POSITION];
 
-type PerTarget<T> = [T, T, T, T, T];
-
-export type TapId = keyof VoiceTaps | "amp" | "chorus" | "delay" | "reverb" | "out";
+/** Points in the sound you can see and hear on their own: the voice stages, then the effects. */
+export type TapId = TapName | "amp" | "chorus" | "delay" | "reverb" | "out";
 
 /** Taps you can listen to on their own ("out" is the normal full sound). */
 export type ListenTap = Exclude<TapId, "out">;
@@ -37,7 +32,7 @@ export interface VoiceState {
   random: number;
 }
 
-/** CPU meter, from the audio thread. For now it covers the oscillators only (the rest is the browser's own nodes). */
+/** CPU meter, from the audio thread: the voice processor (every note, the LFOs). The effects are the browser's own nodes. */
 export interface CpuLoad {
   /** Share of the available time spent in our audio code, averaged over the last report (0..1+). */
   load: number;
@@ -52,12 +47,6 @@ export interface CpuLoad {
   clock: string;
 }
 
-/**
- * Which voice engine makes the notes: the classic one (each note built from Web Audio nodes, voice.ts)
- * or the new one (one AudioWorklet processor runs every note, dsp/voiceBank.ts). Roadmap slices 2-3.
- */
-export type EngineKind = "classic" | "worklet";
-
 /** With no report for this long, nothing is playing: the meter reads zero. */
 const CPU_STALE_MS = 600;
 
@@ -65,10 +54,10 @@ export class Engine {
   readonly fx: Fx;
   readonly drums: Drums;
   readonly analyser: AnalyserNode;
-  /** Resolves when the oscillator worklet has loaded; notes before that are ignored. */
+  /** Resolves when the voice processor has loaded; notes before that are ignored. */
   readonly ready: Promise<void>;
   private loaded = false;
-  /** Receives prepared wavetables for the oscillators (see osc.worklet.ts). */
+  /** Receives prepared wavetables for the oscillators (see synth.worklet.ts). */
   private tableLoader: AudioWorkletNode | null = null;
   private tablesSent = new Set<number>();
 
@@ -77,36 +66,29 @@ export class Engine {
   private cpuAt = 0;
   bpm = 120;
 
-  private vc: VoiceContext;
-  private voices: SynthVoice[] = [];
+  private voices: Voice[] = [];
   /** Mono mode: the single voice and the stack of held keys (last = sounding). */
-  private monoVoice: SynthVoice | null = null;
-  kind: EngineKind = "classic";
-  /** The new engine's processor (one for the whole part); null until the worklet module has loaded. */
+  private monoVoice: Voice | null = null;
+  /** The voice processor (one for the whole part); null until the worklet module has loaded. */
   private bankNode: AudioWorkletNode | null = null;
   private pings = new Map<number, () => void>();
   private pingCount = 0;
   private held: number[] = [];
 
-  private bend: ConstantSourceNode;
-  /** The mod strip as a mod matrix source (0..1). */
-  private modStrip: ConstantSourceNode;
-  /** Two LFOs, each with a gain per target: [pitch, filter, amp, width]. */
+  /** What the two LFOs (running in the voice processor) are doing, for the drawings. */
   readonly lfos: [Lfo, Lfo];
-  private lfoGains: PerTarget<GainNode>[];
-  private tremolo: GainNode;
   private listenGain: GainNode;
   private listening: ListenTap | null = null;
+  private bend = 0;
   private mod = 0;
   readonly taps: Record<TapId, AnalyserNode>;
-  private driveCache = new Map<number, Float32Array<ArrayBuffer>>();
 
   /**
    * `ctx` is normally a live AudioContext. The render check passes an OfflineAudioContext (cast):
    * the engine uses nothing an offline context lacks, apart from resume().
    */
   constructor(readonly ctx: AudioContext = new AudioContext({ latencyHint: "interactive" })) {
-    this.ready = ctx.audioWorklet.addModule(oscWorkletUrl).then(() => {
+    this.ready = ctx.audioWorklet.addModule(workletUrl).then(() => {
       this.tableLoader = new AudioWorkletNode(ctx, "table-loader", { numberOfInputs: 0, numberOfOutputs: 1 });
       this.tableLoader.port.onmessage = (e) => {
         if (!e.data.cpu) return;
@@ -124,40 +106,17 @@ export class Engine {
     this.fx = new Fx(ctx);
     this.analyser = this.fx.analyser;
 
+    // The drums' noise.
     const noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
     const data = noise.getChannelData(0);
     for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
 
-    // Global modulation: pitch bend + the LFOs, fanned out to every voice.
-    const pitchMod = new GainNode(ctx);
-    const filterMod = new GainNode(ctx);
-    const widthMod = new GainNode(ctx);
-    const positionMod = new GainNode(ctx);
-    this.bend = new ConstantSourceNode(ctx, { offset: 0 });
-    this.bend.connect(pitchMod);
-    this.bend.start();
-    this.modStrip = new ConstantSourceNode(ctx, { offset: 0 });
-    this.modStrip.start();
-    this.tremolo = new GainNode(ctx);
-    this.lfos = [new Lfo(ctx, 5), new Lfo(ctx, 0.5)];
-    this.lfoGains = this.lfos.map((lfo) => {
-      const gains = LFO_SCALE.map(() => new GainNode(ctx, { gain: 0 })) as PerTarget<GainNode>;
-      lfo.out.connect(gains[0]).connect(pitchMod);
-      lfo.out.connect(gains[1]).connect(filterMod);
-      lfo.out.connect(gains[2]).connect(this.tremolo.gain);
-      lfo.out.connect(gains[3]).connect(widthMod);
-      lfo.out.connect(gains[4]).connect(positionMod);
-      return gains;
-    });
-    const voiceBus = new GainNode(ctx, { gain: 1 });
-    voiceBus.connect(this.tremolo).connect(this.fx.synthIn);
-
+    this.lfos = [new Lfo(ctx, this.params.lfoRate), new Lfo(ctx, this.params.lfo2Rate)];
     const tap = () => new AnalyserNode(ctx, { fftSize: 2048, smoothingTimeConstant: 0.6 });
     this.taps = {
       osc1: tap(), osc2: tap(), sub: tap(), noise: tap(), mix: tap(), drive: tap(), filter: tap(),
       amp: tap(), chorus: tap(), delay: tap(), reverb: tap(), out: this.fx.analyser,
     };
-    this.tremolo.connect(this.taps.amp);
     this.fx.chorusOut.connect(this.taps.chorus);
     this.fx.delayOut.connect(this.taps.delay);
     this.fx.reverbOut.connect(this.taps.reverb);
@@ -167,18 +126,6 @@ export class Engine {
     const listenLimiter = new DynamicsCompressorNode(ctx, { threshold: -6, knee: 3, ratio: 20, attack: 0.002, release: 0.15 });
     this.listenGain.connect(listenLimiter).connect(ctx.destination);
 
-    this.vc = {
-      ctx,
-      out: voiceBus,
-      noise,
-      pitchMod,
-      filterMod,
-      widthMod,
-      positionMod,
-      globalSources: { "lfo 1": this.lfos[0].out, "lfo 2": this.lfos[1].out, "mod strip": this.modStrip },
-      driveCurve: (d) => this.driveCurve(d),
-      taps: this.taps,
-    };
     this.drums = new Drums(ctx, this.fx.drumIn, noise);
     this.applyGlobal();
   }
@@ -189,32 +136,35 @@ export class Engine {
 
   private createBank() {
     const node = new AudioWorkletNode(this.ctx, "synth-voices", {
-      numberOfInputs: 4,
-      numberOfOutputs: 1,
-      outputChannelCount: [1],
-      processorOptions: { values: this.params },
+      numberOfInputs: 0,
+      numberOfOutputs: 1 + TAPS.length,
+      outputChannelCount: Array(1 + TAPS.length).fill(1),
+      // The seed is picked here, so a seeded render (render check) repeats the random LFO too.
+      processorOptions: { values: this.params, seed: Math.floor(Math.random() * 2 ** 32) },
     });
-    const { pitchMod, filterMod, widthMod, positionMod } = this.vc;
-    [pitchMod, filterMod, widthMod, positionMod].forEach((mod, i) => mod.connect(node, 0, i));
-    node.connect(this.vc.out);
+    node.connect(this.fx.synthIn);
+    node.connect(this.taps.amp);
+    TAPS.forEach((tap, i) => node.connect(this.taps[tap], 1 + i));
     node.port.onmessage = (e) => {
+      if (e.data.type === "lfo") return this.lfoReport(e.data);
       if (e.data.type !== "pong") return;
       this.pings.get(e.data.n)?.();
       this.pings.delete(e.data.n);
     };
     this.bankNode = node;
+    this.applyVoices();
+    this.applyLfo();
+    this.sendControls();
   }
 
-  /** Switch voice engines. Sounding notes are cut. */
-  setKind(kind: EngineKind) {
-    if (kind === this.kind) return;
-    this.allNotesOff();
-    this.kind = kind;
+  private lfoReport(r: LfoState & { time: number }) {
+    this.lfos.forEach((lfo, i) => lfo.report(r.time, r.phase[i], r.rate[i]));
+    for (const [i, frame, value] of r.steps) this.lfos[i].step(frame / this.ctx.sampleRate, value);
   }
 
   /**
-   * Resolves once the new engine's processor has every message sent so far (or after `timeoutMs`).
-   * The render check waits for this before rendering, since notes are messages there, not automation.
+   * Resolves once the voice processor has every message sent so far (or after `timeoutMs`).
+   * The render check waits for this before rendering, since notes are messages, not automation.
    */
   flush(timeoutMs = 500): Promise<void> {
     if (!this.bankNode) return Promise.resolve();
@@ -226,9 +176,8 @@ export class Engine {
     });
   }
 
-  private newVoice(note: number, velocity: number, t: number): SynthVoice {
-    if (this.kind === "worklet" && this.bankNode) return new WorkletVoice(this.bankNode.port, this.params, note, velocity, t);
-    return new Voice(this.vc, this.params, note, velocity, t);
+  private newVoice(note: number, velocity: number, t: number): Voice {
+    return new Voice(this.bankNode!.port, this.params, note, velocity, t);
   }
 
   get cpu(): CpuLoad {
@@ -272,14 +221,18 @@ export class Engine {
 
   /** -1..1 */
   setBend(value: number) {
-    this.bend.offset.setTargetAtTime(value * BEND_RANGE_CENTS, this.ctx.currentTime, 0.005);
+    this.bend = value * BEND_RANGE_CENTS;
+    this.sendControls();
   }
 
   /** 0..1 */
   setMod(value: number) {
     this.mod = value;
-    this.modStrip.offset.setTargetAtTime(value, this.ctx.currentTime, 0.005);
-    this.applyLfo();
+    this.sendControls();
+  }
+
+  private sendControls() {
+    this.bankNode?.port.postMessage({ type: "controls", bend: this.bend, mod: this.mod });
   }
 
   private applyGlobal() {
@@ -297,20 +250,16 @@ export class Engine {
     this.applyLfo();
   }
 
+  /** The LFOs' speeds (their depths and shapes come with the parameters). */
   private applyLfo() {
     const p = this.params;
-    const t = this.ctx.currentTime;
     const waves = [p.lfoWave, p.lfo2Wave];
-    let tremoloDepth = 0;
-    this.lfos.forEach((lfo, i) => {
+    const rates = this.lfos.map((lfo, i) => {
       lfo.setWave(waves[i]);
       lfo.setRate(this.lfoRate(i));
-      const depths = this.lfoDepths(i);
-      this.lfoGains[i].forEach((g, target) => g.gain.setTargetAtTime(depths[target] * LFO_SCALE[target], t, 0.02));
-      tremoloDepth += depths[2] * LFO_AMP;
+      return lfo.rate;
     });
-    // Tremolo swings the volume around a lowered centre, so it never goes above full.
-    this.tremolo.gain.setTargetAtTime(Math.max(0, 1 - tremoloDepth), t, 0.02);
+    this.bankNode?.port.postMessage({ type: "lfoRates", rates });
   }
 
   /** Effective LFO speed in Hz: the Rate knob, or the tempo when synced. */
@@ -327,10 +276,7 @@ export class Engine {
    * goes to its target; the mod strip adds depth to LFO 1's mod target.
    */
   lfoDepths(i: number): PerTarget<number> {
-    const p = this.params;
-    const [target, depth] = i === 0 ? [p.lfoTarget, p.lfoDepth] : [p.lfo2Target, p.lfo2Depth];
-    const extra = (t: number) => (i === 0 && p.modTarget === t ? this.mod : 0);
-    return LFO_SCALE.map((_, t) => Math.min(1, (target === t ? depth : 0) + extra(t))) as PerTarget<number>;
+    return lfoDepths(this.params, i, this.mod);
   }
 
   /**
@@ -401,21 +347,9 @@ export class Engine {
     return this.voices.map((v) => ({ note: v.note, velocity: v.velocity, triggeredAt: v.triggeredAt, releasedAt: v.releasedAt, random: v.random }));
   }
 
+  /** The voice processor gets the parameters once for all its voices. */
   private applyVoices() {
     this.bankNode?.port.postMessage({ type: "params", values: this.params });
-    for (const v of this.voices) v.apply(this.params);
-  }
-
-  private driveCurve(drive: number): Float32Array<ArrayBuffer> | null {
-    if (drive < DRIVE_MIN) return null;
-    const key = Math.round(drive * 50);
-    let curve = this.driveCache.get(key);
-    if (!curve) {
-      curve = new Float32Array(1025);
-      for (let i = 0; i < curve.length; i++) curve[i] = driveShape((i / (curve.length - 1)) * 2 - 1, key / 50);
-      this.driveCache.set(key, curve);
-    }
-    return curve;
   }
 
   // --- notes
@@ -450,7 +384,7 @@ export class Engine {
     for (const v of this.voices) if (v.note === note && v.owner === owner && v.releasedAt === null) this.releaseVoice(v, t);
   }
 
-  private releaseVoice(v: SynthVoice, t: number) {
+  private releaseVoice(v: Voice, t: number) {
     const end = v.release(this.params, t);
     v.stop(end);
     setTimeout(() => {
@@ -468,7 +402,7 @@ export class Engine {
       v.glideTo(note, slide ? { ...this.params, glide: Math.max(this.params.glide, SLIDE_GLIDE) } : this.params, t);
     } else if (v) {
       v.glideTo(note, { ...this.params, glide: 0 }, t);
-      v.retrigger(this.params, velocity, t);
+      v.retrigger(velocity, t);
     } else {
       this.monoVoice = this.newVoice(note, velocity, t);
       this.voices = [this.monoVoice];

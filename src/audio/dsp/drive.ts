@@ -27,7 +27,7 @@ const SUM = WEIGHTS.reduce((a, b) => a + b, 0);
 for (let i = 0; i < WEIGHTS.length; i++) WEIGHTS[i] /= SUM;
 
 /**
- * Drive at twice the sample rate, like the classic engine's WaveShaperNode (oversample "2x"): the curve
+ * Drive at twice the sample rate, like the old engine's WaveShaperNode (oversample "2x"): the curve
  * makes new high harmonics, and above the sample rate's limit they would fold back down as harsh,
  * unrelated tones (aliasing). Running at 2x and filtering before coming back down removes most of them.
  */

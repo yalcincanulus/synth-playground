@@ -1,5 +1,5 @@
 // A value that moves sample by sample the way an AudioParam's automation does, so the new voice
-// engine's envelopes and glides match the classic engine's exactly:
+// engine's envelopes and glides matched the old Web Audio engine's exactly (roadmap slices 2-3):
 //
 // - `ramp`: linearRampToValueAtTime from the current value, optionally followed by setTargetAtTime
 //   (an envelope's attack, then its decay toward sustain).

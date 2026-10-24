@@ -1,7 +1,7 @@
 // State-variable filter (the "TPT" form from Vadim Zavalishin's "The Art of VA Filter Design").
 //
 // For a fixed cutoff it has exactly the frequency response of the Web Audio BiquadFilterNode the
-// classic engine uses (both are the bilinear transform of the same analog 2-pole filter), but it
+// old engine used (both are the bilinear transform of the same analog 2-pole filter), but it
 // stays clean when the cutoff moves every sample, as envelopes and LFOs make it do.
 
 export const LOWPASS = 0;

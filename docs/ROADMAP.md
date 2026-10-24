@@ -84,6 +84,15 @@ What the browser still limits, whatever we do:
 - Once every factory preset matches, the new engine becomes the default and the old one is removed.
 - After the switch, new notes start at their target settings instead of gliding from the classic start values for 10 ms (decided 2026-10-24). Re-save the render reference afterwards.
 - **Done when:** all presets pass the render check and A/B by ear, and the CPU meter shows headroom with 10 notes of a heavy patch.
+- Status: done 2026-10-24 (checked by ear on the MiniLab). The classic engine is removed; the engine switch on the About page is gone.
+  - **Decided:** the LFOs, pitch bend and the mod strip moved into the processor too, so it has no inputs left. The random LFO is seeded, so renders now repeat exactly. The processor reports the LFOs' phase about 30 times a second (and each new random value) for the Synth view's drawings.
+  - **Code:** `voiceBank.ts` runs the mod matrix per voice: every source and destination, with each route's amount gliding over 10 ms like the classic gains. `dsp/lfo.ts` has the LFOs. `voice.ts` is now the main-thread side of a note (it was `WorkletVoice`). `osc.worklet.ts` became `synth.worklet.ts`.
+  - **Taps:** the processor has one output per stage (raw Osc 1, Osc 2, sub and noise, mixer, drive, filter), so "Listen here" and the stage pictures work as before.
+  - **Stolen notes** fade over 5 ms (tested: no cut).
+  - **Bug found in the classic engine:** LFO 1 always played a sine when its shape said "triangle" (the default), because the shape was only set on a change. The new engine plays the shape it shows, so the default LFO 1 shape is now **sine**, which keeps every factory preset sounding as before. User presets saved with "triangle" now really get a triangle.
+  - **A/B result** (with the classic start values put back temporarily): all 38 presets match the classic reference within about 1 dB, routes included. As before, Square Lead differs only in bands 55 dB below its tone, and Digital Keys in its random LFO.
+  - **After the switch:** notes start at their target settings. The classic voices faded each note in from full noise and sub level over 10 ms, a small noise burst on every note; that is gone. Most audible on fast-decaying keys presets (chord spectrum up to 19 dB different, mostly reverb tail of that burst). The reference was re-saved, and two renders in a row are now identical (0.0 everywhere).
+  - **CPU:** 10 notes of unison 3, wavetable + saw, drive, noise, sub and all 8 routes: about 1.05 ms of the 2.67 ms per block in Chromium's JavaScript engine (39%), measured outside the worklet.
 
 ### 4. Robust timing
 

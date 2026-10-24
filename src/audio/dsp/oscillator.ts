@@ -1,5 +1,5 @@
 // The synth's oscillators as plain code: no Web Audio here, so it runs in the audio worklet
-// (osc.worklet.ts wraps it) and in tests.
+// (the voice engine, dsp/voiceBank.ts, runs it in synth.worklet.ts) and in tests.
 //
 // One Oscillator per voice makes Osc 1, Osc 2 (each with its unison copies) and the
 // sub, so Osc 2 can be hard-synced to Osc 1 and Osc 1 can be phase-modulated by Osc 2.

@@ -1,5 +1,5 @@
 import { FILTER_TYPES } from "./params";
-import { filterQ } from "./voice";
+import { filterQ } from "./dsp/voiceMath";
 
 /**
  * Magnitude response of a Web Audio BiquadFilterNode, computed with the same

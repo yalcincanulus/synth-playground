@@ -103,7 +103,7 @@ export const PARAMS = {
   lfoRate: { label: "LFO Rate", min: 0.05, max: 20, curve: "exp", default: 5, format: hz },
   lfoDepth: { label: "LFO Depth", min: 0, max: 1, curve: "lin", default: 0, format: pct },
   lfoTarget: enumParam("LFO To", LFO_TARGETS, 0),
-  lfoWave: enumParam("LFO Shape", LFO_WAVES, 1),
+  lfoWave: enumParam("LFO Shape", LFO_WAVES, 0),
   lfoSync: enumParam("LFO Sync", LFO_SYNCS, 0),
   lfo2Rate: { label: "LFO2 Rate", min: 0.05, max: 20, curve: "exp", default: 0.5, format: hz },
   lfo2Depth: { label: "LFO2 Depth", min: 0, max: 1, curve: "lin", default: 0, format: pct },

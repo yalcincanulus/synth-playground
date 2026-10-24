@@ -2,7 +2,7 @@
 // See analyse.ts for what is measured.
 
 import { hasRoutes } from "../audio/dsp/voiceBank";
-import { Engine, type EngineKind } from "../audio/engine";
+import { Engine } from "../audio/engine";
 import { FACTORY_PRESETS, presetValues, type Preset } from "../presets/presets";
 import { analyse, compare, levelOutliers, PHRASE, RENDER_RATE, RENDER_SECONDS, type Analysis, type IssueKind } from "./analyse";
 
@@ -14,7 +14,6 @@ const BAD_DB = 4;
 const MINOR: IssueKind[] = ["loud", "quiet"];
 
 interface Reference {
-  engine: string;
   savedAt: string;
   sampleRate: number;
   results: Record<string, Analysis>;
@@ -22,7 +21,6 @@ interface Reference {
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const runButton = $<HTMLButtonElement>("run");
-const engineSelect = $<HTMLSelectElement>("engine");
 const saveButton = $<HTMLButtonElement>("save");
 const status = $("status");
 const rows = $("rows");
@@ -44,9 +42,9 @@ function seeded(seed: number) {
 }
 
 /**
- * Render one preset. Math.random is seeded while the engine is built and the notes are scheduled
- * (noise, reverb, unison phases, the random source), so renders are repeatable and two engines can be
- * compared. Not covered: the random LFO wave, whose steps are scheduled by a timer during playback.
+ * Render one preset. Math.random is seeded while the engine is built and the notes are played
+ * (noise, reverb, unison phases, the random source, the random LFO's seed), so renders repeat exactly
+ * and a changed engine can be compared with the reference.
  */
 async function renderPreset(preset: Preset): Promise<AudioBuffer> {
   const random = Math.random;
@@ -63,16 +61,14 @@ async function renderSeeded(preset: Preset): Promise<AudioBuffer> {
   // The engine is written for a live AudioContext; offline it only lacks resume(), which isn't called here.
   const engine = new Engine(ctx as unknown as AudioContext);
   await engine.ready;
-  engine.setKind(engineSelect.value as EngineKind);
   engine.setParams(presetValues(preset));
   engine.fx.settle();
   engine.loadAllTables();
   // Let the wavetables reach the audio thread before rendering starts.
   await new Promise((r) => setTimeout(r, 20));
   await engine.flush();
-  // Play the phrase as if live: the render pauses at each note time and the keys are pressed then
-  // (scheduling everything ahead would build the classic engine's notes early, starting their waves at
-  // random points). Calls come in time order: mono presets track which keys are held.
+  // Play the phrase as if live: the render pauses at each note time and the keys are pressed then.
+  // Calls come in time order: mono presets track which keys are held.
   const events = PHRASE.flatMap((p) => [
     { time: p.on, on: true, note: p.note },
     { time: p.off, on: false, note: p.note },
@@ -83,7 +79,7 @@ async function renderSeeded(preset: Preset): Promise<AudioBuffer> {
         if (e.on) engine.noteOn(e.note, 100, time);
         else engine.noteOff(e.note, time);
       }
-      // The new engine's notes are messages to the audio thread: let them arrive before going on.
+      // Notes are messages to the audio thread: let them arrive before going on.
       await engine.flush();
       ctx.resume();
     });
@@ -95,7 +91,7 @@ async function loadReference() {
   const res = await fetch(REFERENCE_URL).catch(() => null);
   reference = res?.ok ? await res.json() : null;
   $("reference").textContent = reference
-    ? `Reference: ${reference.engine} engine, saved ${new Date(reference.savedAt).toLocaleString()}, ${Object.keys(reference.results).length} presets.`
+    ? `Reference: saved ${new Date(reference.savedAt).toLocaleString()}, ${Object.keys(reference.results).length} presets.`
     : "No reference saved yet: render, then press Save as reference.";
 }
 
@@ -123,7 +119,7 @@ async function runAll() {
 }
 
 async function saveReference() {
-  const body: Reference = { engine: engineSelect.value, savedAt: new Date().toISOString(), sampleRate: SAMPLE_RATE, results: Object.fromEntries(results) };
+  const body: Reference = { savedAt: new Date().toISOString(), sampleRate: SAMPLE_RATE, results: Object.fromEntries(results) };
   const res = await fetch(REFERENCE_URL, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   status.textContent = res.ok ? "Saved as reference." : `Saving failed: ${res.status}`;
   await loadReference();

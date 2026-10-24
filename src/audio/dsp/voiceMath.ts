@@ -1,6 +1,6 @@
-// Small formulas shared by the classic voice (voice.ts) and the new voice engine (voiceBank.ts).
+// Small formulas shared by the voice engine (voiceBank.ts), the engine (engine.ts) and the Synth view.
 
-import { FILTER_TYPES, type ParamValues } from "../params";
+import { FILTER_TYPES, type ModDest, type ParamValues } from "../params";
 
 export const midiToHz = (note: number) => 440 * Math.pow(2, (note - 69) / 12);
 
@@ -9,7 +9,7 @@ export function filterQ(type: number, resonance: number) {
   return FILTER_TYPES[type] === "bandpass" ? resonance : Math.min(24, 20 * Math.log10(resonance));
 }
 
-/** The filter's 1/Q for the state-variable filter, matching the classic biquad's Q. */
+/** The filter's 1/Q for the state-variable filter, matching the Web Audio biquad's Q (the old engine's filter). */
 export function filterK(type: number, resonance: number) {
   const q = filterQ(type, resonance);
   return FILTER_TYPES[type] === "bandpass" ? 1 / Math.max(q, 0.0001) : Math.pow(10, -q / 20);
@@ -33,3 +33,18 @@ export const velocityFilterScale = (p: ParamValues, velocity: number) => 0.5 + 0
 
 /** A released voice is silent (about -62 dB) this long after its release starts. */
 export const releaseEnd = (p: ParamValues) => p.release * 1.8 + 0.05;
+
+/** What a mod matrix route's amount of 100% means at each destination. */
+export const MOD_RANGE: Record<ModDest, number> = {
+  pitch: 2400, // cents: ±2 octaves
+  "osc 2 pitch": 2400,
+  cutoff: 4800, // cents: ±4 octaves
+  resonance: 12, // dB (a plain Q for the band-pass)
+  volume: 1,
+  "wt pos": 1,
+  width: 0.45,
+  fm: 1,
+  "osc mix": 1,
+  sub: 0.8,
+  noise: 1,
+};

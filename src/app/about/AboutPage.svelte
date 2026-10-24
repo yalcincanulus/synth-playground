@@ -33,7 +33,7 @@
 
       <h3>Coming later <span class="tag">not in yet</span></h3>
       <ul class="later">
-        <li>A new sound engine: cleaner, measured CPU use, and two sounds at once (one for the sequencer, one for your keys)</li>
+        <li>Two sounds at once (one for the sequencer, one for your keys), and a voice limit that keeps heavy patches from crackling</li>
         <li>Stereo, a ladder filter, filter morph, cleaner drive and FM, better effects</li>
         <li>WAV import and drawing your own wavetables</li>
         <li>Scale lock and chord mode</li>
@@ -58,15 +58,11 @@
         <dd>{latencyMs === null ? "—" : `about ${latencyMs} ms, as reported by the browser`}</dd>
       </dl>
 
-      <h3>Sound engine <span class="tag">being rebuilt</span></h3>
-      <div class="engine" role="group" aria-label="Sound engine">
-        <button class:active={pg.engineKind === "classic"} onclick={() => pg.setEngineKind("classic")}>Classic</button>
-        <button class:active={pg.engineKind === "worklet"} onclick={() => pg.setEngineKind("worklet")}>New (beta)</button>
-      </div>
+      <h3>Sound engine</h3>
       <p class="note">
-        The new engine makes every note in one piece of code on the audio thread, sample by sample, instead of building each
-        note from the browser's audio nodes. It sounds the same on presets without mod matrix routes. Not in it yet: the mod
-        matrix, and "Listen here" and the per-stage pictures in the Synth view for the oscillator, mixer, drive and filter stages.
+        Every note is made by one piece of our own code on the audio thread, sample by sample: oscillators, filter, drive,
+        envelopes, the LFOs and the mod matrix. Only the effects (chorus, delay, reverb) are the browser's own audio nodes.
+        The CPU meter at the top shows how much of the available time that code uses.
       </p>
     </section>
 
@@ -128,9 +124,6 @@
   dt { color: var(--dim); }
   dd { margin: 0; font-family: var(--mono); font-size: 12px; color: var(--accent); }
   dd.bad { color: #ff6b6b; }
-  .engine { display: flex; gap: 4px; margin-bottom: 6px; }
-  .engine button { font-size: 12px; padding: 3px 12px; }
-  .engine .active { border-color: var(--accent); color: var(--accent); }
   .note { color: var(--dim); font-size: 12.5px; max-width: 60ch; }
   footer { border-top: 1px solid var(--line); padding-top: 12px; color: var(--dim); font-size: 12.5px; }
   .small { font-size: 11.5px; margin: 0; }

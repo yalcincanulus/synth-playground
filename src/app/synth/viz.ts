@@ -16,7 +16,7 @@ function routed(p: ParamValues, source: ModSource) {
   }
   return false;
 }
-import { filterBase } from "../../audio/voice";
+import { filterBase } from "../../audio/dsp/voiceMath";
 import { freqX, FREQ_GRID, grid, xFreq, type Surface } from "../components/canvas";
 
 type Draw = (s: Surface) => void;
