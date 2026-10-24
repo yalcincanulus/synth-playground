@@ -1,4 +1,4 @@
-import type { Engine } from "./engine";
+import type { Ticker } from "./clock";
 import type { NoteSequencer } from "./stepSequencer";
 
 export const STEPS = 16;
@@ -20,10 +20,33 @@ export function basicBeat(): Pattern {
 
 const LOOKAHEAD = 0.1;
 const TICK_MS = 25;
+/**
+ * A step found already this far in the past is skipped rather than played late, so the loop stays on
+ * the beat after the page froze for a moment. Anything less late still plays (a few ms are inaudible).
+ */
+export const LATE_TOLERANCE = 0.02;
+
+/** What the sequencer needs from the engine. */
+export interface SequencerHost {
+  ctx: { readonly currentTime: number };
+  bpm: number;
+  drums: { trigger(track: number, velocity: number, time: number): void };
+}
+
+/** How well the sequencer kept time since it last started. */
+export interface SequencerTiming {
+  /** Steps skipped because the page woke up too late to play them on time. */
+  lateSteps: number;
+  /**
+   * The smallest margin a step was planned with, in seconds ahead of the audio clock (null before the
+   * second step; the first always starts 50 ms after Play).
+   */
+  closest: number | null;
+}
 
 /**
- * 16-step drum sequencer with lookahead scheduling: a timer wakes every 25 ms
- * and schedules any steps falling in the next 100 ms at exact audio times.
+ * 16-step drum sequencer with lookahead scheduling: a clock wakes every 25 ms and schedules any
+ * steps falling in the next 100 ms at exact audio times.
  */
 export class Sequencer {
   pattern: Pattern = basicBeat();
@@ -37,7 +60,6 @@ export class Sequencer {
   /** Called when each step is scheduled, with the audio time it will sound at. */
   onStep: (step: number, time: number) => void = () => {};
 
-  private timer = 0;
   private nextStep = 0;
   private nextTime = 0;
   /** Beats since start at nextTime (a drum step is a quarter beat). */
@@ -45,7 +67,16 @@ export class Sequencer {
   /** Audio time each step is scheduled at, for quantised recording and UI playhead. */
   private stepTimes: number[] = Array(STEPS).fill(0);
 
-  constructor(private engine: Engine) {}
+  private stats: SequencerTiming = { lateSteps: 0, closest: null };
+
+  constructor(
+    private engine: SequencerHost,
+    private clock: Ticker,
+  ) {}
+
+  get timing(): SequencerTiming {
+    return { ...this.stats };
+  }
 
   get stepDuration() {
     return 60 / this.engine.bpm / 4;
@@ -58,14 +89,15 @@ export class Sequencer {
     this.nextBeat = 0;
     this.nextTime = this.engine.ctx.currentTime + 0.05;
     this.notes?.reset();
-    this.timer = window.setInterval(() => this.schedule(), TICK_MS);
+    this.stats = { lateSteps: 0, closest: null };
+    this.clock.start(TICK_MS, () => this.schedule());
     this.schedule();
   }
 
   stop() {
     this.playing = false;
     this.recording = false;
-    clearInterval(this.timer);
+    this.clock.stop();
     this.notes?.release(this.engine.ctx.currentTime);
   }
 
@@ -96,13 +128,19 @@ export class Sequencer {
     // If quantised forward onto a step that's already scheduled, the hit was heard live anyway.
   }
 
-  private schedule() {
-    const ctx = this.engine.ctx;
-    while (this.nextTime < ctx.currentTime + LOOKAHEAD) {
+  /** Plan every step that starts within the lookahead. Exposed for tests; the clock calls it. */
+  schedule() {
+    const now = this.engine.ctx.currentTime;
+    while (this.nextTime < now + LOOKAHEAD) {
       const step = this.nextStep;
+      const lead = this.nextTime - now;
+      // Late: the page was busy (or asleep) when this step should have been planned.
+      const late = lead < -LATE_TOLERANCE;
+      if (late) this.stats.lateSteps++;
+      else if (this.nextBeat > 0) this.stats.closest = Math.min(this.stats.closest ?? Infinity, lead);
       this.stepTimes[step] = this.nextTime;
       this.onStep(step, this.nextTime);
-      for (let track = 0; track < TRACKS; track++) {
+      for (let track = 0; track < TRACKS && !late; track++) {
         const vel = this.pattern[track][step];
         if (vel > 0 && this.drumsOn) {
           this.engine.drums.trigger(track, vel, this.nextTime);
@@ -111,7 +149,7 @@ export class Sequencer {
       }
       const secPerBeat = 60 / this.engine.bpm;
       const stepStart = this.nextTime;
-      this.notes?.schedule(this.nextBeat, this.nextBeat + 0.25, (b) => stepStart + (b - this.nextBeat) * secPerBeat, secPerBeat);
+      this.notes?.schedule(this.nextBeat, this.nextBeat + 0.25, (b) => stepStart + (b - this.nextBeat) * secPerBeat, secPerBeat, late);
       this.nextTime += this.stepDuration;
       this.nextBeat += 0.25;
       this.nextStep = (step + 1) % STEPS;

@@ -103,9 +103,10 @@ export class NoteSequencer {
 
   /**
    * Play every step that falls in [fromBeat, toBeat). `timeAt` turns a beat position into audio time;
-   * `secPerBeat` gives note lengths.
+   * `secPerBeat` gives note lengths. With `skip` (the time has already passed), the steps move on
+   * silently, so the sequence stays in place on the beat.
    */
-  schedule(fromBeat: number, toBeat: number, timeAt: (beat: number) => number, secPerBeat: number) {
+  schedule(fromBeat: number, toBeat: number, timeAt: (beat: number) => number, secPerBeat: number, skip = false) {
     if (!this.s.enabled) {
       if (this.nextBeat >= 0) {
         this.release(timeAt(fromBeat));
@@ -124,19 +125,19 @@ export class NoteSequencer {
     if (this.nextBeat < fromBeat - 1e-6) this.nextBeat = Math.ceil(fromBeat - 1e-6);
     while (this.nextBeat < toBeat - 1e-6) {
       const time = timeAt(this.nextBeat);
-      this.play(time, stepBeats * secPerBeat);
+      this.play(time, stepBeats * secPerBeat, skip);
       this.nextBeat += stepBeats;
     }
   }
 
-  private play(time: number, duration: number) {
+  private play(time: number, duration: number, skip: boolean) {
     const step = this.upcoming < this.s.length ? this.upcoming : 0;
     this.pos = step;
     this.upcoming = this.advance();
     this.onStep(step, time);
 
     const st = this.s.steps[step];
-    if (!st.on) return this.release(time);
+    if (!st.on || skip) return this.release(time);
     const note = Math.max(0, Math.min(127, st.note + this.s.transpose));
     if (this.held === note) {
       // Slide into the same pitch: a tie, the note just keeps going.

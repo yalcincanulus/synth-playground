@@ -2,7 +2,8 @@ import { SvelteSet } from "svelte/reactivity";
 import { DRUM_NAMES } from "../audio/drums";
 import { Engine, type CpuLoad, type ListenTap } from "../audio/engine";
 import { formatValue, fromControl, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, PARAMS, slotIds, toControl, type ParamId, type ParamValues } from "../audio/params";
-import { Sequencer, type Pattern, basicBeat, emptyPattern } from "../audio/sequencer";
+import { WorkerClock } from "../audio/clock";
+import { Sequencer, type Pattern, type SequencerTiming, basicBeat, emptyPattern } from "../audio/sequencer";
 import {
   defaultNoteSeq,
   DIRECTIONS,
@@ -22,6 +23,7 @@ import {
 import { TABLE_WAVE } from "../audio/oscCore";
 import { WAVETABLES } from "../audio/wavetables";
 import { findPorts, isMainPort, MiniLab, requestMidi } from "../minilab/device";
+import { Freezes, Rolling } from "./timing";
 import {
   CC_MAPS,
   displayMessage,
@@ -63,9 +65,22 @@ const KNOB_PARK = 64;
 /** What the 4 faders do in sequencer edit mode. */
 export const SEQ_FADERS = ["Length", "Gate", "Rate", "Direction"] as const;
 
+/** Timing figures for the About page (see timing.ts). Times in ms. */
+export interface TimingReport {
+  /** How long MIDI note-ons waited before the page handled them, over the last 50 notes. */
+  midiAverage: number | null;
+  midiWorst: number | null;
+  /** The page's longest freeze in the last minute (0: none over 50 ms). */
+  longestFreeze: number;
+  /** The sequencer since its last Play, or null while stopped. */
+  sequencer: SequencerTiming | null;
+}
+
 export class Playground {
   readonly engine = new Engine();
-  readonly seq = new Sequencer(this.engine);
+  readonly seq = new Sequencer(this.engine, new WorkerClock());
+  private midiWait = new Rolling(50);
+  private freezes = new Freezes();
 
   presets = $state<Preset[]>([...FACTORY_PRESETS, ...loadUserPresets()]);
   presetIndex = $state(0);
@@ -97,6 +112,7 @@ export class Playground {
   audioRunning = $state(false);
   /** CPU meter: the voice processor's share of the time available. */
   cpu = $state<CpuLoad>({ load: 0, peak: 0, voices: 0, clock: "" });
+  timing = $state<TimingReport>({ midiAverage: null, midiWorst: null, longestFreeze: 0, sequencer: null });
   midiStatus = $state<MidiStatus>("idle");
   deviceName = $state("");
   program = $state<Program | null>(null);
@@ -169,7 +185,18 @@ export class Playground {
     this.seq.notes = this.noteSequencer;
     this.engine.setParams(this.values);
     setInterval(() => (this.cpu = this.engine.cpu), 250);
+    this.freezes.observe();
+    setInterval(() => this.updateTiming(), 1000);
     this.engine.ctx.onstatechange = () => (this.audioRunning = this.engine.ctx.state === "running");
+  }
+
+  private updateTiming() {
+    this.timing = {
+      midiAverage: this.midiWait.average,
+      midiWorst: this.midiWait.max,
+      longestFreeze: this.freezes.longest(performance.now()),
+      sequencer: this.playing ? this.seq.timing : null,
+    };
   }
 
   get preset(): Preset {
@@ -845,6 +872,10 @@ export class Playground {
       this.device?.close();
       this.device = new MiniLab(input, output);
       this.device.onEvent((e) => this.handle(e));
+      // How long each note-on waited (its timestamp is when it arrived from the device).
+      this.device.onRaw((m) => {
+        if (m.direction === "in" && (m.bytes[0] & 0xf0) === 0x90 && m.bytes[2] > 0) this.midiWait.add(Math.max(0, performance.now() - m.time));
+      });
       this.device.hello();
       this.deviceName = input.name ?? "MiniLab 3";
       this.midiStatus = "connected";

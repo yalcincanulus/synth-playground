@@ -99,6 +99,12 @@ What the browser still limits, whatever we do:
 - The sequencer and drum clock tick from a Web Worker, so page work and background tabs can't delay it. Notes are still sent ahead with exact times.
 - Measure key-to-sound latency. If the page itself slows MIDI down, make the visualisers cheaper (lower frame rate, less work per frame).
 - **Done when:** the sequencer stays in time while switching views quickly, while the tab is in the background, and during heavy patches.
+- Status: built 2026-10-24, waiting for the hardware check (done together with slice 5).
+  - **Clock:** `clock.worker.ts` ticks every 25 ms from a Web Worker, which background tabs don't slow down. The sequencer still plans notes 100 ms ahead on the main thread, with exact times.
+  - **Late steps:** a step found more than 20 ms in the past is skipped (drums and the note sequencer alike) instead of played late, so after a freeze the loop stays on the beat. A forced 250 ms freeze skipped one step; every step that played was planned at least 39 ms ahead.
+  - **Not solved by a worker:** the planning itself still runs on the page, so a freeze longer than about 75 ms still loses steps (now cleanly). Fully fixing that means running the sequencer, the drums and voice allocation on the audio thread; worth doing only if the About page shows real freezes.
+  - **Measured on this machine:** switching views quickly caused no page freeze over 50 ms, and the Synth view's drawings delay the page's event loop by under 0.3 ms, so the visualisers don't slow MIDI down and were left as they are.
+  - **About page:** MIDI wait (how long a key's message waits before the page handles it), key-to-sound estimate, the longest page freeze in the last minute, and the sequencer's skipped steps and closest margin.
 
 ### 5. Voices and CPU safety
 

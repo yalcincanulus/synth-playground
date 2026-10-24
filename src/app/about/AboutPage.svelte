@@ -7,6 +7,11 @@
   const hasMidi = typeof navigator !== "undefined" && "requestMIDIAccess" in navigator;
   /** What the browser reports as the delay from the synth to the speakers. */
   let latencyMs = $derived(pg.audioRunning ? Math.round(((ctx.baseLatency ?? 0) + (ctx.outputLatency ?? 0)) * 1000) : null);
+  /** Notes start at the next audio block, about this long after the page handles a key. */
+  const blockMs = $derived((128 / ctx.sampleRate) * 1000);
+  let t = $derived(pg.timing);
+  let keyToSound = $derived(latencyMs === null || t.midiAverage === null ? null : Math.round(t.midiAverage + blockMs + latencyMs));
+  const ms = (v: number) => `${v < 10 ? v.toFixed(1) : Math.round(v)} ms`;
 </script>
 
 <article class="about">
@@ -56,6 +61,26 @@
         <dd>{pg.audioRunning ? `running at ${(ctx.sampleRate / 1000).toFixed(1)} kHz` : "not started yet (click anywhere to start)"}</dd>
         <dt>Output delay</dt>
         <dd>{latencyMs === null ? "—" : `about ${latencyMs} ms, as reported by the browser`}</dd>
+        <dt>MIDI wait</dt>
+        <dd>
+          {t.midiAverage === null || t.midiWorst === null
+            ? "play a few notes on the MiniLab to measure"
+            : `${ms(t.midiAverage)} on average, ${ms(t.midiWorst)} at worst: how long a key's message waits before the page handles it`}
+        </dd>
+        <dt>Key to sound</dt>
+        <dd>{keyToSound === null ? "—" : `about ${keyToSound} ms (MIDI wait + one audio block + output delay)`}</dd>
+        <dt>Page freezes</dt>
+        <dd>{t.longestFreeze ? `longest ${Math.round(t.longestFreeze)} ms in the last minute` : "none over 50 ms in the last minute"}</dd>
+        <dt>Sequencer</dt>
+        <dd>
+          {#if t.sequencer}
+            {t.sequencer.lateSteps
+              ? `${t.sequencer.lateSteps} step${t.sequencer.lateSteps > 1 ? "s" : ""} skipped because the page was too busy`
+              : "every step on time"}{t.sequencer.closest !== null ? `; closest step planned ${ms(t.sequencer.closest * 1000)} ahead` : ""}
+          {:else}
+            not playing
+          {/if}
+        </dd>
       </dl>
 
       <h3>Sound engine</h3>
@@ -79,9 +104,10 @@
       <ul>
         <li><strong>Delay:</strong> sound goes through the browser and the system's standard audio path, so there is more delay between key and sound than in a desktop synth with a dedicated audio driver. There is no buffer size setting and no choice of output device.</li>
         <li><strong>One CPU core:</strong> all sound is made on one audio thread. Heavy patches (many notes, unison, wavetables, routes) can crackle.</li>
-        <li><strong>Background tabs:</strong> browsers slow down hidden tabs. The drum loop can stutter and the visuals pause.</li>
+        <li><strong>Background tabs:</strong> browsers slow down hidden tabs. The sequencer and drums keep time (their clock runs in a worker thread, which isn't slowed down), but the visuals pause.</li>
+        <li><strong>A busy page:</strong> notes are planned 100 ms ahead. If the page freezes for longer, the steps it missed are skipped, so the loop stays on the beat instead of stumbling.</li>
         <li><strong>Not a plugin:</strong> it can't load in a DAW. To record it, capture the system audio.</li>
-        <li><strong>Sound quality:</strong> the filter is the browser's built-in one, the regular oscillators are less clean than the wavetables on very high notes, and the sound is mono until the chorus.</li>
+        <li><strong>Sound quality:</strong> the filter is a clean digital one (an analog-style ladder filter comes later), the regular oscillators are less clean than the wavetables on very high notes, and the sound is mono until the chorus.</li>
       </ul>
 
       <h4>The MiniLab</h4>
