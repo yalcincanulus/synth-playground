@@ -1,5 +1,12 @@
-import { FILTER_TYPES } from "./params";
-import { filterQ } from "./dsp/voiceMath";
+import { FILTER_MODELS, FILTER_TYPES, type ParamValues } from "./params";
+import { ladderMagnitude } from "./dsp/ladder";
+import { filterQ, ladderK } from "./dsp/voiceMath";
+
+/** The magnitude response of the filter a sound uses (Filter Model, type and resonance) at `cutoff`. */
+export function filterMagnitude(p: ParamValues, cutoff: number, sampleRate: number, freqs: Float32Array, out: Float32Array) {
+  if (FILTER_MODELS[p.filterModel] === "ladder") return ladderMagnitude(p.filterType, cutoff, ladderK(p.resonance), sampleRate, freqs, out);
+  return biquadMagnitude(p.filterType, cutoff, p.resonance, sampleRate, freqs, out);
+}
 
 /**
  * Magnitude response of a Web Audio BiquadFilterNode, computed with the same

@@ -50,16 +50,16 @@ export const BLOCKS: Record<BlockId, BlockDef> = {
   drive: {
     title: "Drive",
     short: "Overdrives the signal for grit.",
-    explain: "Pushes the signal too hard, like an overdriven guitar amp. Squashing the wave adds grit and extra harmonics.",
+    explain: "Pushes the signal too hard, like an overdriven guitar amp. Squashing the wave adds grit and extra harmonics. With the Ladder filter, Drive pushes the filter itself instead: the squashing happens inside it, together with the resonance, which gives the classic acid 'squelch'. The picture still shows the curve.",
     tryThis: "Raise Drive and watch the curve bend: the flatter its ends, the more the wave's peaks get flattened.",
     params: ["drive"],
   },
   filter: {
     title: "Filter",
     short: "Removes frequencies. Cutoff sets where.",
-    explain: "Removes part of the frequency range. Lowpass keeps lows and cuts highs; Cutoff sets where; Resonance boosts the frequencies right at the cutoff.",
-    tryThis: "Hold a note and sweep Cutoff slowly: the classic synth 'wah'. Then raise Resonance and sweep again.",
-    params: ["filterType", "cutoff", "resonance", "keyTrack"],
+    explain: "Removes part of the frequency range. Lowpass keeps lows and cuts highs; Cutoff sets where; Resonance boosts the frequencies right at the cutoff. The model sets the filter's character. Clean is smooth and polite. Ladder is modelled on Moog's 'ladder' filter: it cuts twice as steeply, loses some bass as Resonance rises, and near the top of Resonance it sings a tone of its own at the cutoff (self-oscillation). Drive then overdrives the filter from inside.",
+    tryThis: "Load Acid Line, set Model to Ladder, and play a few notes while turning Cutoff and Resonance. Then turn Resonance all the way up and sweep Cutoff: the filter whistles by itself.",
+    params: ["filterModel", "filterType", "cutoff", "resonance", "keyTrack"],
   },
   amp: {
     title: "Amp",
@@ -182,7 +182,7 @@ export const KNOB_PAGES: KnobPage[] = [
   },
   {
     name: "Filter",
-    knobs: ["cutoff", "resonance", "filterType", "keyTrack", "drive", "filterEnvAmt", "filterAttack", "filterDecay"],
+    knobs: ["cutoff", "resonance", "filterType", "filterModel", "drive", "filterEnvAmt", "filterAttack", "filterDecay"],
     blocks: ["drive", "filter"],
   },
   {

@@ -19,6 +19,8 @@ import { WAVETABLE_NAMES } from "./wavetables";
 
 export const WAVES = ["sine", "triangle", "sawtooth", "square", "table"] as const;
 export const FILTER_TYPES = ["lowpass", "highpass", "bandpass"] as const;
+/** Clean: the state-variable filter (2-pole). Ladder: the Moog-style 4-pole, which can self-oscillate. */
+export const FILTER_MODELS = ["clean", "ladder"] as const;
 export const LFO_TARGETS = ["pitch", "filter", "amp", "width", "position"] as const;
 export const LFO_WAVES = ["sine", "triangle", "saw", "square", "random"] as const;
 /** LFO tempo sync: "off" uses the Rate knob, otherwise one cycle lasts this many beats. */
@@ -79,6 +81,7 @@ export const PARAMS = {
 
   // Filter
   filterType: enumParam("Filter", FILTER_TYPES, 0),
+  filterModel: enumParam("Filt Model", FILTER_MODELS, 0),
   cutoff: { label: "Cutoff", min: 30, max: 18000, curve: "exp", default: 2000, format: hz },
   resonance: { label: "Resonance", min: 0.5, max: 20, curve: "exp", default: 1, format: (v) => v.toFixed(1) },
   drive: { label: "Drive", min: 0, max: 1, curve: "lin", default: 0, format: pct },

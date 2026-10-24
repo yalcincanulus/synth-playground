@@ -34,12 +34,12 @@
         <li><strong>Two parts:</strong> the keys and the step sequencer each have their own sound, say a pad over a bass line. Pick the part to edit above the presets, or with Shift + any key on the MiniLab.</li>
         <li><strong>Synth:</strong> the whole synth as blocks with live signals and cables, plain-English explanations, and "Listen here" to hear any stage on its own.</li>
         <li><strong>Wavetable:</strong> eight built-in wavetables in 3D, with the wave playing right now and its harmonics.</li>
-        <li><strong>Sound:</strong> two oscillators with pulse width, hard sync, FM and wavetables; sub and noise; filter and drive; amp, filter, pitch and mod envelopes; two LFOs; a mod matrix with 8 routes; chorus, delay and reverb.</li>
+        <li><strong>Sound:</strong> two oscillators with pulse width, hard sync, FM and wavetables; sub and noise; a clean or a ladder filter, and drive; stereo unison and panning; amp, filter, pitch and mod envelopes; two LFOs; a mod matrix with 8 routes; chorus, delay and reverb.</li>
       </ul>
 
       <h3>Coming later <span class="tag">not in yet</span></h3>
       <ul class="later">
-        <li>Stereo, a ladder filter, filter morph, cleaner drive and FM, better effects</li>
+        <li>Filter morph and a second filter, cleaner drive and FM, better effects</li>
         <li>WAV import and drawing your own wavetables</li>
         <li>Scale lock and chord mode</li>
         <li>Guided recipes: build a sound step by step</li>
@@ -107,7 +107,7 @@
         <li><strong>Background tabs:</strong> browsers slow down hidden tabs. The sequencer and drums keep time (their clock runs in a worker thread, which isn't slowed down), but the visuals pause.</li>
         <li><strong>A busy page:</strong> notes are planned 100 ms ahead. If the page freezes for longer, the steps it missed are skipped, so the loop stays on the beat instead of stumbling.</li>
         <li><strong>Not a plugin:</strong> it can't load in a DAW. To record it, capture the system audio.</li>
-        <li><strong>Sound quality:</strong> the filter is a clean digital one (an analog-style ladder filter comes later), the regular oscillators are less clean than the wavetables on very high notes. Panning keeps the sound in mono unchanged, so a hard-panned note is louder on its side than a centred one.</li>
+        <li><strong>Sound quality:</strong> drive and the ladder filter aren't oversampled yet, so heavy drive on high notes can sound harsh; the regular oscillators are less clean than the wavetables on very high notes. Panning keeps the sound in mono unchanged, so a hard-panned note is louder on its side than a centred one.</li>
       </ul>
 
       <h4>The MiniLab</h4>

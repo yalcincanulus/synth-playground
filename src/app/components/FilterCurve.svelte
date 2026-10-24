@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { FILTER_TYPES, formatValue, type ParamValues } from "../../audio/params";
-  import { biquadMagnitude } from "../../audio/filterResponse";
+  import { FILTER_MODELS, FILTER_TYPES, formatValue, type ParamValues } from "../../audio/params";
+  import { filterMagnitude } from "../../audio/filterResponse";
   import { FREQ_GRID, freqX, grid, surface, xFreq, type Surface } from "./canvas";
 
   let { ctx, values, color }: { ctx: BaseAudioContext; values: ParamValues; color: string } = $props();
@@ -12,7 +12,7 @@
   const MAX_DB = 30;
 
   function response(cutoff: number) {
-    return biquadMagnitude(values.filterType, cutoff, values.resonance, ctx.sampleRate, freqs, mag);
+    return filterMagnitude(values, cutoff, ctx.sampleRate, freqs, mag);
   }
 
   function curve(g: CanvasRenderingContext2D, w: number, h: number, m: Float32Array) {
@@ -59,12 +59,13 @@
     g.fill();
     g.font = "11px ui-monospace, monospace";
     g.fillStyle = "#e8eef0";
-    const text = `${FILTER_TYPES[values.filterType]} · ${formatValue("cutoff", values.cutoff)}`;
+    const model = FILTER_MODELS[values.filterModel] === "ladder" ? "ladder " : "";
+    const text = `${model}${FILTER_TYPES[values.filterType]} · ${formatValue("cutoff", values.cutoff)}`;
     g.fillText(text, 8, 16);
   }
 
   // Redraw when any filter-related value changes.
-  let key = $derived(`${values.cutoff}|${values.resonance}|${values.filterType}|${values.filterEnvAmt}|${color}`);
+  let key = $derived(`${values.cutoff}|${values.resonance}|${values.filterType}|${values.filterModel}|${values.filterEnvAmt}|${color}`);
 </script>
 
 <canvas use:surface={{ draw, key }}></canvas>

@@ -3,7 +3,7 @@
 
 import { envelopeAt, type Adsr, type EnvPoint } from "../../audio/envelope";
 import { Engine, LFO_FILTER_CENTS } from "../../audio/engine";
-import { biquadMagnitude } from "../../audio/filterResponse";
+import { filterMagnitude } from "../../audio/filterResponse";
 import { naive, shapeAt as oscShapeAt } from "../../audio/oscCore";
 import { frameAt, tableFrames } from "../../audio/wavetables";
 import { DELAY_DIV_BEATS, DELAY_DIVS, LFO_SYNCS, MOD_SLOTS, MOD_SOURCES, slotIds, toControl, type ModSource, type ParamId, type ParamValues } from "../../audio/params";
@@ -210,7 +210,7 @@ export function filter(engine: Engine, color: () => string): Draw {
     grid(g, w, h, FREQ_GRID.map((f) => freqX(f, w)), [zeroY]);
 
     const curve = (cutoff: number) => {
-      biquadMagnitude(p.filterType, cutoff, p.resonance, engine.ctx.sampleRate, freqs, mag);
+      filterMagnitude(p, cutoff, engine.ctx.sampleRate, freqs, mag);
       g.beginPath();
       for (let i = 0; i < POINTS; i++) {
         const db = 20 * Math.log10(Math.max(mag[i], 1e-6));

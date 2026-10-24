@@ -47,6 +47,7 @@ export function rollDice(): Preset {
     subLevel: archetype === "bass" ? rand(0.2, 0.7) : chance(0.2) ? rand(0, 0.4) : 0,
     noiseLevel: chance(0.15) ? rand(0.05, 0.3) : 0,
     filterType: chance(0.85) ? 0 : pick([1, 2]),
+    filterModel: chance(0.3) ? 1 : 0,
     resonance: expRand(0.7, 12),
     drive: chance(0.5) ? rand(0, 0.5) : 0,
     keyTrack: rand(0.2, 0.8),

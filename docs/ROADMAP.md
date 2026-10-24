@@ -154,6 +154,14 @@ What the browser still limits, whatever we do:
 - A filter model choice: **Clean** (the state-variable filter) or **Ladder**. Existing presets stay on Clean.
 - The filter curve drawing matches the chosen filter.
 - **Done when:** Acid Line set to Ladder sounds noticeably more alive, at an acceptable CPU cost.
+- Status: done 2026-10-25 (checked on the MiniLab).
+  - **How:** `dsp/ladder.ts` is four one-pole stages with the last fed back, solved for the current sample (zero-delay feedback), so the cutoff is in tune at any setting. One tanh where the feedback meets the input keeps self-oscillation at a steady level. High-pass and band-pass mix the stages' outputs (as in the Oberheim Xpander). The low-pass makes up about half the bass it loses as Resonance rises.
+  - **Model** (Clean / Ladder) is a preset setting in the Filter block, and on the Filter knob page in place of Key Track (still on the Playing page). Resonance's knob travel maps evenly onto the feedback, 0 to 4.2: the filter sings on its own from about 17. A resonance route moves the feedback by about a third of the knob per 12 dB (100%). Dice picks Ladder 30% of the time.
+  - **Drive** with the ladder goes into the filter's saturator instead of the drive stage: the saturator is the Drive stage's curve, tanh(gain × x) / tanh(gain), with the feedback inside it. The Drive block still draws its curve, and its tap plays that curve on the mixer's signal.
+  - **Drawings:** the filter curves (Synth view and playground) use the ladder's exact small-signal response when it is chosen.
+  - **Level:** at the presets' own settings the ladder is within 3 dB of Clean (Acid Line −2.8 dB RMS, from the bass lost at high resonance; Warm Pad −0.2 dB).
+  - **CPU:** cheaper than Clean when Drive is on, because the drive stage's 2x oversampling is skipped: the heavy test (10 notes, unison 3, table + saw, drive) is 0.43 ms per block in bun against 0.67 (16% against 25%). Without drive, about the same. The ladder's saturator isn't oversampled, so heavy drive on high notes can alias (slice 10).
+  - **Render check:** factory presets stay on Clean, whose sound path is unchanged, so the reference stands.
 
 ### 9. Filter morph and a second filter
 

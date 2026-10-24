@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { findClicks, findCuts } from "../../render/analyse";
+import { fft, findClicks, findCuts } from "../../render/analyse";
 import { defaultValues, LFO_WAVES, MOD_DESTS, MOD_SOURCES, slotIds, type ParamValues } from "../params";
 import { TAPS, VoiceBank, type BankMessage } from "./voiceBank";
 
@@ -112,6 +112,38 @@ describe("VoiceBank", () => {
     expect(x.every(Number.isFinite)).toBe(true);
     // Two notes through a filter whose resonant peak is up to x16 (Q capped at 24 dB, as in the old Web Audio engine).
     expect(peak(x)).toBeLessThan(2 * 16);
+  });
+
+  test("the ladder filter stays finite at the extremes, in every type and with a resonance route", () => {
+    for (const filterType of [0, 1, 2]) {
+      const b = bank({ filterModel: 1, filterType, drive: 1, resonance: 20, cutoff: 30, filterEnvAmt: 6, noiseLevel: 1, unison: 3, ...route(1, "lfo 1", "resonance", 1) });
+      const x = render(b, [{ ...on(1, 0), unison: 3, phases: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6] }, on(2, 0.05, 96)], 0.5);
+      expect(x.every(Number.isFinite)).toBe(true);
+      expect(peak(x)).toBeGreaterThan(0.01);
+      expect(peak(x)).toBeLessThan(2 * 16);
+    }
+  });
+
+  test("the ladder cuts harder above the cutoff than the clean filter", () => {
+    const saw = { osc1Wave: 2, oscMix: 0, cutoff: 300, resonance: 0.7, filterEnvAmt: 0, keyTrack: 0, sustain: 1 };
+    // The share of the energy above 2 kHz, from a spectrum of 8192 samples.
+    const highs = (x: Float32Array) => {
+      // Hann window, so the strong low harmonics don't leak into the high bins.
+      const re = Float64Array.from(x.subarray(frame(0.1), frame(0.1) + 8192), (v, i) => v * (0.5 - 0.5 * Math.cos((2 * Math.PI * i) / 8192)));
+      const im = new Float64Array(8192);
+      fft(re, im);
+      let hi = 0, all = 0;
+      for (let i = 1; i < 4096; i++) {
+        const e = re[i] * re[i] + im[i] * im[i];
+        all += e;
+        if ((i * SR) / 8192 > 2000) hi += e;
+      }
+      return hi / all;
+    };
+    const clean = highs(render(bank(saw), [on(1, 0, 45)], 0.3));
+    const ladder = highs(render(bank({ ...saw, filterModel: 1 }), [on(1, 0, 45)], 0.3));
+    // 2 kHz is 2.7 octaves above the cutoff: 12 dB per octave more is about 30 dB less.
+    expect(ladder).toBeLessThan(clean / 100);
   });
 });
 

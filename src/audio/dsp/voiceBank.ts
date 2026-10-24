@@ -4,6 +4,8 @@
 //
 // Signal path per voice:
 //   oscillators + sub + noise -> mixer -> drive -> filter -> amp envelope -> volume route -> pan
+// The filter is the clean state-variable filter or the ladder (Filter Model). With the ladder, Drive
+// pushes the filter's own saturator instead of the drive stage.
 // then all voices together -> LFO tremolo -> out (stereo).
 //
 // Stereo: a voice's unison copies spread left and right by Stereo Width, and the pan route moves the
@@ -19,14 +21,15 @@
 // The main thread (engine.ts, voice.ts) sends messages. Note events carry a time and happen on their
 // exact sample; settings and controls apply from the next block.
 
-import { FILTER_TYPES, LFO_WAVES, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, slotIds, type ParamValues } from "../params";
-import { DRIVE_MIN, Oversampled2x } from "./drive";
+import { FILTER_MODELS, FILTER_TYPES, LFO_WAVES, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, slotIds, type ParamValues } from "../params";
+import { DRIVE_MIN, driveShape, Oversampled2x } from "./drive";
+import { Ladder, LADDER_MAX_K, ladderGain, ladderOutGain } from "./ladder";
 import { LFO_AMP, LFO_AMP_TARGET, LFO_SCALE, LfoCore, lfoDepths } from "./lfo";
 import { Oscillator, type OscParams, type SideOutputs, type Table } from "./oscillator";
 import { coefFor, Ramp } from "./ramp";
 import { Svf, svfG } from "./svf";
 import { voiceWeight } from "../voiceLimit";
-import { filterBase, filterK, filterQ, keySource, midiToHz, MOD_RANGE, unisonSpread, velocityFilterScale, velocityPeak } from "./voiceMath";
+import { filterBase, filterK, filterQ, keySource, LADDER_K_PER_DB, ladderK, midiToHz, MOD_RANGE, unisonSpread, velocityFilterScale, velocityPeak } from "./voiceMath";
 
 export type BankMessage =
   | { type: "params"; values: ParamValues }
@@ -73,10 +76,11 @@ const MAX_Q_DB = 40;
 const MIN_BANDPASS_Q = 0.05;
 
 // Smoothed per-voice values, by index.
-const G1 = 0, G2 = 1, SUB = 2, NOISE = 3, OSC2 = 4, SPREAD = 5, WIDTH = 6, FM = 7, POS = 8, K = 9, Q = 10, FENV = 11, PENV = 12, STEREO = 13;
-const SMOOTHED = 14;
+// K and Q are the clean filter's resonance, LK the ladder's feedback.
+const G1 = 0, G2 = 1, SUB = 2, NOISE = 3, OSC2 = 4, SPREAD = 5, WIDTH = 6, FM = 7, POS = 8, K = 9, Q = 10, FENV = 11, PENV = 12, STEREO = 13, LK = 14;
+const SMOOTHED = 15;
 const PASS1 = [OSC2, SPREAD, WIDTH, FM, POS, PENV];
-const PASS2 = [G1, G2, SUB, NOISE, K, Q, FENV, STEREO];
+const PASS2 = [G1, G2, SUB, NOISE, K, Q, FENV, STEREO, LK];
 
 // Mod matrix sources and destinations, by their index in MOD_SOURCES / MOD_DESTS.
 const S = (name: (typeof MOD_SOURCES)[number]) => MOD_SOURCES.indexOf(name);
@@ -88,6 +92,7 @@ const D_POS = D("wt pos"), D_WIDTH = D("width"), D_FM = D("fm"), D_MIX = D("osc 
 
 const CENTS_TO_LN = Math.LN2 / 1200;
 const BANDPASS = FILTER_TYPES.indexOf("bandpass");
+const LADDER = FILTER_MODELS.indexOf("ladder");
 const RANDOM_WAVE = LFO_WAVES.indexOf("random");
 
 /** One active mod matrix route. `amount` is in the destination's units (see MOD_RANGE). */
@@ -121,10 +126,12 @@ class Voice {
   readonly key: Ramp;
   readonly cutoff: Ramp;
   readonly svf = new Svf();
+  readonly ladder = new Ladder();
   readonly driver = new Oversampled2x();
   /** With unison copies the voice is stereo: these are the right side's (the ones above are the left's). */
   readonly stereo: boolean;
   private svfR = new Svf();
+  private ladderR = new Ladder();
   private driverR = new Oversampled2x();
   private side: SideOutputs | null;
   readonly smooth: Float64Array;
@@ -245,6 +252,11 @@ class Voice {
     const filterLfo = bank.globals.filter;
     const mMix = mod(D_MIX), mSub = mod(D_SUB), mNoise = mod(D_NOISE), mCutoff = mod(D_CUTOFF), mRes = mod(D_RES), mVol = mod(D_VOLUME), mPan = mod(D_PAN);
     const driveOn = drive >= DRIVE_MIN;
+    const ladder = v.filterModel === LADDER;
+    // The ladder takes the drive into its own saturator, so the drive stage only runs before the clean filter.
+    const shapeOn = driveOn && !ladder;
+    const inGain = ladderGain(drive);
+    const outGain = ladderOutGain(drive);
     const side = this.side;
     for (let i = from; i < to; i++) {
       for (const j of PASS2) s[j] = t[j] + (s[j] - t[j]) * c;
@@ -257,23 +269,36 @@ class Voice {
       const x = 0.5 * (this.o1[i] * g1 + this.o2[i] * g2 + sub + nz);
       const cents = this.fenvB[i] * s[FENV] * velScale + filterLfo[i] + (mCutoff ? mCutoff[i] : 0);
       const fg = svfG(this.cutoff.tick() * Math.exp(cents * CENTS_TO_LN), sr);
-      const k = mRes ? resonanceK(mode, s[Q] + mRes[i]) : s[K];
       let left: number, right: number, driven: number;
-      if (side) {
-        // The copies' spread: half the mixer's sum of the side signals, times the width.
-        const d = 0.5 * (side.osc1[i] * g1 + side.osc2[i] * g2) * s[STEREO];
-        let xl = x - d;
-        let xr = x + d;
-        if (driveOn) {
-          xl = this.driver.process(xl, drive);
-          xr = this.driverR.process(xr, drive);
+      if (ladder) {
+        const k = mRes ? Math.max(0, Math.min(LADDER_MAX_K, s[LK] + mRes[i] * LADDER_K_PER_DB)) : s[LK];
+        if (side) {
+          const d = 0.5 * (side.osc1[i] * g1 + side.osc2[i] * g2) * s[STEREO];
+          left = this.ladder.process(x - d, fg, k, mode, inGain) * outGain;
+          right = this.ladderR.process(x + d, fg, k, mode, inGain) * outGain;
+        } else {
+          left = right = this.ladder.process(x, fg, k, mode, inGain) * outGain;
         }
-        driven = 0.5 * (xl + xr);
-        left = this.svf.process(xl, fg, k, mode);
-        right = this.svfR.process(xr, fg, k, mode);
+        // The drive happens inside the filter; the Drive tap shows its curve on the mixer's signal.
+        driven = taps && driveOn ? driveShape(x, drive) : x;
       } else {
-        driven = driveOn ? this.driver.process(x, drive) : x;
-        left = right = this.svf.process(driven, fg, k, mode);
+        const k = mRes ? resonanceK(mode, s[Q] + mRes[i]) : s[K];
+        if (side) {
+          // The copies' spread: half the mixer's sum of the side signals, times the width.
+          const d = 0.5 * (side.osc1[i] * g1 + side.osc2[i] * g2) * s[STEREO];
+          let xl = x - d;
+          let xr = x + d;
+          if (shapeOn) {
+            xl = this.driver.process(xl, drive);
+            xr = this.driverR.process(xr, drive);
+          }
+          driven = 0.5 * (xl + xr);
+          left = this.svf.process(xl, fg, k, mode);
+          right = this.svfR.process(xr, fg, k, mode);
+        } else {
+          driven = shapeOn ? this.driver.process(x, drive) : x;
+          left = right = this.svf.process(driven, fg, k, mode);
+        }
       }
       const level = this.ampB[i] * (mVol ? 1 + mVol[i] : 1);
       // Pan keeps left + right: hard right is the right side twice as loud and the left silent.
@@ -535,6 +560,7 @@ export class VoiceBank {
     t[FENV] = p.filterEnvAmt * 1200;
     t[PENV] = p.pitchEnvAmt * 100;
     t[STEREO] = p.stereoWidth;
+    t[LK] = ladderK(p.resonance);
     this.routes = activeRoutes(p);
     this.routeBySlot = Array(MOD_SLOTS).fill(null);
     for (const r of this.routes) this.routeBySlot[r.slot] = r;

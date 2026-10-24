@@ -49,6 +49,11 @@ at the top. The 🎧 button on a block (or an encoder click) lets you hear the s
 unchanged: left and right averaged are always the mono sound (exactly, without drive). The Output block shows
 left and right levels and a stereo picture: a vertical line is mono, a wide cloud is a wide sound.
 
+**Filter models:** the Filter block's **Model** picks **Clean** (a smooth 2-pole state-variable filter) or
+**Ladder** (a Moog-style 4-pole: steeper, loses some bass as Resonance rises, and near the top of Resonance it
+sings on its own at the cutoff). With the ladder, Drive overdrives the filter from inside instead of the drive
+stage before it. The filter drawings follow the model. Factory presets use Clean; try Acid Line on Ladder.
+
 The **Mod Matrix** strip adds up to 8 extra routes: any source (LFOs, the four envelopes including a spare
 Mod Envelope, velocity, key, the mod strip, a random value per note) to any destination (pitch, cutoff,
 resonance, volume, wavetable position, pulse width, FM, osc mix, sub, noise, pan), each with an amount. Press
@@ -73,7 +78,7 @@ Without a MiniLab, the computer keyboard plays notes (A row; Z/X change octave),
 - `src/minilab/`: MiniLab 3 protocol (decoding, SysEx builders) and the port connection. See `docs/minilab3-protocol.md`.
 - `src/audio/`: the audio engine: voices, effects, drums, sequencer, parameter definitions. Every note is made
   in one AudioWorklet processor (`synth.worklet.ts` runs `dsp/voiceBank.ts`): oscillators (anti-aliased with
-  polyBLEP, with sync and FM), filter, drive, envelopes, the LFOs and the mod matrix. `dsp/` is plain
+  polyBLEP, with sync and FM), the clean and ladder filters, drive, envelopes, the LFOs and the mod matrix. `dsp/` is plain
   TypeScript, tested with `bun test`. The effects are Web Audio nodes.
   `wavetables.ts` defines the built-in wavetables and prepares their per-octave versions.
 - `src/presets/`: factory presets; user presets are stored in localStorage.
