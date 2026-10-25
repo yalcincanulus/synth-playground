@@ -432,7 +432,8 @@
 </div>
 
 <style>
-  .app { display: grid; gap: 8px; padding: 8px 16px 12px; max-width: 1400px; margin: 0 auto; }
+  /* One column that may be narrower than its content: rows like the sound bar then shrink to the window instead of widening the page. */
+  .app { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 8px 16px 12px; max-width: 1400px; margin: 0 auto; }
   .hint { color: var(--dim); font-size: 12px; }
   .shifted { color: var(--accent); }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
@@ -471,10 +472,11 @@
   .about-link.active { color: var(--accent); text-decoration: underline; text-underline-offset: 4px; }
 
   /* ---- header row 2: the sound and time */
-  .soundbar { display: flex; gap: 10px; align-items: stretch; }
+  /* The transport moves to a row of its own only when the sound controls no longer fit (the preset name shrinks first). */
+  .soundbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch; }
   .group button { white-space: nowrap; }
   .group { display: flex; align-items: center; gap: 6px; padding: 4px 6px; background: #0f1416; border: 1px solid var(--line); border-radius: 8px; }
-  .sound { flex: 1; min-width: 0; }
+  .sound { flex: 1 1 0; min-width: min-content; }
   .parts { display: flex; gap: 2px; margin-right: 6px; }
   /* A fixed size, so loading a preset with a longer name doesn't move the rest of the row. */
   .parts button { display: grid; width: 150px; text-align: left; padding: 3px 12px; line-height: 1.25; }
@@ -482,8 +484,8 @@
   .part-name { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); }
   .parts button.active .part-name { color: var(--accent); }
   .part-preset { font-size: 13.5px; min-width: 0; }
-  .preset-wrap { position: relative; min-width: 0; }
-  .preset-btn { display: flex; align-items: baseline; gap: 8px; width: 270px; max-width: 100%; padding: 4px 10px; text-align: left; }
+  .preset-wrap { position: relative; flex: 0 1 270px; min-width: 170px; }
+  .preset-btn { display: flex; align-items: baseline; gap: 8px; width: 100%; padding: 4px 10px; text-align: left; }
   .preset-btn.open { border-color: var(--accent); }
   .pdot { width: 9px; height: 9px; border-radius: 50%; flex: none; align-self: center; }
   .pname { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
@@ -586,9 +588,9 @@
 
   @media (max-width: 1100px) {
     .top { flex-wrap: wrap; }
-    .soundbar { flex-wrap: wrap; }
   }
   @media (max-width: 1000px) {
+    .sound { flex-wrap: wrap; }
     .play { grid-template-columns: 1fr; }
     .main-viz { height: 200px; }
     .drums { grid-template-columns: 1fr; }
