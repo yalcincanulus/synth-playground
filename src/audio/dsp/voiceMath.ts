@@ -67,4 +67,5 @@ export const MOD_RANGE: Record<ModDest, number> = {
   "lfo 1 depth": 1,
   "lfo 2 rate": 3,
   "lfo 2 depth": 1,
+  "lfo 3 rate": 3,
 };

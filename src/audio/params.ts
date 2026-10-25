@@ -28,20 +28,22 @@ export const LFO_WAVES = ["sine", "triangle", "saw", "square", "random"] as cons
 export const LFO_SYNCS = ["off", "2 bars", "1 bar", "1/2", "1/4", "1/8", "1/16"] as const;
 export const LFO_SYNC_BEATS = [0, 8, 4, 2, 1, 0.5, 0.25];
 /** Mod matrix sources and destinations (a route's value is the index). */
-export const MOD_SOURCES = ["off", "lfo 1", "lfo 2", "filter env", "amp env", "pitch env", "mod env", "velocity", "key", "mod strip", "random"] as const;
+export const MOD_SOURCES = ["off", "lfo 1", "lfo 2", "filter env", "amp env", "pitch env", "mod env", "velocity", "key", "mod strip", "random", "lfo 3"] as const;
 export const MOD_DESTS = [
   "pitch", "osc 2 pitch", "cutoff", "resonance", "volume", "wt pos", "width", "fm", "osc mix", "sub", "noise", "pan", "morph", "cutoff 2",
   // Shared by the whole part rather than per note (see SHARED_DESTS).
-  "chorus", "delay", "reverb", "lfo 1 rate", "lfo 1 depth", "lfo 2 rate", "lfo 2 depth",
+  "chorus", "delay", "reverb", "lfo 1 rate", "lfo 1 depth", "lfo 2 rate", "lfo 2 depth", "lfo 3 rate",
 ] as const;
 /**
  * Destinations that belong to the whole part, not to each note: the effect amounts and the LFOs. Per-note
  * sources (envelopes, velocity, key, random) reach them from the newest note.
  */
-export const SHARED_DESTS: readonly ModDest[] = ["chorus", "delay", "reverb", "lfo 1 rate", "lfo 1 depth", "lfo 2 rate", "lfo 2 depth"];
+export const SHARED_DESTS: readonly ModDest[] = ["chorus", "delay", "reverb", "lfo 1 rate", "lfo 1 depth", "lfo 2 rate", "lfo 2 depth", "lfo 3 rate"];
 export type ModSource = (typeof MOD_SOURCES)[number];
 export type ModDest = (typeof MOD_DESTS)[number];
 export const MOD_SLOTS = 8;
+/** How far the pitch strip bends, each way. */
+export const BEND_RANGE_CENTS = 200;
 
 export const DELAY_DIVS = ["1/16", "1/8", "3/16", "1/4", "3/8", "1/2"] as const;
 export const DELAY_DIV_BEATS = [0.25, 0.5, 0.75, 1, 1.5, 2];
@@ -169,6 +171,10 @@ export const PARAMS = {
   lfo2Target: enumParam("LFO2 To", LFO_TARGETS, 1),
   lfo2Wave: enumParam("LFO2 Shape", LFO_WAVES, 0),
   lfo2Sync: enumParam("LFO2 Sync", LFO_SYNCS, 0),
+  // LFO 3: like the mod envelope, only connected through the mod matrix (so it has no target or depth).
+  lfo3Rate: { label: "LFO3 Rate", min: 0.05, max: 20, curve: "exp", default: 2, format: hz },
+  lfo3Wave: enumParam("LFO3 Shape", LFO_WAVES, 1),
+  lfo3Sync: enumParam("LFO3 Sync", LFO_SYNCS, 0),
   modTarget: enumParam("Mod To", LFO_TARGETS, 0),
   glide: { label: "Glide", min: 0, max: 1, curve: "lin", default: 0, format: sec },
   mono: enumParam("Voice", ["poly", "mono"], 0),

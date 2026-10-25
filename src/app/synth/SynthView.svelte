@@ -2,12 +2,13 @@
   import { EFFECT_ON, effectChain, effectOrder, formatValue, LFO_SYNC_BEATS, MOD_DESTS, MOD_SOURCES, PARAMS, slotIds, type Effect } from "../../audio/params";
   import type { Playground } from "../playground.svelte";
   import Block from "./Block.svelte";
-  import { BLOCKS, DEST_BLOCK, KNOB_PAGES, paramLabel, SOURCE_BLOCK, TAP_NAMES } from "./blocks";
+  import { BLOCKS, DEST_BLOCK, jackAt, KNOB_PAGES, paramLabel, SOURCE_BLOCK, TAP_NAMES } from "./blocks";
   import MatrixPanel from "./MatrixPanel.svelte";
   import RecipeList from "../recipes/RecipeList.svelte";
   import RecipePanel from "../recipes/RecipePanel.svelte";
   import Cables, { type Cable } from "./Cables.svelte";
   import LiveCanvas from "./LiveCanvas.svelte";
+  import { PatchDrag, providePatchDrag } from "./patchDrag.svelte";
   import * as viz from "./viz";
 
   let { pg, accent }: { pg: Playground; accent: string } = $props();
@@ -22,6 +23,7 @@
   // Modulation colours, shared by cables, legend and block visuals.
   const LFO = "#ffcc33";
   const LFO2 = "#ff9f43";
+  const LFO3 = "#ffd8a8";
   const FENV = "#ff7ab6";
   const AENV = "#7ab8ff";
   const PLAY = "#b388ff";
@@ -29,11 +31,13 @@
   const OSC = "#ff6b6b";
   const MENV = "#c6f05e";
   /** Each modulator block's colour, for its cables and matrix routes. */
-  const COLORS: Record<string, string> = { lfo: LFO, lfo2: LFO2, filterEnv: FENV, ampEnv: AENV, pitchEnv: PENV, modEnv: MENV, perf: PLAY };
+  const COLORS: Record<string, string> = { lfo: LFO, lfo2: LFO2, lfo3: LFO3, filterEnv: FENV, ampEnv: AENV, pitchEnv: PENV, modEnv: MENV, perf: PLAY, osc: OSC };
   /** Where matrix route cables land on each destination block. */
-  const DEST_SIDE: Partial<Record<string, Cable["toSide"]>> = { osc1: "r", osc2: "r", filter: "b", filter2: "r", amp: "l", mixer: "r", lfo: "t", lfo2: "t" };
+  const DEST_SIDE: Partial<Record<string, Cable["toSide"]>> = { osc1: "r", osc2: "r", filter: "b", filter2: "r", amp: "l", mixer: "r", lfo: "t", lfo2: "t", lfo3: "t" };
 
   let container = $state<HTMLElement>();
+  const drag = new PatchDrag(() => pg, () => container);
+  providePatchDrag(drag);
 
   let cables = $derived.by((): Cable[] => {
     const v = pg.values;
@@ -99,11 +103,12 @@
       const from = SOURCE_BLOCK[src];
       const to = DEST_BLOCK[dest];
       const amt = Math.abs(v[ids.amt]);
-      const lfoIndex = src === "lfo 1" ? 0 : src === "lfo 2" ? 1 : -1;
+      const lfoIndex = ["lfo 1", "lfo 2", "lfo 3"].indexOf(src);
       const period = lfoIndex >= 0 ? Math.min(8, Math.max(0.15, 1 / engine.lfoRate(lfoIndex))) : 1.2;
       list.push({
-        from, to, fromSide: "t", toSide: DEST_SIDE[to] ?? "b", toAt: 0.2 + 0.08 * n, kind: "mod", color: COLORS[from],
+        from, to, fromSide: "t", toSide: DEST_SIDE[to] ?? "b", fromAt: jackAt(v[ids.src]), toAt: 0.2 + 0.08 * n, kind: "mod", color: COLORS[from],
         width: 1.5 + amt * 5, period, idle: amt === 0, label: `Route ${n}: ${src} → ${dest} (${formatValue(ids.amt, v[ids.amt])})`,
+        route: { n, src: v[ids.src] },
       });
     }
     list.push({ from: "perf", to: "osc2", fromSide: "t", toSide: "b", kind: "mod", color: PLAY, width: 1.5 + Math.abs(pg.bend) * 4, idle: pg.bend === 0, label: "Pitch strip → oscillator pitch" });
@@ -281,6 +286,7 @@
             <span><i style:background={accent}></i>sound</span>
             <span><i class="dash" style:color={LFO}></i>LFO 1</span>
             <span><i class="dash" style:color={LFO2}></i>LFO 2</span>
+            <span><i class="dash" style:color={LFO3}></i>LFO 3</span>
             <span><i class="dash" style:color={FENV}></i>filter env</span>
             <span><i class="dash" style:color={AENV}></i>amp env</span>
             <span><i class="dash" style:color={PENV}></i>pitch env</span>
@@ -295,6 +301,7 @@
         <Block {pg} id="perf" compact={!modsOpen}><LiveCanvas height={48} draw={viz.playing(engine, () => pg.bend, () => pg.mod, () => PLAY)} /></Block>
         <Block {pg} id="lfo" compact={!modsOpen}><LiveCanvas height={44} draw={viz.lfo(engine, 0, () => LFO)} /></Block>
         <Block {pg} id="lfo2" compact={!modsOpen}><LiveCanvas height={44} draw={viz.lfo(engine, 1, () => LFO2)} /></Block>
+        <Block {pg} id="lfo3" compact={!modsOpen}><LiveCanvas height={44} draw={viz.lfo(engine, 2, () => LFO3)} /></Block>
         <Block {pg} id="filterEnv" compact={!modsOpen}><LiveCanvas height={52} draw={viz.envelope(engine, "filter", () => FENV)} /></Block>
         <Block {pg} id="ampEnv" compact={!modsOpen}><LiveCanvas height={52} draw={viz.envelope(engine, "amp", () => AENV)} /></Block>
         <Block {pg} id="modEnv" compact={!modsOpen}><LiveCanvas height={52} draw={viz.envelope(engine, "mod", () => MENV)} /></Block>
@@ -302,6 +309,16 @@
     </div>
 
     {#if container}<Cables {container} {cables} />{/if}
+    {#if drag.state}
+      {@const d = drag.state}
+      {@const k = Math.max(28, Math.hypot(d.x - d.x0, d.y - d.y0) * 0.35)}
+      <!-- The cable being dragged, above everything, from its source's socket to the pointer. -->
+      <svg class="dragging">
+        <path d="M {d.x0} {d.y0} C {d.x0} {d.y0 - k}, {d.x} {d.y + (d.y > d.y0 ? -k : k) * 0.3}, {d.x} {d.y}" stroke={COLORS[SOURCE_BLOCK[MOD_SOURCES[d.src] as keyof typeof SOURCE_BLOCK]]} />
+        <circle cx={d.x} cy={d.y} r="5" fill={COLORS[SOURCE_BLOCK[MOD_SOURCES[d.src] as keyof typeof SOURCE_BLOCK]]} />
+      </svg>
+      <div class="drag-hint" class:remove={d.route !== null && d.over === null} style:left="{d.x + 12}px" style:top="{d.y + 10}px">{drag.hint}</div>
+    {/if}
   </div>
 </section>
 
@@ -351,7 +368,7 @@
   }
   .slot.drop-before::before { left: -13px; }
   .slot.drop-after::after { right: -13px; }
-  /* The modulators: one row of seven under the signal path, with the cable colours. */
+  /* The modulators: one row of eight under the signal path, with the cable colours. */
   .modrow { grid-column: 1 / -1; display: grid; }
   .modrow.folded { display: flex; align-items: center; gap: 16px; padding-top: 14px; }
   .mods-head { display: flex; align-items: center; gap: 16px; padding: 12px 0 6px; position: relative; z-index: 1; }
@@ -360,7 +377,14 @@
   .legend { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 11px; color: var(--dim); }
   .legend i { display: inline-block; width: 16px; height: 3px; margin-right: 5px; vertical-align: middle; border-radius: 2px; }
   .legend i.dash { background: repeating-linear-gradient(90deg, currentColor 0 5px, transparent 5px 9px); }
-  .mods { display: grid; grid-template-columns: repeat(7, 1fr); gap: 18px; align-items: start; }
+  .mods { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 14px; align-items: start; }
+  .dragging { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 4; pointer-events: none; overflow: visible; }
+  .dragging path { fill: none; stroke-width: 3; stroke-linecap: round; stroke-dasharray: 6 5; }
+  .drag-hint {
+    position: absolute; z-index: 5; pointer-events: none; white-space: nowrap; font-size: 11px; padding: 1px 6px; border-radius: 4px;
+    background: #0b1314; border: 1px solid #ffcc33; color: #ffe08a;
+  }
+  .drag-hint.remove { border-color: #ff6b6b; color: #ff9b9b; }
   .folded .mods { flex: 1; gap: 12px; }
   @media (max-width: 1100px) {
     .detail { grid-template-columns: 1fr; }

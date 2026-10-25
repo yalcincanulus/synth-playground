@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { formatValue, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, slotIds, type ModDest, type ModSource } from "../../audio/params";
+  import { formatValue, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, slotIds } from "../../audio/params";
   import type { Playground } from "../playground.svelte";
-  import { SOURCE_BLOCK } from "./blocks";
+  import { DEST_NAMES, fixedRoutes, SOURCE_BLOCK, SOURCE_NAMES } from "./blocks";
   import LiveCanvas from "./LiveCanvas.svelte";
   import type { Surface } from "../components/canvas";
 
@@ -9,19 +9,15 @@
 
   let open = $state(true);
 
-  // Typed by the real names, so a new source or destination without a name here fails the type check.
-  const SOURCE_NAMES: Record<ModSource, string> = {
-    off: "Off",
-    "lfo 1": "LFO 1", "lfo 2": "LFO 2", "filter env": "Filter Env", "amp env": "Amp Env", "pitch env": "Pitch Env", "mod env": "Mod Env",
-    velocity: "Velocity", key: "Key", "mod strip": "Mod strip", random: "Random",
-  };
-  const DEST_NAMES: Record<ModDest, string> = {
-    pitch: "Pitch", "osc 2 pitch": "Osc 2 pitch", cutoff: "Cutoff", resonance: "Resonance", volume: "Volume", "wt pos": "WT Pos",
-    width: "Pulse width", fm: "FM amount", "osc mix": "Osc mix", sub: "Sub level", noise: "Noise level", pan: "Pan",
-    morph: "Filter morph", "cutoff 2": "Filter 2 cutoff",
-    chorus: "Chorus amount", delay: "Delay amount", reverb: "Reverb amount",
-    "lfo 1 rate": "LFO 1 rate", "lfo 1 depth": "LFO 1 depth", "lfo 2 rate": "LFO 2 rate", "lfo 2 depth": "LFO 2 depth",
-  };
+  // The fixed wiring folds away on its own; remembered per browser.
+  const FIXED_OPEN_KEY = "minilab3.fixedRoutes";
+  let fixedOpen = $state(localStorage.getItem(FIXED_OPEN_KEY) !== "closed");
+  function toggleFixed(e: MouseEvent) {
+    e.stopPropagation();
+    fixedOpen = !fixedOpen;
+    localStorage.setItem(FIXED_OPEN_KEY, fixedOpen ? "open" : "closed");
+  }
+  let fixed = $derived(fixedRoutes(pg.values, pg.bend, pg.mod));
 
   const sourceColor = (n: number) => {
     const src = MOD_SOURCES[pg.values[slotIds(n).src]];
@@ -55,7 +51,7 @@
     {:else if typeof pg.patch === "number"}
       <span class="step">From <strong style:color={colors[SOURCE_BLOCK[MOD_SOURCES[pg.patch] as keyof typeof SOURCE_BLOCK]]}>{SOURCE_NAMES[MOD_SOURCES[pg.patch]]}</strong>: now click what it should move (an oscillator, the mixer, a filter, the amp, an effect or an LFO).</span>
     {:else if pg.explain}
-      <span class="step dim">Extra connections on top of the normal wiring. Knobs 1–8 (Matrix page) set the amounts.</span>
+      <span class="step dim">Drag from a modulator's ○ socket to a block to add a route; drag a cable's ● end away to remove it. Knobs 1–8 (Matrix page) set the amounts.</span>
     {/if}
     {#if pg.routes.length < MOD_SLOTS}
       <button class="add" onclick={(e) => { e.stopPropagation(); pg.addRoute(); }}>Add route</button>
@@ -88,6 +84,26 @@
       {/each}
     </div>
   {/if}
+  {#if open}
+    <div class="fixed">
+      <button class="fixed-toggle" onclick={toggleFixed} aria-expanded={fixedOpen} title="The connections the synth always makes, set on their own blocks">{fixedOpen ? "▾" : "▸"} Fixed wiring</button>
+      {#if fixedOpen}
+        {#each fixed as f (f.from + f.to)}
+          <button
+            class="fixed-route"
+            class:idle={f.idle}
+            title="Always connected. Set on {f.block === 'perf' ? 'Playing' : f.block === 'amp' ? 'Amp' : f.from}: click to put the knobs there."
+            onclick={(e) => {
+              e.stopPropagation();
+              pg.focus(f.block);
+            }}
+          >
+            <i style:background={colors[f.source]}></i>{f.from} → {f.to}<span class="v">{f.amount}</span>
+          </button>
+        {/each}
+      {/if}
+    </div>
+  {/if}
 </section>
 
 <style>
@@ -111,4 +127,15 @@
   .meter { min-width: 0; }
   .remove { padding: 0 4px; font-size: 10px; line-height: 16px; background: none; opacity: 0.6; }
   .remove:hover { opacity: 1; }
+  /* The fixed wiring: greyed out, a click focuses the block that sets it. */
+  .fixed { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; font-size: 11px; }
+  .fixed-toggle { background: none; border: none; padding: 0 4px 0 0; font-size: 11px; color: var(--dim); white-space: nowrap; }
+  .fixed-route {
+    display: flex; align-items: center; gap: 5px; padding: 0 7px; line-height: 18px; font-size: 11px; color: #8d999c;
+    background: #ffffff06; border: 1px dashed #ffffff22; border-radius: 9px; white-space: nowrap;
+  }
+  .fixed-route:hover { color: var(--text); border-color: #ffffff44; }
+  .fixed-route i { width: 7px; height: 7px; border-radius: 50%; opacity: 0.7; }
+  .fixed-route .v { text-align: left; }
+  .fixed-route.idle { opacity: 0.45; }
 </style>

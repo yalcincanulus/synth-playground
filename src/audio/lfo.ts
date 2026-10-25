@@ -2,7 +2,7 @@ import { lfoShape } from "./dsp/lfo";
 import { LFO_WAVES } from "./params";
 
 /**
- * What one of the two LFOs is doing, for the Synth view's drawings. The LFOs themselves run in the
+ * What one of the three LFOs is doing, for the Synth view's drawings. The LFOs themselves run in the
  * voice processor (dsp/lfo.ts); it reports their phase and rate a few dozen times a second, and each
  * new random (sample & hold) value. In between, the phase is worked out from the last report.
  */

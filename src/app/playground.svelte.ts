@@ -62,7 +62,7 @@ import {
   type Program,
 } from "../minilab/protocol";
 import { rollDice } from "../presets/dice";
-import { BLOCK_TAPS, BLOCKS, blockDest, blockSource, KNOB_PAGES, MOD_SHORT, pageOf, paramLabel, TAP_NAMES, usesTable, WAVETABLE_KNOBS, type BlockId } from "./synth/blocks";
+import { BLOCK_TAPS, BLOCKS, blockDest, blockSource, KNOB_PAGES, MOD_SHORT, pageOf, paramLabel, routeStartAmount, TAP_NAMES, usesTable, WAVETABLE_KNOBS, type BlockId } from "./synth/blocks";
 import { DEFAULT_FAVOURITES, FACTORY_PRESETS, factoryId, FADERS, loadUserPresets, presetValues, saveUserPresets, userId, type Preset, type Rgb } from "../presets/presets";
 import { emptyFilter, filterPresets, isUserPresetId, presetFile, readPresetFile, type PresetFilter } from "../presets/browser";
 
@@ -1620,7 +1620,7 @@ export class Playground {
   }
 
   /** Put a route in the first empty slot (or the last one if all are used) and point the knobs at it. */
-  addRoute(src = MOD_SOURCES.indexOf("velocity"), dst = MOD_DESTS.indexOf("cutoff"), amount = 0.5) {
+  addRoute(src = MOD_SOURCES.indexOf("velocity"), dst = MOD_DESTS.indexOf("cutoff"), amount = routeStartAmount(dst)) {
     let n = 1;
     while (n < MOD_SLOTS && MOD_SOURCES[this.values[slotIds(n).src]] !== "off") n++;
     const ids = slotIds(n);
@@ -1633,6 +1633,15 @@ export class Playground {
     this.showMessage(`Route ${n}`, `${MOD_SHORT[MOD_SOURCES[src]]}>${MOD_SHORT[MOD_DESTS[dst]]}`);
     this.realignKnobs();
     return n;
+  }
+
+  /** Move route n to another destination (dragging its cable's end), keeping its source and amount. */
+  moveRoute(n: number, dst: number) {
+    const ids = slotIds(n);
+    if (this.values[ids.dst] === dst) return;
+    this.edit(`Move route ${n}`, () => this.setParam(ids.dst, dst));
+    this.showMessage(`Route ${n}`, `${MOD_SHORT[MOD_SOURCES[this.values[ids.src]]]}>${MOD_SHORT[MOD_DESTS[dst]]}`);
+    this.realignKnobs();
   }
 
   removeRoute(n: number) {

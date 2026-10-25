@@ -393,6 +393,27 @@ describe("VoiceBank shared destinations (effects and LFOs)", () => {
     expect(b.lfoState().rate[0]).toBeCloseTo(16, 1);
   });
 
+  test("LFO 3 does nothing until a route uses it, then moves its destination", () => {
+    const fast = { lfo3Rate: 4, lfo3Wave: LFO_WAVES.indexOf("sine") };
+    const [, still] = fxAmounts(bank({ delayMix: 0.3, ...fast }), [], 1);
+    expect(range(still, frame(0.1))).toEqual([expect.closeTo(0.3, 5), expect.closeTo(0.3, 5)]);
+    const [, delay] = fxAmounts(bank({ delayMix: 0.3, ...fast, ...route(1, "lfo 3", "delay", 0.2) }), [], 1);
+    const [lo, hi] = range(delay, frame(0.1));
+    expect(lo).toBeCloseTo(0.1, 2);
+    expect(hi).toBeCloseTo(0.5, 2);
+  });
+
+  test("a route on LFO 3's rate speeds it up, and LFO 3 can wobble a note's cutoff", () => {
+    const b = bank({ lfo3Rate: 1, ...route(1, "mod strip", "lfo 3 rate", 1) });
+    b.post({ type: "controls", bend: 0, mod: 1 });
+    render(b, [], 0.2);
+    expect(b.lfoState().rate[2]).toBeCloseTo(8, 1);
+    const x = render(bank({ cutoff: 400, filterEnvAmt: 0, sustain: 1, lfo3Rate: 6, ...route(1, "lfo 3", "cutoff", 0.6) }), [on(1, 0, 48)], 1);
+    expect(x.every(Number.isFinite)).toBe(true);
+    const plain = render(bank({ cutoff: 400, filterEnvAmt: 0, sustain: 1 }), [on(1, 0, 48)], 1);
+    expect(Math.abs(rms(x, frame(0.2)) - rms(plain, frame(0.2)))).toBeGreaterThan(0.005);
+  });
+
   test("a route on LFO depth deepens its own target: tremolo from nothing", () => {
     // LFO 1 on the volume at depth 0; the mod strip adds depth through the route.
     const p = { ...SINE, lfoTarget: 2, lfoDepth: 0, lfoRate: 8, ...route(1, "mod strip", "lfo 1 depth", 1) };

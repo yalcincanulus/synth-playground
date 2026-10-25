@@ -13,7 +13,7 @@
 // whole voice. Both keep (left + right) / 2 equal to the mono sound, so playing in mono sounds the same
 // (exactly, without drive: drive is applied to each side). A voice without unison copies runs its
 // drive and filter once; with copies, once per side. Each voice has four envelopes (amp, filter, pitch,
-// mod), and the mod matrix's routes move its settings sample by sample. The two LFOs, pitch bend and
+// mod), and the mod matrix's routes move its settings sample by sample. The three LFOs, pitch bend and
 // the mod strip are shared by all voices and run here too.
 //
 // Oversampling: each voice's sound path (oscillators to filters) runs at twice the sample rate, so FM,
@@ -101,14 +101,14 @@ const PASS2 = [G1, G2, SUB, NOISE, K, Q, FENV, STEREO, LK, MORPH, K2, MORPH2];
 // Mod matrix sources and destinations, by their index in MOD_SOURCES / MOD_DESTS.
 const S = (name: (typeof MOD_SOURCES)[number]) => MOD_SOURCES.indexOf(name);
 const S_LFO1 = S("lfo 1"), S_LFO2 = S("lfo 2"), S_FENV = S("filter env"), S_AENV = S("amp env"), S_PENV = S("pitch env");
-const S_MENV = S("mod env"), S_VEL = S("velocity"), S_KEY = S("key"), S_STRIP = S("mod strip"), S_RANDOM = S("random");
+const S_MENV = S("mod env"), S_VEL = S("velocity"), S_KEY = S("key"), S_STRIP = S("mod strip"), S_RANDOM = S("random"), S_LFO3 = S("lfo 3");
 const D = (name: (typeof MOD_DESTS)[number]) => MOD_DESTS.indexOf(name);
 const D_PITCH = D("pitch"), D_OSC2 = D("osc 2 pitch"), D_CUTOFF = D("cutoff"), D_RES = D("resonance"), D_VOLUME = D("volume");
 const D_POS = D("wt pos"), D_WIDTH = D("width"), D_FM = D("fm"), D_MIX = D("osc mix"), D_SUB = D("sub"), D_NOISE = D("noise"), D_PAN = D("pan");
 const D_MORPH = D("morph"), D_CUTOFF2 = D("cutoff 2");
 // Shared destinations: their sums are kept in this order (SHARED_DESTS order).
 const SHARED = SHARED_DESTS.map((d) => D(d));
-const X_CHORUS = 0, X_DELAY = 1, X_REVERB = 2, X_RATE1 = 3, X_DEPTH1 = 4, X_RATE2 = 5, X_DEPTH2 = 6;
+const X_CHORUS = 0, X_DELAY = 1, X_REVERB = 2, X_RATE1 = 3, X_DEPTH1 = 4, X_RATE2 = 5, X_DEPTH2 = 6, X_RATE3 = 7;
 /** The effect amounts' signal: chorus, delay, reverb. */
 export const FX_AMOUNTS = 3;
 
@@ -483,6 +483,7 @@ class Voice {
     switch (source) {
       case S_LFO1: return bank.globals.lfo1;
       case S_LFO2: return bank.globals.lfo2;
+      case S_LFO3: return bank.globals.lfo3;
       case S_STRIP: return bank.globals.strip;
       case S_FENV: return this.fenvB;
       case S_AENV: return this.aenvB;
@@ -511,6 +512,8 @@ const lfoSum = (t: number, a: number, b: number, g1: Float64Array, g2: Float64Ar
 class Globals {
   readonly lfo1 = block();
   readonly lfo2 = block();
+  /** LFO 3 only reaches anything through routes, so it has no targets or depths here. */
+  readonly lfo3 = block();
   readonly strip = block();
   /** Cents for every oscillator (bend and the LFOs) and every filter (the LFOs). */
   readonly pitch = block();
@@ -522,7 +525,7 @@ class Globals {
   /** The effect amounts as heard, 0..1 (chorus, delay, reverb): the settings plus their routes. */
   readonly fx = [block(), block(), block()];
 
-  readonly lfos: [LfoCore, LfoCore];
+  readonly lfos: [LfoCore, LfoCore, LfoCore];
   bend = 0;
   bendTarget = 0;
   strip0 = 0;
@@ -544,12 +547,16 @@ class Globals {
   private routeKey: string[] = Array(MOD_SLOTS).fill("");
   /** Per shared destination, the routes' sum this sample. */
   private sums = new Float64Array(SHARED.length);
-  private lastLfo = [0, 0];
+  private lastLfo = [0, 0, 0];
 
   constructor(sampleRate: number, p: ParamValues, seed: number) {
     this.controlCoef = coefFor(CONTROL_SMOOTH_S * sampleRate);
     this.lfoCoef = coefFor(LFO_SMOOTH_S * sampleRate);
-    this.lfos = [new LfoCore(p.lfoRate, seed, this.lfoCoef, sampleRate), new LfoCore(p.lfo2Rate, seed ^ 0x9e3779b9, this.lfoCoef, sampleRate)];
+    this.lfos = [
+      new LfoCore(p.lfoRate, seed, this.lfoCoef, sampleRate),
+      new LfoCore(p.lfo2Rate, seed ^ 0x9e3779b9, this.lfoCoef, sampleRate),
+      new LfoCore(p.lfo3Rate, seed ^ 0x85ebca6b, this.lfoCoef, sampleRate),
+    ];
     this.aim(p);
     for (let l = 0; l < 2; l++) this.gains[l].set(this.gainTargets[l]);
     this.tremBase = this.tremTarget;
@@ -560,6 +567,7 @@ class Globals {
   aim(p: ParamValues) {
     this.lfos[0].wave = p.lfoWave;
     this.lfos[1].wave = p.lfo2Wave;
+    this.lfos[2].wave = p.lfo3Wave;
     let tremolo = 0;
     for (let l = 0; l < 2; l++) {
       const depths = lfoDepths(p, l, this.stripTarget);
@@ -584,7 +592,7 @@ class Globals {
     const lc = this.lfoCoef;
     const [g1, g2] = this.gains;
     const [t1, t2] = this.gainTargets;
-    const [l1, l2] = this.lfos;
+    const [l1, l2, l3] = this.lfos;
     const [d1, d2] = this.depthTarget;
     const sums = this.sums;
     for (const r of routes) {
@@ -604,13 +612,15 @@ class Globals {
       sums.fill(0);
       for (const r of routes) {
         const a = (this.routeAmount[r.slot] = r.amount + (this.routeAmount[r.slot] - r.amount) * cc);
-        const src = r.source === S_LFO1 ? this.lastLfo[0] : r.source === S_LFO2 ? this.lastLfo[1] : r.source === S_STRIP ? this.strip0 : notes[r.source];
+        const src =
+          r.source === S_LFO1 ? this.lastLfo[0] : r.source === S_LFO2 ? this.lastLfo[1] : r.source === S_LFO3 ? this.lastLfo[2] : r.source === S_STRIP ? this.strip0 : notes[r.source];
         sums[r.shared] += a * src;
       }
       const a = l1.tick(sums[X_RATE1] ? Math.pow(2, sums[X_RATE1]) : 1);
       const b = l2.tick(sums[X_RATE2] ? Math.pow(2, sums[X_RATE2]) : 1);
       this.lastLfo[0] = a;
       this.lastLfo[1] = b;
+      this.lastLfo[2] = this.lfo3[i] = l3.tick(sums[X_RATE3] ? Math.pow(2, sums[X_RATE3]) : 1);
       // A depth route adds to the depth on the LFO's own target (never below none).
       const e1 = sums[X_DEPTH1] ? Math.max(-g1[d1], sums[X_DEPTH1] * LFO_SCALE[d1]) : 0;
       const e2 = sums[X_DEPTH2] ? Math.max(-g2[d2], sums[X_DEPTH2] * LFO_SCALE[d2]) : 0;
@@ -627,7 +637,7 @@ class Globals {
         this.fxBase[x] = this.fxTargets[x] + (this.fxBase[x] - this.fxTargets[x]) * cc;
         this.fx[x][i] = Math.max(0, Math.min(1, this.fxBase[x] + sums[x]));
       }
-      for (let l = 0; l < 2; l++) {
+      for (let l = 0; l < 3; l++) {
         const lfo = this.lfos[l];
         if (!lfo.wrapped) continue;
         lfo.wrapped = false;

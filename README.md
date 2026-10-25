@@ -64,16 +64,21 @@ stage before it. The filter drawings follow the model. Factory presets use Clean
 second, clean filter with its own Cutoff, Resonance and Morph, placed after Filter 1 (**series**) or beside it
 on the same input (**parallel**, the two are added). It follows Key Track; the mod matrix moves it with *cutoff 2*.
 
-The **Mod Matrix** strip adds up to 8 extra routes: any source (LFOs, the four envelopes including a spare
-Mod Envelope, velocity, key, the mod strip, a random value per note) to any destination (pitch, cutoff,
+The **Mod Matrix** strip adds up to 8 extra routes: any source (the three LFOs, the four envelopes including a
+spare Mod Envelope, velocity, key, the mod strip, a random value per note) to any destination (pitch, cutoff,
 resonance, volume, wavetable position, pulse width, FM, osc mix, sub, noise, pan, filter morph, Filter 2's
-cutoff, and for the whole part: the chorus, delay and reverb amounts and both LFOs' rate and depth), each with
-an amount. For those whole-part destinations, per-note sources (envelopes, velocity, key, random) follow the
-newest note. Press
-**Patch**, click a source block, then a destination block; each route is drawn as a cable in its source's colour.
+cutoff, and for the whole part: the chorus, delay and reverb amounts, the LFOs' rates and LFO 1 and 2's depth),
+each with an amount. For those whole-part destinations, per-note sources (envelopes, velocity, key, random)
+follow the newest note. **LFO 3**, like the Mod Envelope, is only connected through routes. To patch, drag
+from a modulator's ○ socket (on its top edge; Playing has four: velocity, key, mod strip, random) to a block,
+and let go on the destination it offers; or click the socket (or **Patch**), then the block. Each route is drawn
+as a cable in its source's colour: drag its ● end to another block to move it, or into empty space to remove
+it. Under the routes, **Fixed wiring** lists, greyed out, the connections the synth always makes (the
+envelopes, each LFO's own target, velocity, key tracking, the strips, FM and sync); click one to put the
+knobs on the block that sets it.
 
 In this view the MiniLab knobs follow the selected block: click a block, or turn the encoder to step
-through the knob pages (Sources, Filter, Filter 2, Osc Tricks, Envelopes, LFO 1, LFO 2, Playing, Mod Env, Matrix, Effects,
+through the knob pages (Sources, Filter, Filter 2, Osc Tricks, Envelopes, LFO 1, LFO 2, LFO 3, Playing, Mod Env, Matrix, Effects,
 Dist+Comp, Phase+Flng, EQ; on the Matrix page
 knobs 1–8 are the amounts of routes 1–8, and the screen names the route, e.g. `MEnv>WTPos`). Shift + encoder
 switches between the playground's waveform, spectrum and the Synth view.

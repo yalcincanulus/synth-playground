@@ -1,4 +1,4 @@
-// The two LFOs, as plain code: they run inside the voice processor (voiceBank.ts), sample by sample,
+// The three LFOs, as plain code: they run inside the voice processor (voiceBank.ts), sample by sample,
 // and their maths is shared with the Synth view's drawings.
 
 import { LFO_WAVES, type ParamValues } from "../params";
@@ -29,9 +29,11 @@ export function lfoShape(wave: number, p: number): number {
 
 /**
  * Effective depth (0..1) of LFO `i` per target. Each LFO's depth goes to its target; the mod strip
- * (`mod`, 0..1) adds depth to LFO 1's mod target.
+ * (`mod`, 0..1) adds depth to LFO 1's mod target. LFO 3 has none.
  */
 export function lfoDepths(p: ParamValues, i: number, mod: number): PerTarget<number> {
+  // LFO 3 has no target of its own: it only reaches anything through the mod matrix.
+  if (i === 2) return [0, 0, 0, 0, 0];
   const [target, depth] = i === 0 ? [p.lfoTarget, p.lfoDepth] : [p.lfo2Target, p.lfo2Depth];
   const extra = (t: number) => (i === 0 && p.modTarget === t ? mod : 0);
   return LFO_SCALE.map((_, t) => Math.min(1, (target === t ? depth : 0) + extra(t))) as PerTarget<number>;

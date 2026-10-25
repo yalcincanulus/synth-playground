@@ -1,10 +1,10 @@
 import type { ListenTap } from "../../audio/engine";
-import { EFFECTS, MOD_DESTS, MOD_SOURCES, slotIds, type Effect, type ModDest, type ModSource, type ParamId, type ParamValues } from "../../audio/params";
+import { BEND_RANGE_CENTS, EFFECTS, formatValue, MOD_DESTS, MOD_SOURCES, slotIds, type Effect, type ModDest, type ModSource, type ParamId, type ParamValues } from "../../audio/params";
 
 export type BlockId =
   | "osc1" | "osc2" | "subNoise" | "mixer" | "drive" | "filter" | "filter2" | "amp"
   | "distortion" | "compressor" | "eq" | "phaser" | "flanger" | "chorus" | "delay" | "reverb" | "output"
-  | "lfo" | "lfo2" | "filterEnv" | "ampEnv" | "pitchEnv" | "modEnv" | "perf" | "matrix";
+  | "lfo" | "lfo2" | "lfo3" | "filterEnv" | "ampEnv" | "pitchEnv" | "modEnv" | "perf" | "matrix";
 
 export interface BlockDef {
   title: string;
@@ -154,6 +154,13 @@ export const BLOCKS: Record<BlockId, BlockDef> = {
     tryThis: "Leave LFO 1 on pitch for vibrato, then set LFO 2 to Filter with a slow sine (0.2 Hz) and 40% Depth: a slow sweep under the vibrato.",
     params: ["lfo2Target", "lfo2Wave", "lfo2Sync", "lfo2Rate", "lfo2Depth"],
   },
+  lfo3: {
+    title: "LFO 3",
+    short: "A spare LFO: drag a cable from it to what it should move.",
+    explain: "A third LFO with its own shape, speed and sync. Like the Mod Envelope it isn't wired to anything: drag a cable from its ○ socket to a block (or use the mod matrix), and the route's amount sets how far it moves. One LFO can drive several routes, each with its own amount, and a route can even change another LFO's speed.",
+    tryThis: "Drag from LFO 3's socket to the Filter and pick Resonance, then set Shape to square and Sync to 1/8 and start the drum loop: the filter rings on every other step.",
+    params: ["lfo3Wave", "lfo3Sync", "lfo3Rate"],
+  },
   filterEnv: {
     title: "Filter Envelope",
     short: "Moves the filter's cutoff during each note.",
@@ -178,15 +185,15 @@ export const BLOCKS: Record<BlockId, BlockDef> = {
   modEnv: {
     title: "Mod Envelope",
     short: "A spare envelope: connect it with the mod matrix.",
-    explain: "A fourth envelope with its own Attack, Decay, Sustain and Release. Unlike the others it isn't wired to anything: patch it to any destination in the mod matrix. Its classic use is the wavetable position: every note sweeps through the table and settles, the 'Serum pluck'.",
-    tryThis: "Set Osc 1 to Table, press Patch, click this block, then Oscillator 1 (it picks WT Pos if a table is playing). Set Decay to 400 ms and Sustain to 0, then play short notes.",
+    explain: "A fourth envelope with its own Attack, Decay, Sustain and Release. Unlike the others it isn't wired to anything: drag a cable from its ○ socket to any destination (or use the mod matrix). Its classic use is the wavetable position: every note sweeps through the table and settles, the 'Serum pluck'.",
+    tryThis: "Set Osc 1 to Table, then drag from this block's socket onto Oscillator 1 and let go on WT Pos. Set Decay to 400 ms and Sustain to 0, then play short notes.",
     params: ["modEnvAttack", "modEnvDecay", "modEnvSustain", "modEnvRelease"],
   },
   matrix: {
     title: "Mod Matrix",
     short: "Extra connections: any source to any destination.",
-    explain: "Each route connects a source (an LFO, an envelope, how hard you play, which key, the mod strip, or a random value per note) to a destination (pitch, cutoff, wavetable position…), by an Amount. Negative amounts move the destination the other way. Routes add to the synth's normal wiring and show as cables in the source's colour.",
-    tryThis: "Add a route Velocity → Cutoff at +50%, then play soft and hard notes: harder notes are brighter. Knobs 1–8 set the amounts of routes 1–8.",
+    explain: "Each route connects a source (an LFO, an envelope, how hard you play, which key, the mod strip, or a random value per note) to a destination (pitch, cutoff, wavetable position…), by an Amount. Negative amounts move the destination the other way. Routes add to the synth's fixed wiring, which is listed greyed out underneath, and show as cables in the source's colour. Make a route by dragging from a modulator's ○ socket to a block; drag a cable's end ● to another block to move it, or into empty space to remove it.",
+    tryThis: "Drag from the Velocity socket (in Playing) to the Filter and let go on Cutoff, then play soft and hard notes: harder notes are brighter. Knobs 1–8 set the amounts of routes 1–8.",
     params: [],
   },
   perf: {
@@ -256,6 +263,11 @@ export const KNOB_PAGES: KnobPage[] = [
     blocks: ["lfo2"],
   },
   {
+    name: "LFO 3",
+    knobs: ["lfo3Rate", "lfo3Wave", "lfo3Sync", null, "mod1Amt", "mod2Amt", "mod3Amt", "mod4Amt"],
+    blocks: ["lfo3"],
+  },
+  {
     name: "Playing",
     knobs: ["velocity", "glide", "mono", "unison", "keyTrack", "modTarget", "maxVoices", "stereoWidth"],
     blocks: ["perf"],
@@ -301,9 +313,20 @@ export const pageOf = (block: BlockId) => KNOB_PAGES.findIndex((p) => p.blocks.i
 
 /** The block each mod source lives in (velocity, key, random and the mod strip are your playing). */
 export const SOURCE_BLOCK: Record<Exclude<ModSource, "off">, BlockId> = {
-  "lfo 1": "lfo", "lfo 2": "lfo2", "filter env": "filterEnv", "amp env": "ampEnv", "pitch env": "pitchEnv", "mod env": "modEnv",
+  "lfo 1": "lfo", "lfo 2": "lfo2", "lfo 3": "lfo3", "filter env": "filterEnv", "amp env": "ampEnv", "pitch env": "pitchEnv", "mod env": "modEnv",
   velocity: "perf", key: "perf", "mod strip": "perf", random: "perf",
 };
+
+/** The sources a block gives, by MOD_SOURCES index (Playing has four; the rest one each). */
+export const blockSources = (block: BlockId) => MOD_SOURCES.flatMap((s, i) => (s !== "off" && SOURCE_BLOCK[s] === block ? [i] : []));
+
+/** Where source `src`'s socket sits along its block's top edge, 0..1 (spread out when a block has several). */
+export function jackAt(src: number): number {
+  const name = MOD_SOURCES[src];
+  if (name === "off") return 0.5;
+  const all = blockSources(SOURCE_BLOCK[name]);
+  return (all.indexOf(src) + 1) / (all.length + 1);
+}
 
 /** The block each destination is in. */
 export const DEST_BLOCK: Record<ModDest, BlockId> = {
@@ -311,7 +334,11 @@ export const DEST_BLOCK: Record<ModDest, BlockId> = {
   "wt pos": "osc1", width: "osc1", fm: "osc2", "osc mix": "mixer", sub: "mixer", noise: "mixer", pan: "output",
   morph: "filter", "cutoff 2": "filter2",
   chorus: "chorus", delay: "delay", reverb: "reverb", "lfo 1 rate": "lfo", "lfo 1 depth": "lfo", "lfo 2 rate": "lfo2", "lfo 2 depth": "lfo2",
+  "lfo 3 rate": "lfo3",
 };
+
+/** The destinations a block takes, by MOD_DESTS index. */
+export const blockDests = (block: BlockId) => MOD_DESTS.flatMap((d, i) => (DEST_BLOCK[d] === block ? [i] : []));
 
 /** Patching: the source a block gives (its first one; change it in the route afterwards). */
 export const blockSource = (block: BlockId) => MOD_SOURCES.findIndex((s) => s !== "off" && SOURCE_BLOCK[s] === block);
@@ -323,13 +350,67 @@ export function blockDest(block: BlockId, v: ParamValues): number {
   return MOD_DESTS.findIndex((d) => DEST_BLOCK[d] === block);
 }
 
+/** A new route's amount: pitch routes start small (100% is two octaves), the rest at half. */
+export const routeStartAmount = (dst: number) => (MOD_DESTS[dst] === "pitch" || MOD_DESTS[dst] === "osc 2 pitch" ? 0.1 : 0.5);
+
+// Typed by the real names, so a new source or destination without a name here fails the type check.
+export const SOURCE_NAMES: Record<ModSource, string> = {
+  off: "Off",
+  "lfo 1": "LFO 1", "lfo 2": "LFO 2", "lfo 3": "LFO 3", "filter env": "Filter Env", "amp env": "Amp Env", "pitch env": "Pitch Env", "mod env": "Mod Env",
+  velocity: "Velocity", key: "Key", "mod strip": "Mod strip", random: "Random",
+};
+export const DEST_NAMES: Record<ModDest, string> = {
+  pitch: "Pitch", "osc 2 pitch": "Osc 2 pitch", cutoff: "Cutoff", resonance: "Resonance", volume: "Volume", "wt pos": "WT Pos",
+  width: "Pulse width", fm: "FM amount", "osc mix": "Osc mix", sub: "Sub level", noise: "Noise level", pan: "Pan",
+  morph: "Filter morph", "cutoff 2": "Filter 2 cutoff",
+  chorus: "Chorus amount", delay: "Delay amount", reverb: "Reverb amount",
+  "lfo 1 rate": "LFO 1 rate", "lfo 1 depth": "LFO 1 depth", "lfo 2 rate": "LFO 2 rate", "lfo 2 depth": "LFO 2 depth", "lfo 3 rate": "LFO 3 rate",
+};
+
+/** One of the synth's fixed connections, shown greyed out under the matrix routes. */
+export interface FixedRoute {
+  from: string;
+  to: string;
+  /** The block that gives it: its colour, and where it is set. */
+  source: BlockId | "osc";
+  /** Where its amount is set (clicking the row focuses it). */
+  block: BlockId;
+  amount: string;
+  /** Connected, but doing nothing right now. */
+  idle: boolean;
+}
+
+/** The LFO targets' names, in LFO_TARGETS order. */
+const LFO_TARGET_NAMES = ["Pitch", "Cutoff", "Volume", "Pulse width", "WT Pos"];
+
+/**
+ * Every connection the synth makes without a route: the envelopes, the LFOs' own targets, velocity, key
+ * tracking, your strips, FM and sync. `bend` is the pitch strip (-1..1), `mod` the mod strip (0..1).
+ */
+export function fixedRoutes(v: ParamValues, bend: number, mod: number): FixedRoute[] {
+  const f = (id: ParamId) => formatValue(id, v[id]);
+  return [
+    { from: "Amp Env", to: "Volume", source: "ampEnv", block: "ampEnv", amount: "100%", idle: false },
+    { from: "Filter Env", to: "Cutoff", source: "filterEnv", block: "filterEnv", amount: f("filterEnvAmt"), idle: Math.abs(v.filterEnvAmt) < 0.05 },
+    { from: "Pitch Env", to: v.pitchEnvTarget ? "Osc 2 pitch" : "Pitch", source: "pitchEnv", block: "pitchEnv", amount: f("pitchEnvAmt"), idle: Math.abs(v.pitchEnvAmt) < 0.05 },
+    { from: "LFO 1", to: LFO_TARGET_NAMES[v.lfoTarget], source: "lfo", block: "lfo", amount: f("lfoDepth"), idle: v.lfoDepth === 0 },
+    { from: "LFO 2", to: LFO_TARGET_NAMES[v.lfo2Target], source: "lfo2", block: "lfo2", amount: f("lfo2Depth"), idle: v.lfo2Depth === 0 },
+    { from: "Velocity", to: "Volume, filter env", source: "perf", block: "amp", amount: f("velocity"), idle: v.velocity === 0 },
+    { from: "Key", to: "Cutoff", source: "perf", block: "filter", amount: f("keyTrack"), idle: v.keyTrack === 0 },
+    { from: "Mod strip", to: `LFO 1 depth (${LFO_TARGET_NAMES[v.modTarget]})`, source: "perf", block: "perf", amount: `${Math.round(mod * 100)}%`, idle: mod === 0 },
+    { from: "Pitch strip", to: "Pitch", source: "perf", block: "perf", amount: `±${BEND_RANGE_CENTS / 100} st`, idle: bend === 0 },
+    { from: "Osc 2", to: "Osc 1 pitch (FM)", source: "osc", block: "osc2", amount: f("fmAmount"), idle: v.fmAmount < 0.01 },
+    { from: "Osc 1", to: "Osc 2 restart (sync)", source: "osc", block: "osc2", amount: f("oscSync"), idle: !v.oscSync },
+  ];
+}
+
 /** Short names, for the OLED (route labels fit its 10 characters). */
 export const MOD_SHORT: Record<ModSource | ModDest, string> = {
-  off: "off", "lfo 1": "LFO1", "lfo 2": "LFO2", "filter env": "FEnv", "amp env": "AEnv", "pitch env": "PEnv", "mod env": "MEnv",
+  off: "off", "lfo 1": "LFO1", "lfo 2": "LFO2", "lfo 3": "LFO3", "filter env": "FEnv", "amp env": "AEnv", "pitch env": "PEnv", "mod env": "MEnv",
   velocity: "Vel", key: "Key", "mod strip": "Strip", random: "Rand",
   pitch: "Pitch", "osc 2 pitch": "O2Pit", cutoff: "Cut", resonance: "Res", volume: "Vol", "wt pos": "WTPos", width: "Width",
   fm: "FM", "osc mix": "Mix", sub: "Sub", noise: "Noise", pan: "Pan", morph: "Morph", "cutoff 2": "Cut2",
-  chorus: "Chor", delay: "Dly", reverb: "Rev", "lfo 1 rate": "L1Rt", "lfo 1 depth": "L1Dp", "lfo 2 rate": "L2Rt", "lfo 2 depth": "L2Dp",
+  chorus: "Chor", delay: "Dly", reverb: "Rev", "lfo 1 rate": "L1Rt", "lfo 1 depth": "L1Dp", "lfo 2 rate": "L2Rt", "lfo 2 depth": "L2Dp", "lfo 3 rate": "L3Rt",
 };
 
 /** A param's label; route amounts are named by their route ("LFO1>WTPos"). */

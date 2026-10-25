@@ -19,13 +19,17 @@
     toAt?: number;
     /** Most the cable may bulge out from its blocks, in px. */
     reach?: number;
+    /** A mod matrix route (its slot, and its source by MOD_SOURCES index): its end can be dragged. */
+    route?: { n: number; src: number };
   }
 </script>
 
 <script lang="ts">
   import { onMount, untrack } from "svelte";
+  import { usePatchDrag } from "./patchDrag.svelte";
 
   let { container, cables }: { container: HTMLElement; cables: Cable[] } = $props();
+  const drag = usePatchDrag();
 
   type Rect = { x: number; y: number; w: number; h: number };
   let rects = $state<Record<string, Rect>>({});
@@ -78,8 +82,16 @@
     return `M ${x0} ${y0} C ${x0 + n0x * k} ${y0 + n0y * k}, ${x3 + n3x * k} ${y3 + n3y * k}, ${x3} ${y3}`;
   }
 
+  /** The route whose end is being dragged: drawn by the drag instead. */
+  let moving = $derived(drag?.state?.route ?? null);
   let audio = $derived(cables.filter((c) => c.kind === "audio"));
-  let mod = $derived(cables.filter((c) => c.kind === "mod"));
+  let mod = $derived(cables.filter((c) => c.kind === "mod" && (c.route?.n ?? -1) !== moving));
+  let ends = $derived(
+    mod.flatMap((c) => {
+      const r = rects[c.to];
+      return c.route && r ? [{ c, route: c.route, at: anchor(r, c.toSide, c.toAt) }] : [];
+    }),
+  );
 </script>
 
 {#snippet lines(list: Cable[])}
@@ -95,6 +107,23 @@
 
 <!-- Behind the blocks: cables show in the gaps between them and never cover controls. -->
 <svg width={size.w} height={size.h}>{@render lines(audio)}{@render lines(mod)}</svg>
+<!-- Route cables' ends, above the blocks: drag one to another destination, or away to remove the route. -->
+{#if drag}
+  <div class="ends">
+    {#each ends as { c, route, at } (route.n)}
+      <button
+        class="end"
+        style:left="{at[0]}px"
+        style:top="{at[1]}px"
+        style:background={c.color}
+        title="{c.label}: drag to another block to move it, or into empty space to remove it"
+        aria-label="Route {route.n} end"
+        onpointerdown={(e) => drag.press(e, route.src, route.n)}
+        onclick={(e) => drag.click(e, route.src, route.n)}
+      ></button>
+    {/each}
+  </div>
+{/if}
 
 <style>
   svg { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: visible; }
@@ -103,4 +132,10 @@
   .mod { stroke-dasharray: 6 6; opacity: 0.85; animation: flow var(--period) linear infinite; }
   .idle { opacity: 0.18; animation: none; }
   @keyframes flow { to { stroke-dashoffset: -12; } }
+  .ends { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+  .end {
+    position: absolute; width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; padding: 0; border-radius: 50%;
+    border: 2px solid #0b1314; pointer-events: auto; cursor: grab; touch-action: none;
+  }
+  .end:hover, .end:focus-visible { transform: scale(1.35); }
 </style>

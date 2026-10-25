@@ -1,7 +1,7 @@
 import { Drums } from "./drums";
 import { Fx } from "./fx";
 import type { Lfo } from "./lfo";
-import type { ModSource, ParamId, ParamValues } from "./params";
+import { BEND_RANGE_CENTS, type ModSource, type ParamId, type ParamValues } from "./params";
 import { Part, type PartTapId, type VoiceState } from "./part";
 import workletUrl from "./synth.worklet.ts?worker&url";
 import type { NoteOwner } from "./voice";
@@ -10,8 +10,6 @@ import { BUILTIN_TABLES, buildMips, tableFrames, WAVETABLES } from "./wavetables
 
 export { LFO_AMP, LFO_FILTER_CENTS, LFO_PITCH_CENTS, LFO_POSITION, LFO_WIDTH } from "./dsp/lfo";
 export type { VoiceState } from "./part";
-
-export const BEND_RANGE_CENTS = 200;
 
 /** Points in the sound you can see and hear on their own: the selected part's stages and effects, and the final sound. */
 export type TapId = PartTapId | "out";
@@ -242,7 +240,7 @@ export class Engine {
 
   // --- live state of the selected part, for visualisation
 
-  get lfos(): [Lfo, Lfo] {
+  get lfos(): [Lfo, Lfo, Lfo] {
     return this.part.lfos;
   }
 

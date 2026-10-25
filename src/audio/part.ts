@@ -50,8 +50,8 @@ export class Part {
   private bend = 0;
   private mod = 0;
 
-  /** What the two LFOs (running in the voice processor) are doing, for the drawings. */
-  readonly lfos: [Lfo, Lfo];
+  /** What the three LFOs (running in the voice processor) are doing, for the drawings. */
+  readonly lfos: [Lfo, Lfo, Lfo];
   readonly taps: Record<PartTapId, AnalyserNode>;
 
   constructor(
@@ -60,7 +60,7 @@ export class Part {
     readonly fx: PartFx,
   ) {
     const ctx = host.ctx;
-    this.lfos = [new Lfo(ctx, this.params.lfoRate), new Lfo(ctx, this.params.lfo2Rate)];
+    this.lfos = [new Lfo(ctx, this.params.lfoRate), new Lfo(ctx, this.params.lfo2Rate), new Lfo(ctx, this.params.lfo3Rate)];
     const tap = () => new AnalyserNode(ctx, { fftSize: 2048, smoothingTimeConstant: 0.6 });
     this.taps = { osc1: tap(), osc2: tap(), sub: tap(), noise: tap(), mix: tap(), drive: tap(), filter: tap(), filter2: tap(), amp: tap(), ...fx.taps };
   }
@@ -155,7 +155,7 @@ export class Part {
   /** The LFOs' speeds follow the tempo when synced (their depths and shapes come with the parameters). */
   applyLfo() {
     const p = this.params;
-    const waves = [p.lfoWave, p.lfo2Wave];
+    const waves = [p.lfoWave, p.lfo2Wave, p.lfo3Wave];
     const rates = this.lfos.map((lfo, i) => {
       lfo.setWave(waves[i]);
       lfo.setRate(this.lfoRate(i));
@@ -167,7 +167,7 @@ export class Part {
   /** Effective LFO speed in Hz: the Rate knob, or the tempo when synced. */
   lfoRate(i: number) {
     const p = this.params;
-    const [rate, sync] = i === 0 ? [p.lfoRate, p.lfoSync] : [p.lfo2Rate, p.lfo2Sync];
+    const [rate, sync] = [[p.lfoRate, p.lfoSync], [p.lfo2Rate, p.lfo2Sync], [p.lfo3Rate, p.lfo3Sync]][i];
     return sync ? this.host.bpm / 60 / LFO_SYNC_BEATS[sync] : rate;
   }
 
@@ -205,6 +205,7 @@ export class Part {
     if (source === "off") return null;
     if (source === "lfo 1") return this.lfos[0].value();
     if (source === "lfo 2") return this.lfos[1].value();
+    if (source === "lfo 3") return this.lfos[2].value();
     if (source === "mod strip") return this.mod;
     const v = this.voices[this.voices.length - 1];
     if (!v) return null;

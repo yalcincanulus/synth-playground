@@ -423,7 +423,8 @@ export function lfo(engine: Engine, index: number, color: () => string): Draw {
   return ({ g, w, h }) => {
     grid(g, w, h, [], [h / 2]);
     const unit = engine.lfos[index];
-    const depth = Math.max(...engine.lfoDepths(index));
+    // LFO 3 has no depth of its own: drawn as deep as its strongest route.
+    const depth = index === 2 ? routeDepth(engine.params, "lfo 3") : Math.max(...engine.lfoDepths(index));
     const amp = (h / 2 - 10) * Math.max(0.15, depth);
     const Y = (v: number) => h / 2 - v * amp;
     g.strokeStyle = depth > 0 ? color() : DIM;
@@ -464,11 +465,21 @@ export function lfo(engine: Engine, index: number, color: () => string): Draw {
     g.stroke();
     glowDot(g, dotX, dotY, 4.5, color());
     const p = engine.params;
-    const sync = index === 0 ? p.lfoSync : p.lfo2Sync;
+    const sync = [p.lfoSync, p.lfo2Sync, p.lfo3Sync][index];
     const rate = unit.rate;
     label(g, `${rate.toFixed(rate < 1 ? 2 : 1)} Hz${sync ? ` · synced ${LFO_SYNCS[sync]}` : ""}`, 4, 11);
-    if (depth === 0) label(g, "Depth 0: no effect", w / 2, h - 5, "#ffffff70", "center");
+    if (depth === 0) label(g, index === 2 ? "Not patched" : "Depth 0: no effect", w / 2, h - 5, "#ffffff70", "center");
   };
+}
+
+/** The largest amount of the routes from `source` (0 when none). */
+function routeDepth(p: ParamValues, source: ModSource) {
+  let depth = 0;
+  for (let n = 1; n <= MOD_SLOTS; n++) {
+    const ids = slotIds(n);
+    if (MOD_SOURCES[p[ids.src]] === source) depth = Math.max(depth, Math.abs(p[ids.amt]));
+  }
+  return depth;
 }
 
 function shapeAt(shape: string, p: number) {

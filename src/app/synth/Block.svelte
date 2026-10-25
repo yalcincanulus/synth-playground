@@ -1,9 +1,10 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import type { Playground } from "../playground.svelte";
-  import { EFFECT_ON, effectOrder } from "../../audio/params";
-  import { BLOCK_TAPS, blockDest, blockSource, BLOCKS, isEffect, KNOB_PAGES, SHOWN_WHEN, type BlockId } from "./blocks";
+  import { EFFECT_ON, effectOrder, MOD_DESTS, MOD_SOURCES, slotIds } from "../../audio/params";
+  import { BLOCK_TAPS, blockDest, blockDests, blockSource, blockSources, BLOCKS, DEST_NAMES, isEffect, jackAt, KNOB_PAGES, MOD_SHORT, SHOWN_WHEN, SOURCE_NAMES, type BlockId } from "./blocks";
   import ParamControl from "./ParamControl.svelte";
+  import { usePatchDrag } from "./patchDrag.svelte";
 
   interface Props {
     pg: Playground;
@@ -17,7 +18,7 @@
   let { pg, id, inactive = null, compact = false, children }: Props = $props();
 
   /** The modulator row is narrow and has room below: its knobs keep their labels underneath. */
-  const MODULATORS: BlockId[] = ["lfo", "lfo2", "filterEnv", "ampEnv", "pitchEnv", "modEnv", "perf"];
+  const MODULATORS: BlockId[] = ["lfo", "lfo2", "lfo3", "filterEnv", "ampEnv", "pitchEnv", "modEnv", "perf"];
   let inline = $derived(!MODULATORS.includes(id));
 
   let def = $derived(BLOCKS[id]);
@@ -36,14 +37,23 @@
     pg.moveEffect(effect, at + (e.key === "ArrowLeft" ? -1 : 1));
   }
   let listening = $derived(!!tap && pg.listening === tap);
-  /** While patching: this block can be clicked as the source (or destination) being picked. */
-  let pickable = $derived(pg.patch === "source" ? blockSource(id) > 0 : pg.patch !== null && blockDest(id, pg.values) >= 0);
+  // Patching by dragging: the sockets this block gives, and the destinations it shows while a cable is dragged.
+  const drag = usePatchDrag();
+  const sources = $derived(drag ? blockSources(id) : []);
+  const dests = $derived(blockDests(id));
+  let dragging = $derived(!!drag?.state);
+  /** The route being moved: its destination now, so the zone it comes from is marked. */
+  let movingFrom = $derived(drag?.state?.route != null ? pg.values[slotIds(drag.state.route).dst] : null);
+  /** While patching: this block can be clicked as the source (or destination) being picked, or dropped on. */
+  let pickable = $derived(
+    dragging ? dests.length > 0 : pg.patch === "source" ? blockSource(id) > 0 : pg.patch !== null && blockDest(id, pg.values) >= 0,
+  );
 </script>
 
 <!-- Clicking anywhere on a block points the MiniLab knobs at its page. -->
 <!-- Keyboard users reach the block's own controls; the click is a shortcut for focusing the knobs. -->
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-<section role="group" aria-label={def.title} class="block" class:listening class:focused class:on-page={onPage} class:inactive={!!inactive} class:compact class:pickable class:patching={pg.patch !== null} class:target={pg.recipeBlock === id} data-block={id} onclick={() => pg.blockClick(id)}>
+<section role="group" aria-label={def.title} class="block" class:listening class:focused class:on-page={onPage} class:inactive={!!inactive} class:compact class:pickable class:patching={pg.patch !== null || dragging} class:target={pg.recipeBlock === id} data-block={id} onclick={() => pg.blockClick(id)}>
   <header title={def.short}>
     {#if effect}
       <button
@@ -97,6 +107,31 @@
       {/each}
     </div>
   {/if}
+  {#each sources as src (src)}
+    {@const name = SOURCE_NAMES[MOD_SOURCES[src]]}
+    <button
+      class="jack"
+      class:armed={pg.patch === src}
+      class:labelled={sources.length > 1}
+      style:left="{jackAt(src) * 100}%"
+      data-jack={src}
+      data-short={MOD_SHORT[MOD_SOURCES[src]]}
+      title="{name}: drag to a block to patch it there (or click, then click the block)"
+      aria-label="Patch from {name}"
+      onpointerdown={(e) => drag!.press(e, src, null)}
+      onclick={(e) => drag!.click(e, src, null)}
+    ></button>
+  {/each}
+  {#if dragging && dests.length}
+    <!-- Drop zones, one per destination; the drag finds them under the pointer by data-dest. -->
+    <div class="drops">
+      {#each dests as d (d)}
+        <div class="drop" class:over={drag?.state?.over === d} class:from={movingFrom === d} data-dest={d}>
+          {DEST_NAMES[MOD_DESTS[d]]}{#if movingFrom === d}<small> (now)</small>{/if}
+        </div>
+      {/each}
+    </div>
+  {/if}
 </section>
 
 <style>
@@ -127,5 +162,30 @@
   .switch { padding: 0 6px; font-size: 10px; line-height: 15px; border-radius: 8px; color: var(--dim); }
   .switch.on { background: var(--accent); border-color: var(--accent); color: #0b1314; }
   .params.inline { grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 6px 4px; justify-items: start; }
+  /* A source's socket, on the top edge where its cables leave. */
+  .jack {
+    position: absolute; top: -7px; width: 13px; height: 13px; margin-left: -6.5px; padding: 0; border-radius: 50%;
+    background: var(--panel); border: 2px solid #9aa7aa; cursor: grab; z-index: 2; touch-action: none;
+  }
+  .jack:hover, .jack:focus-visible { border-color: #ffcc33; background: #ffcc3355; }
+  .jack.armed { border-color: #ffcc33; background: #ffcc33; }
+  /* A block with several sockets names them while the pointer is on it (above, where the legend is otherwise). */
+  .jack.labelled::after {
+    content: attr(data-short); position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); display: none;
+    font: 9px var(--mono); color: var(--text); background: var(--bg, #0b1314); padding: 0 2px; border-radius: 3px; pointer-events: none;
+  }
+  .block:hover .jack.labelled::after, .jack.labelled:focus-visible::after { display: block; }
+  .block.patching .jack { opacity: 1; }
+  /* While a cable is dragged: the block's destinations, to drop it on. */
+  .drops {
+    position: absolute; inset: 0; min-height: fit-content; z-index: 3; display: flex; flex-direction: column; gap: 3px; padding: 4px;
+    background: #0b1314e6; border-radius: 8px; opacity: 1 !important;
+  }
+  .drop {
+    flex: 1 1 auto; min-height: 16px; display: grid; place-items: center; font-size: 11px; color: #ffe08a;
+    border: 1px dashed #ffcc3366; border-radius: 5px;
+  }
+  .drop.over { background: #ffcc33; color: #111; border-style: solid; }
+  .drop.from small { color: var(--dim); }
   .params { display: grid; grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: 4px 2px; align-items: start; justify-items: center; }
 </style>
