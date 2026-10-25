@@ -20,6 +20,7 @@ import {
   type KeysMode,
   type NoteSeqSettings,
 } from "../audio/stepSequencer";
+import { ARP_MAX_OCTAVES, ARP_PATTERNS, Arpeggiator, defaultArp, type ArpSettings } from "../audio/arpeggiator";
 import { TABLE_WAVE } from "../audio/oscCore";
 import { addTable, BUILTIN_TABLES, idAfterRemoval, removeTable, renameTable, replaceFrames, tableDef, tableFrames, WAVETABLES, type WavetableDef } from "../audio/wavetables";
 import { deleteImportedTable, saveImportedTable, storeTable, updateStoredTable } from "../audio/tableStore";
@@ -29,7 +30,22 @@ import { detectChord, type DetectedChord } from "../audio/chordDetect";
 import { RecipeRun } from "./recipes/recipeRun.svelte";
 import { RECIPES } from "../recipes/library";
 import { blockOf, hardwareFor, initPreset, isPlay, stepParam } from "../recipes/recipe";
-import { CHORD_MODE_NAMES, chordName, defaultScale, keyNotes, noteNameIn, ROOT_NAMES, scaleLabel, scaleNotes, SCALES, snapToScale, type ScaleSettings } from "../audio/scale";
+import {
+  CHORD_MODE_NAMES,
+  CHORD_MODES,
+  chordName,
+  defaultScale,
+  keyNotes,
+  noteNameIn,
+  ROOT_NAMES,
+  SCALE_IDS,
+  scaleLabel,
+  scaleNotes,
+  SCALES,
+  snapToScale,
+  type ScaleId,
+  type ScaleSettings,
+} from "../audio/scale";
 import { cutIntoFrames, decodeSoundFile, type CutMode } from "../audio/wavImport";
 import { findPorts, isMainPort, MiniLab, requestMidi } from "../minilab/device";
 import { Freezes, Rolling } from "./timing";
@@ -57,6 +73,9 @@ const SCREENS = ["scope", "spectrum", "synth", "wavetable"] as const;
 const SCREEN_NAMES: Record<(typeof SCREENS)[number], string> = { scope: "Waveform", spectrum: "Spectrum", synth: "Synth", wavetable: "Wavetable" };
 const EXPLAIN_KEY = "minilab3.explain";
 const SCALE_KEY = "minilab3.scale";
+/** The scale the Scale lock switch brings back (Major the first time). */
+const LAST_SCALE_KEY = "minilab3.lastScale";
+const ARP_KEY = "minilab3.arp";
 const RECIPES_DONE_KEY = "minilab3.recipesDone";
 
 /** The ids of the recipes finished so far. */
@@ -81,6 +100,28 @@ function loadScale(): ScaleSettings {
     return defaultScale();
   }
 }
+
+function loadArp(): ArpSettings {
+  const d = defaultArp();
+  try {
+    const s = { ...d, ...JSON.parse(localStorage.getItem(ARP_KEY) ?? "null") };
+    const int = (v: unknown, lo: number, hi: number, fallback: number) => (Number.isInteger(v) && (v as number) >= lo && (v as number) <= hi ? (v as number) : fallback);
+    return {
+      on: s.on === true,
+      pattern: int(s.pattern, 0, ARP_PATTERNS.length - 1, d.pattern),
+      octaves: int(s.octaves, 1, ARP_MAX_OCTAVES, d.octaves),
+      rate: int(s.rate, 0, RATES.length - 1, d.rate),
+      gate: typeof s.gate === "number" ? Math.max(0.05, Math.min(1, s.gate)) : d.gate,
+      latch: s.latch === true,
+    };
+  } catch {
+    return d;
+  }
+}
+
+/** Shift + a fader on the MiniLab: what each one picks. The fader's travel is cut into equal zones, one per choice. */
+export const SHIFT_FADERS = ["Arp", "Arp range", "Scale", "Chords"] as const;
+const zone = (t: number, n: number) => Math.min(n - 1, Math.floor(t * n));
 
 const BROWSE_TIMEOUT_MS = 4000;
 const LONG_PRESS_MS = 500;
@@ -189,8 +230,11 @@ export class Playground {
   bank = $state<PadBank>("A");
   shift = $state(false);
 
-  /** Notes sounding on the Keys part (with chord mode, every note of each chord). */
+  /** Notes held on the Keys part (with chord mode, every note of each chord). Without the arpeggiator, these are the notes sounding. */
   notes = new SvelteSet<number>();
+  /** The arpeggiator (on the Keys part): its settings, kept across reloads, and the note it is sounding. */
+  arp = $state<ArpSettings>(loadArp());
+  arpNotes = new SvelteSet<number>();
   /** Scale lock and chord mode: shared by both parts, kept across reloads. */
   scale = $state<ScaleSettings>(loadScale());
   /** The chord in the notes played on the keys (chord detection), kept after they are released. */
@@ -261,6 +305,7 @@ export class Playground {
   private faderLive: boolean[] = Array(FADERS.length).fill(true);
   private faderLast: (number | null)[] = Array(FADERS.length).fill(null);
   readonly noteSequencer: NoteSequencer;
+  readonly arpeggiator: Arpeggiator;
 
   constructor() {
     this.seq.pattern = this.pattern;
@@ -286,6 +331,15 @@ export class Playground {
     this.noteSequencer.onStep = (step, time) => this.atAudioTime(time, () => this.moveSeqHead(step));
     this.noteSequencer.pitch = (note) => snapToScale(note, this.scale);
     this.seq.notes = this.noteSequencer;
+    this.arpeggiator = new Arpeggiator(this.arp, {
+      noteOn: (note, velocity, time) => this.engine.noteOn(note, velocity, time, false, "keys"),
+      noteOff: (note, time) => this.engine.noteOff(note, time, "keys"),
+    });
+    this.arpeggiator.onNote = (note, time, end) => {
+      this.atAudioTime(time, () => this.arpNotes.add(note));
+      this.atAudioTime(end, () => this.arpNotes.delete(note));
+    };
+    this.seq.arp = this.arpeggiator;
     this.engine.setParams(this.parts.keys.values, "keys");
     this.engine.setParams(this.parts.seq.values, "seq");
     setInterval(() => (this.cpu = this.engine.cpu), 250);
@@ -588,9 +642,11 @@ export class Playground {
     this.keyPlays.set(note, plays);
     for (const n of plays) {
       this.noteHolds.set(n, (this.noteHolds.get(n) ?? 0) + 1);
-      this.engine.noteOn(n, velocity);
+      if (this.arp.on) this.arpeggiator.press(n, velocity);
+      else this.engine.noteOn(n, velocity);
       this.notes.add(n);
     }
+    if (this.arp.on) this.syncArpClock();
     if (plays.length > 1) {
       const name = chordName(plays, this.scale);
       if (name) this.showMessage("Chord", name);
@@ -610,9 +666,11 @@ export class Playground {
         continue;
       }
       this.noteHolds.delete(n);
-      this.engine.noteOff(n);
+      if (this.arp.on) this.arpeggiator.release(n);
+      else this.engine.noteOff(n);
       this.notes.delete(n);
     }
+    if (this.arp.on) this.syncArpClock();
     this.notesChanged(false);
   }
 
@@ -639,6 +697,13 @@ export class Playground {
   /** Change the scale lock or chord mode. Held keys keep the notes they started; the next press uses the new scale. */
   setScale(change: Partial<ScaleSettings>) {
     this.scale = { ...this.scale, ...change };
+    if (change.scale && change.scale !== "off") {
+      try {
+        localStorage.setItem(LAST_SCALE_KEY, change.scale);
+      } catch {
+        // Not saved (private window): Major next time.
+      }
+    }
     // The same notes, named for the new key (spelling and numbers change).
     if (this.chord) this.chord = detectChord(this.chordNotes, this.scale);
     try {
@@ -648,8 +713,65 @@ export class Playground {
     }
     const s = this.scale;
     if ("chords" in change && s.scale !== "off") this.showMessage("Chords", CHORD_MODE_NAMES[s.chords]);
+    else if ("root" in change && s.scale === "off") this.showMessage("Scale root", `${ROOT_NAMES[s.root]} (scale off)`);
     else this.showMessage("Scale", s.scale === "off" ? "off" : `${ROOT_NAMES[s.root]} ${SCALES[s.scale].name}`);
     this.realignKnobs();
+  }
+
+  /** The Scale lock switch: off, or back to the scale used last (Major the first time). */
+  toggleScaleLock() {
+    this.setScale({ scale: this.scale.scale === "off" ? this.lastScale() : "off" });
+  }
+
+  private lastScale(): Exclude<ScaleId, "off"> {
+    try {
+      const saved = localStorage.getItem(LAST_SCALE_KEY);
+      return saved && saved in SCALES ? (saved as Exclude<ScaleId, "off">) : "major";
+    } catch {
+      return "major";
+    }
+  }
+
+  // ------------------------------------------------------------------ arpeggiator
+
+  /** Change the arpeggiator. Keys held when it is switched on are taken over by it. */
+  setArp(change: Partial<ArpSettings>) {
+    const was = this.arp.on;
+    const { latch, ...rest } = change;
+    Object.assign(this.arp, rest);
+    if (latch !== undefined) this.arpeggiator.setLatch(latch);
+    if (this.arp.on !== was) {
+      const now = this.engine.ctx.currentTime;
+      if (this.arp.on) {
+        for (const n of this.noteHolds.keys()) {
+          this.engine.noteOff(n, now);
+          this.arpeggiator.press(n, 100);
+        }
+      } else {
+        // Keys still held go quiet until they are pressed again.
+        this.arpeggiator.clear();
+        this.arpNotes.clear();
+      }
+    }
+    this.syncArpClock();
+    try {
+      localStorage.setItem(ARP_KEY, JSON.stringify(this.arp));
+    } catch {
+      // Not saved (private window): it still works until the page closes.
+    }
+    this.showMessage("Arp", this.arpLabel);
+  }
+
+  /** What the arpeggiator does, short enough for the OLED: "Up 2 oct 1/16", or "off". */
+  get arpLabel() {
+    const a = this.arp;
+    if (!a.on) return "off";
+    return `${ARP_PATTERNS[a.pattern]} ${a.octaves} oct ${RATES[a.rate].name}${a.latch ? " L" : ""}`;
+  }
+
+  /** The clock runs while the arpeggiator has notes, even with the transport stopped. */
+  private syncArpClock() {
+    this.seq.setFree(this.arpeggiator.active);
   }
 
   get scaleName() {
@@ -1563,6 +1685,7 @@ export class Playground {
         this.notePrgm(e.program);
         const cc = CC_MAPS[e.program].faders[e.index];
         const t = e.value / 127;
+        if (this.shift) return this.setShiftFader(e.index, t);
         if (this.seqEdit) {
           if (this.pickedUp(e.index, t, this.seqFaderPosition(e.index), cc, SEQ_FADERS[e.index])) this.setSeqFader(e.index, t, cc);
           return;
@@ -1576,6 +1699,7 @@ export class Playground {
         this.stripArmed = true;
         return this.setBend(e.value);
       case "mod":
+        if (this.shift) return this.shiftModStrip(e.value / 127);
         return this.setMod(e.value / 127);
       case "pad":
         if (e.bank !== this.bank) {
@@ -1630,6 +1754,48 @@ export class Playground {
       if (v < 0) this.undo();
       else this.redo();
     }
+  }
+
+  /**
+   * Shift + a fader picks from a list by where the fader is: 1 the arpeggio pattern (bottom = off),
+   * 2 its range in octaves, 3 the scale (bottom = off), 4 what one key plays (notes, triads, 7ths).
+   * Afterwards the fader picks up its own job again only when it gets back to that value.
+   */
+  setShiftFader(i: number, t: number) {
+    this.faderLive[i] = false;
+    if (i === 0) {
+      const z = zone(t, ARP_PATTERNS.length + 1);
+      if (z !== (this.arp.on ? this.arp.pattern + 1 : 0)) this.setArp(z === 0 ? { on: false } : { on: true, pattern: z - 1 });
+    } else if (i === 1) {
+      const octaves = 1 + zone(t, ARP_MAX_OCTAVES);
+      if (octaves !== this.arp.octaves) this.setArp({ octaves });
+    } else if (i === 2) {
+      const scale = SCALE_IDS[zone(t, SCALE_IDS.length)];
+      if (scale !== this.scale.scale) this.setScale({ scale });
+    } else {
+      const chords = CHORD_MODES[zone(t, CHORD_MODES.length)];
+      if (chords === this.scale.chords) return;
+      // Chords are built from a scale: with the scale off, the last one used comes back.
+      if (this.scale.scale === "off" && chords !== "off") this.setScale({ scale: this.lastScale(), chords });
+      else this.setScale({ chords });
+    }
+  }
+
+  /** What Shift + fader i is set to now: its choice, and the middle of that choice's zone (0..1). */
+  shiftFaderState(i: number): { display: string; position: number } {
+    const at = (k: number, n: number) => (k + 0.5) / n;
+    const a = this.arp;
+    const s = this.scale;
+    if (i === 0) return { display: a.on ? ARP_PATTERNS[a.pattern] : "Off", position: at(a.on ? a.pattern + 1 : 0, ARP_PATTERNS.length + 1) };
+    if (i === 1) return { display: `${a.octaves} oct`, position: at(a.octaves - 1, ARP_MAX_OCTAVES) };
+    if (i === 2) return { display: s.scale === "off" ? "Off" : `${ROOT_NAMES[s.root]} ${SCALES[s.scale].name}`, position: at(SCALE_IDS.indexOf(s.scale), SCALE_IDS.length) };
+    return { display: s.chords === "off" ? "Notes" : s.chords === "triads" ? "Triads" : "7ths", position: at(CHORD_MODES.indexOf(s.chords), CHORD_MODES.length) };
+  }
+
+  /** Shift + mod strip: the scale's root, C at the left end to B at the right. */
+  private shiftModStrip(t: number) {
+    const root = zone(t, 12);
+    if (root !== this.scale.root) this.setScale({ root });
   }
 
   /** Click: load the browsed preset. Long press: Dice. Shift + click: step mode. */
@@ -1738,7 +1904,7 @@ export class Playground {
 
   private sendDisplay(line1: string, line2: string) {
     this.device?.send(
-      displayMessage(line1, line2, { transport: this.recording ? "record" : this.playing ? "play" : "none" }),
+      displayMessage(line1, line2, { transport: this.recording ? "record" : this.playing ? "play" : "none", arp: this.arp.on }),
       "display",
     );
   }

@@ -5,13 +5,14 @@
   import Fader from "./components/Fader.svelte";
   import Keyboard from "./components/Keyboard.svelte";
   import ScaleBar from "./components/ScaleBar.svelte";
+  import ArpBar from "./components/ArpBar.svelte";
   import ChordDisplay from "./components/ChordDisplay.svelte";
   import { playable } from "../audio/scale";
   import Knob from "./components/Knob.svelte";
   import Scope from "./components/Scope.svelte";
   import SeqGrid from "./components/SeqGrid.svelte";
   import Spectrum from "./components/Spectrum.svelte";
-  import { PART_NAMES, Playground } from "./playground.svelte";
+  import { PART_NAMES, Playground, SHIFT_FADERS } from "./playground.svelte";
   import SynthView from "./synth/SynthView.svelte";
   import WavetableView from "./wavetable/WavetableView.svelte";
   import AboutPage from "./about/AboutPage.svelte";
@@ -36,8 +37,10 @@
     return [...groups];
   });
 
-  // The keyboard lights up the keys you hold and the notes the step sequencer plays.
-  let keyboardNotes = $derived(new Set([...pg.notes, ...pg.seqNotes]));
+  // The keyboard lights up the keys you hold and the notes the step sequencer plays. With the arpeggiator,
+  // the keys you hold are outlined and the note it plays lights up.
+  let keyboardNotes = $derived(new Set([...(pg.arp.on ? pg.arpNotes : pg.notes), ...pg.seqNotes]));
+  let heldNotes = $derived(pg.arp.on ? new Set(pg.notes) : undefined);
 
   const display = (id: ParamId) => formatValue(id, pg.values[id]);
   const resetParam = (id: ParamId) => pg.setParam(id, pg.preset.values[id] ?? PARAMS[id].default);
@@ -240,7 +243,7 @@
             <div class="center"></div>
             <span>Pitch</span>
           </div>
-          <div class="strip" title="Mod strip: adds LFO to {LFO_TARGETS[pg.parts.keys.values.modTarget]} (Keys part)">
+          <div class="strip" title="Mod strip: adds LFO to {LFO_TARGETS[pg.parts.keys.values.modTarget]} (Keys part). Shift + mod strip on the MiniLab: the scale's root">
             <div class="mod" style:height="{pg.mod * 100}%"></div>
             <span>Mod</span>
           </div>
@@ -263,14 +266,20 @@
 
         <div class="faders">
           {#each FADERS as id, i (id)}
-            <Fader
-              label={PARAMS[id].label}
-              display={display(id)}
-              position={toControl(id, pg.values[id])}
-              hot={pg.touched?.param === id}
-              height={96}
-              onchange={(t) => pg.setFader(i, t)}
-            />
+            {#if pg.shift}
+              <!-- Shift held on the MiniLab: the faders pick the arpeggiator, the scale and chord mode. -->
+              {@const state = pg.shiftFaderState(i)}
+              <Fader label={SHIFT_FADERS[i]} display={state.display} position={state.position} hot height={96} onchange={(t) => pg.setShiftFader(i, t)} />
+            {:else}
+              <Fader
+                label={PARAMS[id].label}
+                display={display(id)}
+                position={toControl(id, pg.values[id])}
+                hot={pg.touched?.param === id}
+                height={96}
+                onchange={(t) => pg.setFader(i, t)}
+              />
+            {/if}
           {/each}
         </div>
         {#if pg.explain}
@@ -397,6 +406,7 @@
   <section class="panel keys" class:folded={!keysOpen}>
     <div class="keys-head">
       <ChordDisplay {pg} />
+      <ArpBar {pg} />
       <ScaleBar {pg} />
       <button class="fold" onclick={toggleKeys} aria-expanded={keysOpen} title="{keysOpen ? 'Hide' : 'Show'} the on-screen keyboard. The MiniLab and the computer keyboard (A–' row) play either way">
         Keyboard <span class="chev">{keysOpen ? "▾" : "▴"}</span>
@@ -405,6 +415,7 @@
     {#if keysOpen}
       <Keyboard
         notes={keyboardNotes}
+        held={heldNotes}
         onnoteon={(n) => pg.noteOn(n, 100)}
         onnoteoff={(n) => pg.noteOff(n)}
         playable={(n) => playable(n, pg.scale)}
@@ -559,7 +570,9 @@
 
   /* ---- the keyboard, on every view */
   .keys { padding: 8px 10px; }
-  .keys-head { display: flex; gap: 16px; align-items: center; min-height: 32px; margin-bottom: 8px; }
+  /* One row when it fits; with the arpeggiator and the scale both open on a narrow window, the scale wraps below. */
+  .keys { min-width: 0; }
+  .keys-head { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; min-height: 32px; margin-bottom: 8px; }
   .keys.folded .keys-head { margin-bottom: 0; }
   .fold { flex: none; display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 3px 10px; color: var(--dim); }
   .fold:hover { color: var(--text); }

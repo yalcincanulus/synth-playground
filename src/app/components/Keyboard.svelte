@@ -1,6 +1,8 @@
 <script lang="ts">
   interface Props {
     notes: Set<number>;
+    /** Keys held but not sounding themselves (the arpeggiator plays them one at a time): outlined. */
+    held?: Set<number>;
     from?: number;
     to?: number;
     onnoteon: (note: number) => void;
@@ -10,7 +12,7 @@
     /** Scale lock: the scale's root (0 = C), marked on its keys. */
     root?: number | null;
   }
-  let { notes, from = 36, to = 84, onnoteon, onnoteoff, playable = () => true, root = null }: Props = $props();
+  let { notes, held = new Set(), from = 36, to = 84, onnoteon, onnoteoff, playable = () => true, root = null }: Props = $props();
 
   const BLACK = new Set([1, 3, 6, 8, 10]);
   let keys = $derived.by(() => {
@@ -51,6 +53,7 @@
       class="key"
       class:black={k.black}
       class:on={notes.has(k.note)}
+      class:held={held.has(k.note)}
       class:outside={!playable(k.note)}
       class:root={root !== null && k.note % 12 === root}
       style:left="{k.left}%"
@@ -71,6 +74,7 @@
   .key.black { bottom: 38%; background: #15191b; z-index: 1; border-color: #000; }
   .key.on { background: var(--accent); }
   .key.black.on { background: var(--accent); filter: brightness(0.7); }
+  .key.held { box-shadow: inset 0 0 0 2px var(--accent), inset 0 -10px 12px -6px color-mix(in srgb, var(--accent) 60%, transparent); }
   .key.outside { background: #8b9497; }
   .key.black.outside { background: #3a4144; }
   .key.root::after { content: ""; position: absolute; left: 25%; right: 25%; bottom: 16px; height: 3px; border-radius: 2px; background: var(--accent); }

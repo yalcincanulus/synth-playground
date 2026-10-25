@@ -35,13 +35,13 @@
         <li><strong>Synth:</strong> the whole synth as blocks with live signals and cables, plain-English explanations, and "Listen here" to hear any stage on its own.</li>
         <li><strong>Wavetable:</strong> eight built-in wavetables in 3D, with the wave playing right now and its harmonics. Import your own (a Serum-format WAV, or any short sound, which is cut into frames) or draw one. Your tables stay in this browser.</li>
         <li><strong>Scale lock and chord mode:</strong> every key lands on a note of the scale, or plays a whole chord of it. The chord you play is named above the keyboard.</li>
+        <li><strong>Arpeggiator:</strong> hold notes or a chord and it plays them one at a time (up, down, up-down, random, or as played) over 1–3 octaves, in time with the drums. With chord mode, one finger plays an arpeggio. It also runs with the drums stopped. Use it rather than the MiniLab's own Arp button, which keeps its own tempo.</li>
         <li><strong>Recipes:</strong> 15 classic sounds to build step by step, from Init.</li>
         <li><strong>Sound:</strong> two oscillators with pulse width, hard sync, FM and wavetables; sub and noise; a clean or a ladder filter with a low-pass to high-pass morph, an optional second filter, and drive; stereo unison and panning; amp, filter, pitch and mod envelopes; two LFOs; a mod matrix with 8 routes that also reaches the effects and the LFOs; a three-line chorus, a stereo or ping-pong delay, and a reverb with damping.</li>
       </ul>
 
       <h3>Coming later <span class="tag">not in yet</span></h3>
       <ul class="later">
-        <li>An arpeggiator</li>
         <li>A preset browser, more effects, more modulation</li>
         <li>An interactive course that introduces one topic at a time</li>
       </ul>
@@ -65,6 +65,10 @@
         <dd>Tempo</dd>
         <dt>Shift + any key</dt>
         <dd>Switch part (Keys or Sequencer)</dd>
+        <dt>Shift + faders</dt>
+        <dd>Pick by where the fader is. 1: the arpeggiator (bottom = off, then Up, Down, Up-down, Random, Played). 2: its range, 1–3 octaves. 3: the scale (bottom = off). 4: one key plays notes, triads or 7ths. After Shift, a fader does its own job again once it gets back to that value</dd>
+        <dt>Shift + mod strip</dt>
+        <dd>The scale's root: C at the left end, B at the right</dd>
         <dt>Undo / redo</dt>
         <dd>Ctrl+Z / Ctrl+Shift+Z (or Ctrl+Y). On the MiniLab: hold Shift and push the pitch strip down to undo, up to redo</dd>
         <dt>Shift + pads</dt>

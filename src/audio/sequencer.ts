@@ -1,3 +1,4 @@
+import type { Arpeggiator } from "./arpeggiator";
 import type { Ticker } from "./clock";
 import type { NoteSequencer } from "./stepSequencer";
 
@@ -52,6 +53,8 @@ export class Sequencer {
   pattern: Pattern = basicBeat();
   /** The 8-step note sequencer, played on the same clock. */
   notes: NoteSequencer | null = null;
+  /** The arpeggiator, played on the same clock; it also plays while the transport is stopped (see `setFree`). */
+  arp: Arpeggiator | null = null;
   playing = false;
   recording = false;
   /** When off, the clock keeps running (for the note sequencer) but the drum loop is silent. */
@@ -68,6 +71,9 @@ export class Sequencer {
   private stepTimes: number[] = Array(STEPS).fill(0);
 
   private stats: SequencerTiming = { lateSteps: 0, closest: null };
+  /** Whether the clock is ticking: while playing, or while stopped with the arpeggiator playing. */
+  private running = false;
+  private free = false;
 
   constructor(
     private engine: SequencerHost,
@@ -87,18 +93,45 @@ export class Sequencer {
     this.playing = true;
     this.nextStep = 0;
     this.nextBeat = 0;
-    this.nextTime = this.engine.ctx.currentTime + 0.05;
     this.notes?.reset();
     this.stats = { lateSteps: 0, closest: null };
-    this.clock.start(TICK_MS, () => this.schedule());
-    this.schedule();
+    // Already ticking for the arpeggiator: the loop starts where that has planned up to, so no note plays twice.
+    if (this.running) this.arp?.restart();
+    this.run(0.05);
   }
 
   stop() {
     this.playing = false;
     this.recording = false;
-    this.clock.stop();
     this.notes?.release(this.engine.ctx.currentTime);
+    if (!this.free) this.halt();
+  }
+
+  /**
+   * Keep the clock running while the transport is stopped, for the arpeggiator alone (the drums and the
+   * note sequencer stay silent). Started from stopped, its first step is now, so the first note isn't late.
+   */
+  setFree(on: boolean) {
+    this.free = on;
+    if (on && !this.running) {
+      this.nextBeat = 0;
+      this.arp?.restart();
+      this.run(0);
+    } else if (!on && !this.playing) this.halt();
+  }
+
+  private run(delay: number) {
+    if (this.running) return;
+    this.running = true;
+    this.nextTime = this.engine.ctx.currentTime + delay;
+    this.clock.start(TICK_MS, () => this.schedule());
+    this.schedule();
+  }
+
+  private halt() {
+    if (!this.running) return;
+    this.running = false;
+    this.clock.stop();
   }
 
   /** Step under the playhead right now, or -1 when stopped. */
@@ -136,20 +169,24 @@ export class Sequencer {
       const lead = this.nextTime - now;
       // Late: the page was busy (or asleep) when this step should have been planned.
       const late = lead < -LATE_TOLERANCE;
-      if (late) this.stats.lateSteps++;
-      else if (this.nextBeat > 0) this.stats.closest = Math.min(this.stats.closest ?? Infinity, lead);
-      this.stepTimes[step] = this.nextTime;
-      this.onStep(step, this.nextTime);
-      for (let track = 0; track < TRACKS && !late; track++) {
-        const vel = this.pattern[track][step];
-        if (vel > 0 && this.drumsOn) {
-          this.engine.drums.trigger(track, vel, this.nextTime);
-          this.onTrigger(track, vel, this.nextTime);
-        }
-      }
       const secPerBeat = 60 / this.engine.bpm;
       const stepStart = this.nextTime;
-      this.notes?.schedule(this.nextBeat, this.nextBeat + 0.25, (b) => stepStart + (b - this.nextBeat) * secPerBeat, secPerBeat, late);
+      const timeAt = (b: number) => stepStart + (b - this.nextBeat) * secPerBeat;
+      if (this.playing) {
+        if (late) this.stats.lateSteps++;
+        else if (this.nextBeat > 0) this.stats.closest = Math.min(this.stats.closest ?? Infinity, lead);
+        this.stepTimes[step] = this.nextTime;
+        this.onStep(step, this.nextTime);
+        for (let track = 0; track < TRACKS && !late; track++) {
+          const vel = this.pattern[track][step];
+          if (vel > 0 && this.drumsOn) {
+            this.engine.drums.trigger(track, vel, this.nextTime);
+            this.onTrigger(track, vel, this.nextTime);
+          }
+        }
+        this.notes?.schedule(this.nextBeat, this.nextBeat + 0.25, timeAt, secPerBeat, late);
+      }
+      this.arp?.schedule(this.nextBeat, this.nextBeat + 0.25, timeAt, secPerBeat, late);
       this.nextTime += this.stepDuration;
       this.nextBeat += 0.25;
       this.nextStep = (step + 1) % STEPS;

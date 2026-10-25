@@ -19,7 +19,7 @@
 
 <style>
   /* One line: the name, its number in the key, then what it is made of. */
-  .chord { width: 250px; height: 30px; flex: none; display: flex; align-items: baseline; gap: 8px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: #0b0e10; overflow: hidden; }
+  .chord { width: 208px; min-width: 150px; height: 30px; flex: 0 1 auto; display: flex; align-items: baseline; gap: 8px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: #0b0e10; overflow: hidden; }
   .name { font: 600 16px var(--mono); color: var(--accent); white-space: nowrap; }
   .name.empty { color: var(--dim); font-weight: 400; font-size: 14px; }
   .numeral { font: 12px var(--mono); color: var(--text); padding: 0 5px; border: 1px solid var(--line); border-radius: 4px; }
