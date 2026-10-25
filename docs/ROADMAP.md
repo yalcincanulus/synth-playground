@@ -429,6 +429,19 @@ The synth must run well on weaker computers, and the app should be easier to fin
   - **Tests:** LFO 3 does nothing without a route and sweeps an effect amount with one; a route on its rate speeds it up; it moves a note's cutoff.
   - **Render check:** 0 of 54 presets have issues (not re-saved).
 
+### 23b. Classics
+
+Added 2026-10-26 after slice 23, before the course: the synth recreates famous sounds with what it already has, so you can compare it with the records.
+
+- **Presets:** a Classics group in the preset browser, 21 recreations: Stadium Brass (OB-Xa, "Jump"), Acid 303 and Filthy Acid (TB-303, "Acid Tracks", "Da Funk"), Prog Lead (Moog, "Lucky Man"), Funk Moog Bass ("Flash Light"), Sync Sweep (Prophet-5, "Let's Go"), Hoover (Alpha Juno, "Mentasm"), Trance Supersaw (JP-8000), Juno Pad, Oxygene Strings (string machine through a phaser), Blade Brass (CS-80, "Blade Runner"), Growl Sweep (OB-X, "Tom Sawyer"), FM House Bass (TX81Z "Lately Bass"), FM Tine Piano (DX7), Popcorn Pluck, Axel Lead (Jupiter-8, "Axel F"), Monday Bass ("Blue Monday"), Feel Love Seq ("I Feel Love"), G-Funk Whine, Electro-Theremin ("Good Vibrations") and Upside Arp ("Stranger Things").
+- Each has an `about` line: the original instrument, a record to compare with, and how to play it. The browser shows it in place of the describing words (in full as the tooltip), and search finds it ("oberheim", "vangelis").
+- **Left out on purpose:** sounds based on samples (Korg M1 piano and organ, Mellotron, the orchestra hit).
+- **Known limits:** the supersaw has 6 saws per note (the JP-8000 has 7); the DX7 sounds use two-operator FM, not six; the CS-80 is played with key pressure, so here the mod strip and velocity stand in; the sequencer has no accents for the 303.
+- **Recipes:** Stadium Brass, Hoover and G-Funk Whine, in a Classics group of their own (18 recipes now).
+- **Tests:** every Classic names a year or decade, uses only real settings within range, and is found by its instrument or artist; the recipes pass the usual checks (buildable from Init by the hints, no step done before it starts, every control on a knob or fader).
+- **Render check:** 0 of 75 presets have issues; the 54 that were there are unchanged. Feel Love Seq, G-Funk Whine, FM House Bass and Trance Supersaw were made louder to sit with the others. Reference re-saved.
+- Status: done 2026-10-26 (the user tried the ones they know; a full comparison with the records comes later).
+
 ## Phase G: the learning course (postponed)
 
 Postponed on 2026-10-25 until Phase F is done. Modelled on Ableton's Learning Synths: short pages, each with a few sentences of text, **one** interactive widget, and only the controls that page needs.

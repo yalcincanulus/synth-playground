@@ -130,11 +130,12 @@
           {#each list as p, i (p.id)}
             {@const user = isUserPresetId(p.id)}
             <li class:current={p.id === pg.preset.id} class:cursor={i === cursor} class:browsed={p.id === pg.browseId}>
-              <button class="load" onclick={() => pg.loadPreset(p.id)} ondblclick={onclose} title="Load (double-click: load and close)">
+              <button class="load" class:about={!!p.about} onclick={() => pg.loadPreset(p.id)} ondblclick={onclose} title={p.about ? `${p.about}\n\nLoad (double-click: load and close)` : "Load (double-click: load and close)"}>
                 <span class="dot" style:background={rgb(p)}></span>
                 <span class="name">{p.name}</span>
                 <span class="cat">{user ? `mine · ${p.category}` : p.category}</span>
-                <span class="ptags">{p.tags?.join(" · ")}</span>
+                <!-- A Classic says what it recreates instead of its describing words (they are still searchable). -->
+                <span class="ptags">{p.about ? p.about : p.tags?.join(" · ")}</span>
               </button>
               <button class="icon" onclick={() => pg.previewPreset(p.id)} title="Hear it first (a short note) without loading it" aria-label="Preview {p.name}">▷</button>
               <button class="icon star" class:on={pg.isFavourite(p.id)} onclick={() => pg.toggleFavourite(p.id)} aria-pressed={pg.isFavourite(p.id)} title={pg.isFavourite(p.id) ? "Favourite (the first 8 are on pad bank B). Click to remove" : "Add to favourites (the first 8 are on pad bank B)"} aria-label="Favourite">★</button>
@@ -201,6 +202,7 @@
   .name { font-size: 13.5px; color: var(--text); white-space: nowrap; flex: none; width: 150px; overflow: hidden; text-overflow: ellipsis; }
   .cat { font-size: 11px; color: var(--dim); width: 90px; flex: none; white-space: nowrap; }
   .ptags { font-size: 11px; color: #8b9a9e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .about .ptags { font-style: italic; }
   .icon { border: none; background: none; padding: 3px 7px; font-size: 13px; color: var(--dim); flex: none; }
   .icon:hover { color: var(--text); }
   .star.on { color: #f5c542; }

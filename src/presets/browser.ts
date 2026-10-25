@@ -22,9 +22,9 @@ export const isUserPresetId = (id: string) => id.startsWith("user:");
 /** Other words people use for a category. */
 const SYNONYMS: Record<string, string> = { effect: "fx", effects: "fx", sfx: "fx", sound: "fx", keyboard: "keys", horn: "brass", string: "strings", synthwave: "retro" };
 
-/** Every word a preset can be found by, lower case. */
+/** Every word a preset can be found by, lower case (a Classic's note too: "oberheim", "vangelis"). */
 function wordsOf(p: Preset): string[] {
-  return [p.name, p.category, ...(p.tags ?? [])].flatMap((text) => text.toLowerCase().split(/[\s\-/()]+/)).filter(Boolean);
+  return [p.name, p.category, ...(p.tags ?? []), p.about ?? ""].flatMap((text) => text.toLowerCase().split(/[\s\-/()]+/)).filter(Boolean);
 }
 
 /** Whether a typed word finds a preset word: the start of it ("dar" finds dark), or a plural of it ("pads" finds pad). */

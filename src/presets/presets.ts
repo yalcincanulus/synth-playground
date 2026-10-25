@@ -6,8 +6,11 @@ export interface Preset {
   /** Stays the same for good (a name can change): factory presets "factory:<name>", your own "user:<random>". */
   id: string;
   name: string;
-  /** "Test": small presets that each show one feature, for trying it out quickly. */
-  category: "Bass" | "Lead" | "Pad" | "Keys" | "Brass" | "FX" | "Test";
+  /**
+   * "Classics": recreations of famous synth sounds, made with this synth's own parts.
+   * "Test": small presets that each show one feature, for trying it out quickly.
+   */
+  category: "Bass" | "Lead" | "Pad" | "Keys" | "Brass" | "FX" | "Classics" | "Test";
   /** Pad LED and UI accent colour. */
   color: Rgb;
   /** What knobs 1-8 control. Faders are always the amp envelope. */
@@ -15,6 +18,8 @@ export interface Preset {
   values: Partial<ParamValues>;
   /** Words that describe the sound (dark, plucky, wide…), for the preset browser's search. */
   tags?: string[];
+  /** Classics: the original instrument and a record to hear it on, and how to play it. Searchable too. */
+  about?: string;
   /** A sound that isn't in the list (until saved): a rolled Dice patch, or the one a recipe builds. */
   from?: "dice" | "recipe";
 }
@@ -32,7 +37,8 @@ export const FADERS: [ParamId, ParamId, ParamId, ParamId] = ["attack", "decay", 
 // LFO sync: 0 off, 1 2 bars, 2 1 bar, 3 1/2, 4 1/4, 5 1/8, 6 1/16. LFO shapes: 0 sine, 1 triangle, 2 saw, 3 square, 4 random.
 // Delay div: 0 1/16, 1 1/8, 2 3/16, 3 1/4, 4 3/8, 5 1/2.
 // Effects (fxSlot1-8 hold them in the order they run): 0 distortion, 1 compressor, 2 EQ, 3 phaser, 4 flanger, 5 chorus, 6 delay, 7 reverb.
-// Distortion type: 0 soft, 1 hard, 2 fold, 3 crush.
+// Distortion type: 0 soft, 1 hard, 2 fold, 3 crush. Filter model: 0 clean (state-variable), 1 ladder.
+// Mod matrix source 11 is LFO 3; destination 21 is LFO 3 rate.
 
 /** Presets in the order they were added; FACTORY_PRESETS below groups them by category. */
 const ALL_PRESETS: Omit<Preset, "id">[] = [
@@ -434,10 +440,181 @@ const ALL_PRESETS: Omit<Preset, "id">[] = [
     knobs: ["distortionOn", "distDrive", "reverbMix", "reverbSize", "distType", "distTone", "decay", "volume"],
     values: { osc1Wave: 2, osc2Wave: 3, oscMix: 0.4, osc2Detune: 6, cutoff: 2200, resonance: 1, filterEnvAmt: 2, filterDecay: 0.2, filterSustain: 0, attack: 0.002, decay: 0.3, sustain: 0, release: 0.2, reverbMix: 0.6, reverbSize: 4, reverbDamping: 0.5, distortionOn: 1, distType: 0, distDrive: 0.6, distTone: 3500, fxSlot1: 7, fxSlot2: 0, fxSlot3: 1, fxSlot4: 2, fxSlot5: 3, fxSlot6: 4, fxSlot7: 5, fxSlot8: 6, volume: 0.6 },
   },
+  // ---------------------------------------------------------------- Classics
+  // Famous sounds rebuilt from what this synth has. Each `about` names the original instrument and a
+  // record to compare with; they are approximations by design, not copies of the originals.
+  {
+    name: "Stadium Brass",
+    category: "Classics",
+    color: [127, 70, 0],
+    about: "Oberheim OB-Xa brass: Van Halen, \"Jump\" (1983). Two detuned saws per note and a filter that opens fast and settles. Play big chords.",
+    knobs: ["cutoff", "resonance", "filterEnvAmt", "filterAttack", "osc2Detune", "unison", "chorus", "reverbMix"],
+    values: { osc1Wave: 2, osc2Wave: 2, osc2Detune: 9, oscMix: 0.5, unison: 2, stereoWidth: 0.7, cutoff: 700, resonance: 1.3, filterEnvAmt: 2.8, filterAttack: 0.06, filterDecay: 0.9, filterSustain: 0.55, filterRelease: 0.4, keyTrack: 0.5, attack: 0.012, decay: 0.5, sustain: 0.9, release: 0.35, velocity: 0.4, chorus: 0.35, reverbMix: 0.22, reverbSize: 2.2, volume: 0.55 },
+  },
+  {
+    name: "Acid 303",
+    category: "Classics",
+    color: [127, 120, 0],
+    about: "Roland TB-303 bass line: Phuture, \"Acid Tracks\" (1987). Ladder filter, high resonance, short envelope. Play it from the step sequencer with slides; play harder for an accent-like squelch, and turn Cutoff and Resonance while it runs.",
+    knobs: ["cutoff", "resonance", "filterEnvAmt", "filterDecay", "drive", "glide", "osc1Wave", "delayMix"],
+    values: { mono: 1, glide: 0.06, osc1Wave: 2, oscMix: 0, filterModel: 1, cutoff: 330, resonance: 8, filterEnvAmt: 3, filterDecay: 0.2, filterSustain: 0, filterRelease: 0.1, keyTrack: 0.5, attack: 0.002, decay: 0.3, sustain: 0.8, release: 0.04, velocity: 0.5, drive: 0.35, mod1Src: 7, mod1Dst: 2, mod1Amt: 0.2, delayMix: 0.15, delayDiv: 2, delayFeedback: 0.35, reverbMix: 0.05, volume: 0.55 },
+  },
+  {
+    name: "Filthy Acid",
+    category: "Classics",
+    color: [127, 40, 0],
+    about: "A TB-303 through distortion: Daft Punk, \"Da Funk\" (1995). The acid sound, overdriven into a growl. Play a slow, low riff and open the filter as it goes.",
+    knobs: ["cutoff", "resonance", "filterEnvAmt", "filterDecay", "distDrive", "distTone", "glide", "reverbMix"],
+    values: { mono: 1, glide: 0.05, osc1Wave: 2, oscMix: 0, filterModel: 1, cutoff: 500, resonance: 7, filterEnvAmt: 2.5, filterDecay: 0.3, filterSustain: 0.1, keyTrack: 0.4, attack: 0.002, decay: 0.4, sustain: 0.8, release: 0.06, velocity: 0.4, drive: 0.4, distortionOn: 1, distType: 0, distDrive: 0.7, distTone: 4500, distMix: 1, reverbMix: 0.1, volume: 0.5 },
+  },
+  {
+    name: "Prog Lead",
+    category: "Classics",
+    color: [0, 90, 127],
+    about: "A Moog lead with long portamento: Emerson, Lake & Palmer, \"Lucky Man\" (1970), the solo at the end. Play slow, sliding single notes; the mod strip adds vibrato.",
+    knobs: ["cutoff", "resonance", "filterEnvAmt", "glide", "osc2Detune", "drive", "delayMix", "reverbMix"],
+    values: { mono: 1, glide: 0.2, osc1Wave: 2, osc2Wave: 2, osc2Detune: 6, oscMix: 0.5, filterModel: 1, cutoff: 1100, resonance: 2.5, filterEnvAmt: 2, filterAttack: 0.02, filterDecay: 0.6, filterSustain: 0.5, keyTrack: 0.7, attack: 0.01, decay: 0.4, sustain: 0.85, release: 0.25, velocity: 0.3, drive: 0.3, modTarget: 0, lfoRate: 5.5, delayMix: 0.1, reverbMix: 0.25, volume: 0.6 },
+  },
+  {
+    name: "Funk Moog Bass",
+    category: "Classics",
+    color: [127, 20, 60],
+    about: "Minimoog bass: Parliament, \"Flash Light\" (1977), played by Bernie Worrell. A saw and a square an octave down, through a squelchy ladder filter. Play short, bouncy notes.",
+    knobs: ["cutoff", "resonance", "filterEnvAmt", "filterDecay", "osc2Semi", "drive", "glide", "subLevel"],
+    values: { mono: 1, glide: 0.03, osc1Wave: 2, osc2Wave: 3, osc2Semi: -12, osc2Detune: 3, oscMix: 0.45, filterModel: 1, cutoff: 260, resonance: 4, filterEnvAmt: 3.2, filterDecay: 0.3, filterSustain: 0.25, keyTrack: 0.4, attack: 0.003, decay: 0.4, sustain: 0.8, release: 0.1, velocity: 0.5, drive: 0.35, reverbMix: 0.04, volume: 0.6 },
+  },
+  {
+    name: "Sync Sweep",
+    category: "Classics",
+    color: [0, 127, 90],
+    about: "Prophet-5 sync lead: The Cars, \"Let's Go\" (1979). Osc 2 is synced to Osc 1 and its pitch falls at the start of every note, which sweeps the tone. Play short riffs.",
+    knobs: ["pitchEnvAmt", "pitchEnvDecay", "osc2Semi", "cutoff", "filterEnvAmt", "oscMix", "delayMix", "reverbMix"],
+    values: { osc1Wave: 2, osc2Wave: 2, oscSync: 1, osc2Semi: 5, osc2Detune: 0, oscMix: 0.85, pitchEnvAmt: 19, pitchEnvDecay: 0.5, pitchEnvTarget: 1, cutoff: 3500, resonance: 1.2, filterEnvAmt: 1.5, filterDecay: 0.4, filterSustain: 0.5, keyTrack: 0.5, attack: 0.004, decay: 0.4, sustain: 0.8, release: 0.25, velocity: 0.3, delayMix: 0.15, delayDiv: 3, reverbMix: 0.15, volume: 0.55 },
+  },
+  {
+    name: "Hoover",
+    category: "Classics",
+    color: [110, 0, 127],
+    about: "Roland Alpha Juno \"Hoover\": Joey Beltram, \"Mentasm\" (1991), and 90s rave. Detuned saw and pulse, wide unison, heavy chorus and a pitch that scoops up into each note. Play low chords and stabs.",
+    knobs: ["pitchEnvAmt", "pitchEnvDecay", "osc2Detune", "lfo2Depth", "cutoff", "chorus", "glide", "reverbMix"],
+    values: { osc1Wave: 2, osc2Wave: 3, osc2Semi: -12, osc2Detune: 15, oscMix: 0.55, pulseWidth: 0.3, unison: 3, stereoWidth: 1, cutoff: 4000, resonance: 0.8, filterEnvAmt: 0.5, keyTrack: 0.5, pitchEnvAmt: -5, pitchEnvDecay: 0.35, lfo2Target: 3, lfo2Wave: 1, lfo2Rate: 2.5, lfo2Depth: 0.5, attack: 0.01, decay: 0.5, sustain: 0.9, release: 0.5, velocity: 0.3, chorus: 0.9, reverbMix: 0.2, volume: 0.5 },
+  },
+  {
+    name: "Trance Supersaw",
+    category: "Classics",
+    color: [60, 30, 127],
+    about: "Roland JP-8000's Super Saw, the sound of late-90s trance leads and chords. The original stacks 7 saws per note; this one has 6 (two oscillators of 3), spread wide. Play chords or a high lead.",
+    knobs: ["osc2Detune", "cutoff", "stereoWidth", "unison", "delayMix", "reverbMix", "chorus", "release"],
+    values: { osc1Wave: 2, osc2Wave: 2, osc2Detune: 22, oscMix: 0.5, unison: 3, stereoWidth: 1, cutoff: 7000, resonance: 0.8, filterEnvAmt: 0.5, filterDecay: 0.6, keyTrack: 0.3, attack: 0.005, decay: 0.6, sustain: 0.85, release: 0.45, velocity: 0.3, chorus: 0.25, delayMix: 0.2, delayDiv: 2, delayFeedback: 0.3, delayMode: 1, reverbMix: 0.35, reverbSize: 3, volume: 0.6 },
+  },
+  {
+    name: "Juno Pad",
+    category: "Classics",
+    color: [0, 70, 127],
+    about: "Roland Juno-60/106 pad: one oscillator's saw and moving pulse, a sub, and the famous Juno chorus; 80s pop and today's synthwave. Hold chords.",
+    knobs: ["cutoff", "resonance", "pulseWidth", "lfo2Depth", "subLevel", "chorus", "attack", "reverbMix"],
+    values: { osc1Wave: 2, osc2Wave: 3, osc2Detune: 0, oscMix: 0.5, pulseWidth: 0.35, subLevel: 0.35, lfo2Target: 3, lfo2Wave: 1, lfo2Rate: 0.6, lfo2Depth: 0.35, cutoff: 1600, resonance: 1.5, filterEnvAmt: 1, filterAttack: 0.3, filterDecay: 1.5, filterSustain: 0.6, keyTrack: 0.5, attack: 0.35, decay: 1, sustain: 0.85, release: 1.2, velocity: 0.2, chorus: 0.85, reverbMix: 0.3, reverbSize: 3, volume: 0.65 },
+  },
+  {
+    name: "Oxygene Strings",
+    category: "Classics",
+    color: [0, 110, 70],
+    about: "A 70s string machine through a phaser: Jean-Michel Jarre, \"Oxygène (Part IV)\" (1976), an Eminent 310 organ's strings and a Small Stone phaser. Hold slow chords and let the phaser swirl.",
+    knobs: ["phaserRate", "phaserDepth", "phaserFeedback", "chorus", "cutoff", "attack", "release", "reverbMix"],
+    values: { osc1Wave: 2, osc2Wave: 2, osc2Semi: 12, osc2Detune: 4, oscMix: 0.4, unison: 2, stereoWidth: 0.8, cutoff: 3500, resonance: 0.7, filterEnvAmt: 0, keyTrack: 0.6, attack: 0.3, decay: 1, sustain: 1, release: 1.3, velocity: 0.1, chorus: 1, phaserOn: 1, phaserRate: 0.12, phaserDepth: 0.8, phaserFeedback: 0.55, phaserMix: 0.5, fxSlot4: 5, fxSlot6: 3, reverbMix: 0.4, reverbSize: 4.5, volume: 0.55 },
+  },
+  {
+    name: "Blade Brass",
+    category: "Classics",
+    color: [127, 50, 30],
+    about: "Yamaha CS-80 brass: Vangelis, \"Blade Runner\" (1982). A slow, glowing swell in a huge hall. The CS-80 is played with pressure on each key; here the mod strip adds vibrato and harder notes are brighter.",
+    knobs: ["cutoff", "resonance", "filterEnvAmt", "filterAttack", "attack", "release", "reverbMix", "reverbSize"],
+    values: { osc1Wave: 2, osc2Wave: 3, osc2Detune: 10, oscMix: 0.4, pulseWidth: 0.4, unison: 2, stereoWidth: 0.8, cutoff: 500, resonance: 2, filterEnvAmt: 3, filterAttack: 0.5, filterDecay: 2, filterSustain: 0.6, filterRelease: 1.5, keyTrack: 0.5, attack: 0.25, decay: 1.5, sustain: 0.9, release: 2.2, velocity: 0.5, modTarget: 0, lfoRate: 5.5, lfo3Rate: 0.3, lfo3Wave: 0, mod1Src: 7, mod1Dst: 2, mod1Amt: 0.25, mod2Src: 11, mod2Dst: 0, mod2Amt: 0.004, chorus: 0.4, reverbMix: 0.55, reverbSize: 6, reverbDamping: 0.5, volume: 0.55 },
+  },
+  {
+    name: "Growl Sweep",
+    category: "Classics",
+    color: [90, 60, 0],
+    about: "Oberheim OB-X growl: Rush, \"Tom Sawyer\" (1981). A resonant filter that sweeps up slowly and falls back on every note. Hold low notes; the clean filter here is the same kind as Oberheim's.",
+    knobs: ["cutoff", "resonance", "filterEnvAmt", "filterAttack", "filterDecay", "osc2Detune", "drive", "glide"],
+    values: { mono: 1, glide: 0.05, osc1Wave: 2, osc2Wave: 2, osc2Detune: 12, oscMix: 0.5, cutoff: 200, resonance: 6, filterEnvAmt: 4.5, filterAttack: 0.9, filterDecay: 1.2, filterSustain: 0.15, filterRelease: 0.8, keyTrack: 0.3, attack: 0.05, decay: 1, sustain: 1, release: 0.6, velocity: 0.2, drive: 0.2, reverbMix: 0.2, volume: 0.6 },
+  },
+  {
+    name: "FM House Bass",
+    category: "Classics",
+    color: [0, 60, 110],
+    about: "Yamaha TX81Z \"Lately Bass\", the FM bass of 90s house and R&B. A sine modulating a sine: each note starts bright and turns round. Play short, syncopated notes; harder is brighter.",
+    knobs: ["fmAmount", "mod1Amt", "modEnvDecay", "mod2Amt", "decay", "release", "glide", "reverbMix"],
+    values: { mono: 1, osc1Wave: 0, osc2Wave: 0, osc2Semi: 0, osc2Detune: 0, oscMix: 0, fmAmount: 0.15, cutoff: 8000, resonance: 0.7, filterEnvAmt: 0, keyTrack: 1, attack: 0.001, decay: 0.8, sustain: 0.5, release: 0.12, velocity: 0.7, modEnvAttack: 0.001, modEnvDecay: 0.35, modEnvSustain: 0.1, modEnvRelease: 0.2, mod1Src: 6, mod1Dst: 7, mod1Amt: 0.6, mod2Src: 7, mod2Dst: 7, mod2Amt: 0.3, reverbMix: 0.05, volume: 0.9 },
+  },
+  {
+    name: "FM Tine Piano",
+    category: "Classics",
+    color: [70, 90, 127],
+    about: "Yamaha DX7 electric piano (\"E. Piano 1\"), all over 80s ballads. FM with a bright bark at the start that softens; harder notes bark more. The DX7 uses six operators; this is two, so it is the gist, not the exact tine.",
+    knobs: ["fmAmount", "mod1Amt", "modEnvDecay", "mod2Amt", "decay", "chorus", "release", "reverbMix"],
+    values: { osc1Wave: 0, osc2Wave: 0, osc2Semi: 0, osc2Detune: 0, oscMix: 0, fmAmount: 0.08, cutoff: 9000, resonance: 0.7, filterEnvAmt: 0, keyTrack: 1, attack: 0.001, decay: 2.5, sustain: 0.15, release: 0.6, velocity: 0.85, modEnvAttack: 0.001, modEnvDecay: 0.25, modEnvSustain: 0.05, modEnvRelease: 0.3, mod1Src: 6, mod1Dst: 7, mod1Amt: 0.45, mod2Src: 7, mod2Dst: 7, mod2Amt: 0.4, chorus: 0.5, reverbMix: 0.25, volume: 0.75 },
+  },
+  {
+    name: "Popcorn Pluck",
+    category: "Classics",
+    color: [127, 100, 40],
+    about: "A Moog \"pock\": Hot Butter, \"Popcorn\" (1972). A square wave with a resonant filter blip that dies at once. Play the tune short and staccato.",
+    knobs: ["cutoff", "resonance", "filterEnvAmt", "filterDecay", "decay", "oscMix", "osc1Wave", "reverbMix"],
+    values: { osc1Wave: 3, osc2Wave: 3, osc2Semi: 12, osc2Detune: 0, oscMix: 0.3, cutoff: 900, resonance: 3, filterEnvAmt: 3.5, filterDecay: 0.12, filterSustain: 0, keyTrack: 0.7, attack: 0.001, decay: 0.18, sustain: 0, release: 0.08, velocity: 0.3, reverbMix: 0.12, volume: 0.75 },
+  },
+  {
+    name: "Axel Lead",
+    category: "Classics",
+    color: [127, 0, 90],
+    about: "Roland Jupiter-8 lead: Harold Faltermeyer, \"Axel F\" (1984). A bright square and saw with a quick snap of filter. Play the riff short and punchy.",
+    knobs: ["cutoff", "resonance", "filterEnvAmt", "filterDecay", "oscMix", "osc2Detune", "delayMix", "reverbMix"],
+    values: { osc1Wave: 3, osc2Wave: 2, osc2Detune: 6, oscMix: 0.35, pulseWidth: 0.5, cutoff: 2200, resonance: 1.5, filterEnvAmt: 1.2, filterDecay: 0.25, filterSustain: 0.6, keyTrack: 0.6, attack: 0.003, decay: 0.2, sustain: 0.75, release: 0.15, velocity: 0.3, delayMix: 0.12, delayDiv: 1, reverbMix: 0.15, volume: 0.6 },
+  },
+  {
+    name: "Monday Bass",
+    category: "Classics",
+    color: [40, 40, 127],
+    about: "Moog Source bass: New Order, \"Blue Monday\" (1983). A short, punchy sequenced bass. Play steady sixteenths from the step sequencer, or with the arpeggiator on one note.",
+    knobs: ["cutoff", "resonance", "filterEnvAmt", "filterDecay", "decay", "drive", "oscMix", "osc2Semi"],
+    values: { mono: 1, osc1Wave: 2, osc2Wave: 3, osc2Semi: -12, osc2Detune: 2, oscMix: 0.4, filterModel: 1, cutoff: 400, resonance: 2.5, filterEnvAmt: 2.5, filterDecay: 0.15, filterSustain: 0.1, keyTrack: 0.5, attack: 0.001, decay: 0.2, sustain: 0.5, release: 0.06, velocity: 0.3, drive: 0.2, reverbMix: 0.05, volume: 0.65 },
+  },
+  {
+    name: "Feel Love Seq",
+    category: "Classics",
+    color: [127, 0, 40],
+    about: "Giorgio Moroder's Moog modular sequence: Donna Summer, \"I Feel Love\" (1977). A tight pluck with a 1/16 echo that fills the gaps. Turn on the arpeggiator (Up, 1/8) and hold a root and its octave and fifth.",
+    knobs: ["cutoff", "resonance", "filterEnvAmt", "filterDecay", "delayMix", "delayFeedback", "decay", "reverbMix"],
+    values: { osc1Wave: 2, osc2Wave: 3, osc2Detune: 4, oscMix: 0.3, filterModel: 1, cutoff: 500, resonance: 2, filterEnvAmt: 3, filterDecay: 0.14, filterSustain: 0.05, keyTrack: 0.6, attack: 0.001, decay: 0.22, sustain: 0, release: 0.08, velocity: 0.3, delayMix: 0.45, delayDiv: 0, delayFeedback: 0.1, delayMode: 1, reverbMix: 0.08, volume: 1 },
+  },
+  {
+    name: "G-Funk Whine",
+    category: "Classics",
+    color: [127, 90, 0],
+    about: "The high Minimoog lead of early-90s G-funk, as on Dr. Dre's \"The Chronic\" (1992). A soft, high tone that slides between notes with a gentle vibrato. Play slow melodies high up.",
+    knobs: ["glide", "lfoDepth", "lfoRate", "cutoff", "resonance", "oscMix", "delayMix", "reverbMix"],
+    values: { mono: 1, glide: 0.18, osc1Wave: 0, osc2Wave: 1, osc2Semi: 12, osc2Detune: 0, oscMix: 0.25, filterModel: 1, cutoff: 3000, resonance: 3, filterEnvAmt: 0.5, keyTrack: 1, lfoTarget: 0, lfoWave: 0, lfoRate: 5.5, lfoDepth: 0.15, attack: 0.03, decay: 0.3, sustain: 1, release: 0.3, velocity: 0.2, delayMix: 0.2, delayDiv: 3, reverbMix: 0.2, volume: 0.85 },
+  },
+  {
+    name: "Electro-Theremin",
+    category: "Classics",
+    color: [0, 127, 127],
+    about: "Paul Tanner's Electro-Theremin: The Beach Boys, \"Good Vibrations\" (1966). A pure sine that slides from note to note with a wide vibrato. Play slow, overlapping notes so it glides.",
+    knobs: ["glide", "lfoDepth", "lfoRate", "attack", "release", "cutoff", "delayMix", "reverbMix"],
+    values: { mono: 1, glide: 0.35, osc1Wave: 0, oscMix: 0, cutoff: 6000, resonance: 0.7, filterEnvAmt: 0, keyTrack: 1, lfoTarget: 0, lfoWave: 0, lfoRate: 6, lfoDepth: 0.22, attack: 0.15, decay: 0.3, sustain: 1, release: 0.5, velocity: 0, reverbMix: 0.3, volume: 0.7 },
+  },
+  {
+    name: "Upside Arp",
+    category: "Classics",
+    color: [127, 0, 0],
+    about: "The sequenced arpeggio of the \"Stranger Things\" theme (Kyle Dixon & Michael Stein, 2016). A resonant saw pluck with echoes and a slow filter drift. Turn on the arpeggiator (Up, 1/8, 2 octaves) and hold a C major 7 chord.",
+    knobs: ["cutoff", "resonance", "filterEnvAmt", "filterDecay", "lfo2Depth", "delayMix", "delayFeedback", "reverbMix"],
+    values: { osc1Wave: 2, osc2Wave: 2, osc2Detune: 6, oscMix: 0.5, filterModel: 1, cutoff: 700, resonance: 4, filterEnvAmt: 2, filterDecay: 0.2, filterSustain: 0.2, keyTrack: 0.5, lfo2Target: 1, lfo2Wave: 0, lfo2Rate: 0.06, lfo2Depth: 0.25, attack: 0.002, decay: 0.25, sustain: 0.4, release: 0.2, velocity: 0.3, delayMix: 0.3, delayDiv: 2, delayFeedback: 0.45, reverbMix: 0.35, reverbSize: 3.5, volume: 0.6 },
+  },
 ];
 
 /** Category order in the preset browser. */
-export const CATEGORIES: Preset["category"][] = ["Lead", "Bass", "Pad", "Brass", "Keys", "FX", "Test"];
+export const CATEGORIES: Preset["category"][] = ["Lead", "Bass", "Pad", "Brass", "Keys", "FX", "Classics", "Test"];
 
 /**
  * What each factory preset sounds like, in the words someone might search for. The browser offers the
@@ -498,6 +675,27 @@ const TAGS: Record<string, string[]> = {
   "Squash Pluck": ["compressor", "plucky", "punchy", "demo"],
   "Telephone EQ": ["eq", "lo-fi", "retro", "demo"],
   "Fuzzed Reverb": ["distortion", "reverb", "dirty", "spacey", "effect order", "demo"],
+  "Stadium Brass": ["brass", "fat", "bright", "chords", "retro", "80s"],
+  "Acid 303": ["acid", "squelchy", "resonant", "303", "mono"],
+  "Filthy Acid": ["acid", "dirty", "distortion", "303", "mono"],
+  "Prog Lead": ["lead", "warm", "glide", "retro", "mono"],
+  "Funk Moog Bass": ["bass", "funky", "fat", "punchy", "mono"],
+  "Sync Sweep": ["lead", "sync", "bright", "retro"],
+  "Hoover": ["rave", "wide", "fat", "dirty", "chords"],
+  "Trance Supersaw": ["supersaw", "trance", "wide", "bright", "chords"],
+  "Juno Pad": ["pad", "warm", "wide", "moving", "chords", "retro"],
+  "Oxygene Strings": ["strings", "phaser", "moving", "spacey", "slow", "retro"],
+  "Blade Brass": ["brass", "warm", "slow", "spacey", "chords"],
+  "Growl Sweep": ["growl", "resonant", "moving", "slow", "mono"],
+  "FM House Bass": ["bass", "fm", "punchy", "plucky", "mono"],
+  "FM Tine Piano": ["piano", "fm", "soft", "chords", "80s"],
+  "Popcorn Pluck": ["plucky", "short", "resonant", "retro"],
+  "Axel Lead": ["lead", "bright", "punchy", "retro", "80s"],
+  "Monday Bass": ["bass", "punchy", "short", "retro", "mono"],
+  "Feel Love Seq": ["sequence", "plucky", "echo", "retro", "disco"],
+  "G-Funk Whine": ["lead", "soft", "glide", "vibrato", "mono"],
+  "Electro-Theremin": ["theremin", "pure", "glide", "vibrato", "retro", "mono"],
+  "Upside Arp": ["arp", "plucky", "echo", "dark", "retro"],
 };
 
 /** The describing words the browser offers as buttons. */

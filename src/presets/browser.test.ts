@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { emptyFilter, filterPresets, matchesQuery, presetFile, readPresetFile } from "./browser";
+import { PARAMS, type ParamId } from "../audio/params";
 import { DEFAULT_FAVOURITES, FACTORY_PRESETS, factoryId, TAG_CHOICES, type Preset } from "./presets";
 
 const names = (list: Preset[]) => list.map((p) => p.name);
@@ -10,6 +11,20 @@ describe("factory presets", () => {
   test("each has its own id and some describing words", () => {
     expect(new Set(FACTORY_PRESETS.map((p) => p.id)).size).toBe(FACTORY_PRESETS.length);
     for (const p of FACTORY_PRESETS) expect(p.tags?.length).toBeGreaterThan(1);
+  });
+
+  test("every Classic says what it recreates, and its settings are real ones in range", () => {
+    const classics = FACTORY_PRESETS.filter((p) => p.category === "Classics");
+    expect(classics.length).toBeGreaterThanOrEqual(15);
+    for (const p of classics) {
+      expect(p.about, p.name).toMatch(/\d{4}\)|\d{2}s/);
+      for (const [id, v] of Object.entries(p.values)) {
+        const def = PARAMS[id as ParamId];
+        expect(def, `${p.name}: ${id}`).toBeDefined();
+        expect(v, `${p.name}: ${id}`).toBeGreaterThanOrEqual(def.min);
+        expect(v, `${p.name}: ${id}`).toBeLessThanOrEqual(def.max);
+      }
+    }
   });
 
   test("every tag button finds something, and every favourite exists", () => {
@@ -24,6 +39,12 @@ describe("search", () => {
     expect(find("dark")).toContain("Dark Pad");
     expect(find("plucky keys")).toEqual(["Pluck", "Mallets", "Digital Keys", "Table Pluck"]);
     expect(find("wobble")).toEqual(["Wobble"]);
+  });
+
+  test("a Classic is found by its original instrument or artist", () => {
+    expect(find("oberheim")).toEqual(["Stadium Brass", "Growl Sweep"]);
+    expect(find("vangelis")).toEqual(["Blade Brass"]);
+    expect(find("", { group: "Classics" })).toContain("Hoover");
   });
 
   test("the start of a word is enough, plurals and other words for a category work", () => {

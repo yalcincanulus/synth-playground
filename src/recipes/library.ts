@@ -1007,5 +1007,246 @@ const bell: Recipe = {
   outro: "That's an FM bell: two sines at an odd ratio, a long ring, and a filter envelope that lets the brightness fade first.",
 };
 
+// ---------------------------------------------------------------- Classics
+// Famous sounds, built step by step. Each ends at about the matching preset in the Classics group.
+
+const stadiumBrass: Recipe = {
+  id: "stadium-brass",
+  name: "Stadium Brass",
+  summary: "The big 80s synth brass of the Oberheim OB-Xa, as on Van Halen's \"Jump\" (1983).",
+  category: "Classics",
+  color: [127, 70, 0],
+  steps: [
+    {
+      text: "Hold a chord (3 notes or more).",
+      why: "One plain saw per note. The OB-Xa's brass has two oscillators per note, slightly apart, and a filter that 'blows' open.",
+      checks: [{ play: "chord" }],
+    },
+    {
+      text: "Bring in Oscillator 2: turn Osc Mix to the middle.",
+      why: "Two saws per note, at the same pitch for now.",
+      checks: [{ param: "oscMix", min: 0.4, max: 0.6, aim: 0.5 }],
+    },
+    {
+      text: "Detune Osc 2 by about 9 cents.",
+      why: "The two saws now drift against each other: the chord gets thick and alive, like an analog polysynth.",
+      checks: [{ param: "osc2Detune", min: 6, max: 20, aim: 9 }],
+    },
+    {
+      text: "Set Unison to 2 voices.",
+      why: "Each oscillator doubles up. More saws per note make it big enough for a stadium.",
+      checks: [{ param: "unison", is: 2 }],
+    },
+    {
+      text: "Close the filter: turn Cutoff down to about 700 Hz.",
+      why: "The chord goes dull and muffled. The filter envelope will open it on every chord.",
+      checks: [{ param: "cutoff", min: 400, max: 1100, aim: 700 }],
+    },
+    {
+      text: "Raise Filt Env to about +2.8 octaves, and play a chord.",
+      why: "Each chord now starts bright and darkens. That bright start is the 'blare' of brass.",
+      checks: [{ param: "filterEnvAmt", min: 2, aim: 2.8 }],
+    },
+    {
+      text: "Soften the blare: set the filter's Attack to about 60 ms.",
+      why: "The brightness now swells in over a moment instead of clicking on, the way a horn player's breath builds.",
+      checks: [{ param: "filterAttack", min: 0.03, max: 0.2, aim: 0.06 }],
+    },
+    {
+      text: "Keep it bright while held: raise the filter's Sustain to about 55%.",
+      why: "After the blare, held chords stay fairly open instead of going dull.",
+      checks: [{ param: "filterSustain", min: 0.4, max: 0.7, aim: 0.55 }],
+    },
+    {
+      text: "Let chords ring a little after you let go: Release to about 350 ms (fader 4).",
+      why: "A short tail makes the stabs sound full instead of chopped off.",
+      checks: [{ param: "release", min: 0.25, max: 0.8, aim: 0.35 }],
+    },
+    {
+      text: "Add some chorus: about 35%.",
+      why: "Chorus adds slightly moving copies: the brass gets wider and shinier, very 80s.",
+      checks: [{ param: "chorus", min: 0.25, aim: 0.35 }],
+    },
+    {
+      text: "Put it on a stage: Reverb to about 22%.",
+      why: "A little room makes it sound like a band, not a box.",
+      checks: [{ param: "reverbMix", min: 0.15, aim: 0.22 }],
+    },
+    {
+      text: "Play big chords with a bouncy rhythm.",
+      why: "Try the 'Jump' feel: short chords on and off the beat. Listen for the blare at each start.",
+      checks: [{ play: "chord" }],
+    },
+  ],
+  outro: "That's OB-Xa-style brass: two detuned saws per note, doubled, with a filter envelope that blares open and settles. Compare it with \"Jump\" and with the Stadium Brass preset.",
+};
+
+const hoover: Recipe = {
+  id: "hoover",
+  name: "Hoover",
+  summary: "The rave \"Hoover\" of the Roland Alpha Juno, as on Joey Beltram's \"Mentasm\" (1991).",
+  category: "Classics",
+  color: [110, 0, 127],
+  steps: [
+    {
+      text: "Play a low note and hold it.",
+      why: "A plain saw. The Hoover is a saw and a moving pulse, detuned, spread wide and smeared by chorus, with a pitch that scoops up.",
+      checks: [{ play: "low" }],
+    },
+    {
+      text: "Bring in Oscillator 2: turn Osc Mix to just past the middle.",
+      why: "Osc 2 will be the pulse wave half of the sound.",
+      checks: [{ param: "oscMix", min: 0.45, max: 0.65, aim: 0.55 }],
+    },
+    {
+      text: "Set Osc 2's wave to square.",
+      why: "A square is a pulse wave: soon its width will move.",
+      checks: [{ param: "osc2Wave", is: 3 }],
+    },
+    {
+      text: "Drop Osc 2 an octave: Osc2 Pitch to -12 semitones.",
+      why: "The pulse now sits under the saw, which gives the Hoover its weight.",
+      checks: [{ param: "osc2Semi", is: -12 }],
+    },
+    {
+      text: "Detune Osc 2 by about 15 cents.",
+      why: "A wide detune makes the two waves rub hard: the start of the 'vacuum cleaner' roar.",
+      checks: [{ param: "osc2Detune", min: 10, max: 30, aim: 15 }],
+    },
+    {
+      text: "Narrow the pulse: Pulse Width to about 30%.",
+      why: "A narrower pulse sounds thinner and more nasal.",
+      checks: [{ param: "pulseWidth", min: 0.2, max: 0.4, aim: 0.3 }],
+    },
+    {
+      text: "Let LFO 2 move the pulse: set LFO 2's To to Width.",
+      why: "Moving the pulse width makes the sound churn by itself (PWM).",
+      checks: [{ param: "lfo2Target", is: 3 }],
+    },
+    {
+      text: "Raise LFO 2 Depth to about 50%.",
+      why: "Now you can hear the pulse churning under the saw.",
+      checks: [{ param: "lfo2Depth", min: 0.3, aim: 0.5 }],
+    },
+    {
+      text: "Speed it up: LFO 2 Rate to about 2.5 Hz.",
+      why: "A faster churn gives the Hoover its restless movement.",
+      checks: [{ param: "lfo2Rate", min: 1.5, max: 5, aim: 2.5 }],
+    },
+    {
+      text: "Set Unison to 3 voices.",
+      why: "Three copies of each oscillator: the roar gets huge.",
+      checks: [{ param: "unison", is: 3 }],
+    },
+    {
+      text: "Spread them out: Stereo to 100%.",
+      why: "The copies move left and right. Headphones help here.",
+      checks: [{ param: "stereoWidth", min: 0.9, aim: 1 }],
+    },
+    {
+      text: "Make each note scoop up: Pitch Env to about -5 semitones.",
+      why: "Every note now starts below its pitch and swoops up into it: the Hoover's famous 'whoop'.",
+      checks: [{ param: "pitchEnvAmt", max: -3, aim: -5 }],
+    },
+    {
+      text: "Slow the scoop: P Decay to about 350 ms.",
+      why: "A slower swoop is easier to hear and more dramatic.",
+      checks: [{ param: "pitchEnvDecay", min: 0.25, max: 0.6, aim: 0.35 }],
+    },
+    {
+      text: "Smear it with chorus: about 90%.",
+      why: "Heavy chorus was always on in the Alpha Juno's Hoover: it melts everything into one roaring mass.",
+      checks: [{ param: "chorus", min: 0.7, aim: 0.9 }],
+    },
+    {
+      text: "Play low chords and short stabs.",
+      why: "Listen for the scoop at each start and the churning, wide roar.",
+      checks: [{ play: "chord" }],
+    },
+  ],
+  outro: "That's the Hoover: a detuned saw and moving pulse, wide unison, a pitch scoop and heavy chorus. Compare it with \"Mentasm\" and with the Hoover preset.",
+};
+
+const gFunk: Recipe = {
+  id: "g-funk",
+  name: "G-Funk Whine",
+  summary: "The high, sliding Minimoog lead of early-90s G-funk, as on Dr. Dre's \"The Chronic\" (1992).",
+  category: "Classics",
+  color: [127, 90, 0],
+  steps: [
+    {
+      text: "Play a note high up and hold it.",
+      why: "A bright saw. The G-funk lead is the opposite: soft and round, and it slides between notes.",
+      checks: [{ play: "note" }],
+    },
+    {
+      text: "Set Osc 1's wave to sine.",
+      why: "A sine is the purest tone: no buzz at all. High up, it whistles.",
+      checks: [{ param: "osc1Wave", is: 0 }],
+    },
+    {
+      text: "Raise Osc 2 an octave: Osc2 Pitch to +12 semitones.",
+      why: "Osc 2 will add a little edge an octave above.",
+      checks: [{ param: "osc2Semi", is: 12 }],
+    },
+    {
+      text: "Set Osc 2's wave to triangle.",
+      why: "A triangle is soft too, but with a few more overtones than a sine.",
+      checks: [{ param: "osc2Wave", is: 1 }],
+    },
+    {
+      text: "Mix in a little of Osc 2: Osc Mix to about 25%.",
+      why: "Just enough to give the tone a bit of a nasal 'whine'.",
+      checks: [{ param: "oscMix", min: 0.15, max: 0.4, aim: 0.25 }],
+    },
+    {
+      text: "Play one note at a time: set Voice to mono.",
+      why: "The slide only works between notes on one voice.",
+      checks: [{ param: "mono", is: 1 }],
+    },
+    {
+      text: "Make it slide: Glide to about 180 ms.",
+      why: "Now each note glides up or down to the next. Overlap the notes to hear it.",
+      checks: [{ param: "glide", min: 0.1, max: 0.4, aim: 0.18 }],
+    },
+    {
+      text: "Add vibrato: raise LFO 1 Depth to about 15%.",
+      why: "LFO 1 already points at the pitch at about 5 Hz: a gentle wobble, like a singer's vibrato.",
+      checks: [{ param: "lfoDepth", min: 0.08, max: 0.3, aim: 0.15 }],
+    },
+    {
+      text: "Switch the filter to the Moog-style ladder: Filt Model to ladder.",
+      why: "The ladder is a copy of the Minimoog's filter, the one these leads were played on.",
+      checks: [{ param: "filterModel", is: 1 }],
+    },
+    {
+      text: "Round off the top: Cutoff to about 3 kHz.",
+      why: "The octave above gets softer, so the whine is smooth, not piercing.",
+      checks: [{ param: "cutoff", min: 2000, max: 4500, aim: 3000 }],
+    },
+    {
+      text: "Give the filter a little bite: Resonance to about 3.",
+      why: "A touch of resonance adds a slight vocal quality.",
+      checks: [{ param: "resonance", min: 2, max: 5, aim: 3 }],
+    },
+    {
+      text: "Add an echo: Delay to about 20%.",
+      why: "The echoes follow the slides and fill the space between phrases.",
+      checks: [{ param: "delayMix", min: 0.12, aim: 0.2 }],
+    },
+    {
+      text: "And a little room: Reverb to about 20%.",
+      why: "It sits the lead back in the mix, like on the records.",
+      checks: [{ param: "reverbMix", min: 0.12, aim: 0.2 }],
+    },
+    {
+      text: "Play a slow melody high up, overlapping the notes so they slide.",
+      why: "Listen for the soft whistle, the slides and the vibrato.",
+      checks: [{ play: "note" }],
+    },
+  ],
+  outro: "That's the G-funk whine: a sine and a soft octave above, gliding, with vibrato, rounded by a ladder filter. Compare it with \"The Chronic\" and with the G-Funk Whine preset.",
+};
+
 /** In the order the recipe browser shows them, group by group. */
-export const RECIPES: Recipe[] = [reese, acid, sub, fmBass, syncLead, vowelLead, pluck, ePiano, bell, supersaw, pwmStrings, scanPad, laser, wind, toms];
+export const RECIPES: Recipe[] = [reese, acid, sub, fmBass, syncLead, vowelLead, pluck, ePiano, bell, supersaw, pwmStrings, scanPad, laser, wind, toms, stadiumBrass, hoover, gFunk];

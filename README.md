@@ -34,6 +34,17 @@ sequencer plays), e.g. a pad over a bass line. The switch above the presets (or 
 knobs, faders, encoder, favourite pads, Dice and the Synth view edit. The keys always play the Keys part. Each part has
 its own Volume and its own effects. The drums get a little of the Keys part's reverb. The pitch and mod strips move the Keys part.
 
+### Classics
+
+The **Classics** group in the preset browser holds 21 recreations of famous synth sounds, built from this synth's
+own parts: OB-Xa brass ("Jump"), the TB-303 (plain and distorted), Moog leads and basses, the Prophet-5 sync
+lead, the rave Hoover, the JP-8000 supersaw, a Juno pad, Jarre's phased strings, Vangelis's CS-80 brass, Rush's
+OB-X growl, FM bass and electric piano, "Popcorn", "Axel F", "Blue Monday", "I Feel Love", the G-funk lead,
+the Electro-Theremin of "Good Vibrations" and the "Stranger Things" arpeggio. Each one names the original
+instrument and a record to compare it with (searchable: "oberheim", "vangelis"), and says how to play it. They
+are approximations: the synth has two oscillators, two-operator FM and three unison copies, and nothing based
+on samples was attempted. Three of them (Stadium Brass, Hoover, G-Funk Whine) are also recipes.
+
 ### Synth view
 
 The **Synth** tab draws the whole synth as blocks in signal order (oscillators → mixer → drive → filter →

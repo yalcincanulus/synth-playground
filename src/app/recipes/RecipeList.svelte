@@ -6,7 +6,7 @@
   let { pg }: { pg: Playground } = $props();
 
   /** Group headings, in the order the groups first appear in RECIPES. */
-  const GROUP_NAMES: Partial<Record<Recipe["category"], string>> = { Bass: "Bass", Lead: "Leads", Keys: "Keys", Pad: "Pads", FX: "Effects" };
+  const GROUP_NAMES: Partial<Record<Recipe["category"], string>> = { Bass: "Bass", Lead: "Leads", Keys: "Keys", Pad: "Pads", FX: "Effects", Classics: "Classics" };
   const groups = [...new Set(RECIPES.map((r) => r.category))].map((cat) => ({
     name: GROUP_NAMES[cat] ?? cat,
     recipes: RECIPES.filter((r) => r.category === cat),
