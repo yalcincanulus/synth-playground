@@ -116,9 +116,9 @@
   <header class="top">
     <h1>MiniLab 3 <span>Playground</span></h1>
     <nav class="views" aria-label="View">
-      <button class:active={pg.view === "playground"} onclick={() => pg.setView("playground")} title="Play: the MiniLab's knobs and faders, the pads, drums and step sequencer (Shift + encoder)">Play</button>
-      <button class:active={pg.view === "synth"} onclick={() => pg.setView("synth")} title="The whole synth as blocks: see and change every part of the sound (Shift + encoder)">Synth</button>
-      <button class:active={pg.view === "wavetable"} onclick={() => pg.setView("wavetable")} title="Pick, import and draw wavetables (Shift + encoder)">Wavetable</button>
+      <button data-label="Play" class:active={pg.view === "playground"} onclick={() => pg.setView("playground")} title="Play: the MiniLab's knobs and faders, the pads, drums and step sequencer (Shift + encoder)">Play</button>
+      <button data-label="Synth" class:active={pg.view === "synth"} onclick={() => pg.setView("synth")} title="The whole synth as blocks: see and change every part of the sound (Shift + encoder)">Synth</button>
+      <button data-label="Wavetable" class:active={pg.view === "wavetable"} onclick={() => pg.setView("wavetable")} title="Pick, import and draw wavetables (Shift + encoder)">Wavetable</button>
     </nav>
     <button class="recipes-link" class:active={!!pg.recipe || pg.recipeList} onclick={() => pg.openRecipes()} title="Build a classic sound step by step">Recipes</button>
 
@@ -435,6 +435,9 @@
   .top > :not(.midi) { flex: none; }
   .views { display: flex; gap: 2px; background: #0b0e10; border: 1px solid var(--line); border-radius: 6px; padding: 2px; }
   .views button { border: none; background: none; font-size: 13px; padding: 4px 16px; border-radius: 4px; color: var(--dim); }
+  /* Room for the bold label is kept on every tab, so picking one doesn't change the bar's width. */
+  .views button { display: inline-grid; justify-items: center; }
+  .views button::after { content: attr(data-label); font-weight: 600; height: 0; visibility: hidden; overflow: hidden; }
   .views button:hover { color: var(--text); }
   .views .active, .views .active:hover { background: var(--accent); color: #0b1314; font-weight: 600; }
   .recipes-link { border-color: color-mix(in srgb, var(--accent) 50%, transparent); color: var(--accent); font-size: 13px; padding: 4px 12px; }
