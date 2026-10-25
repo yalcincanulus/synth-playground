@@ -229,6 +229,12 @@ export class Engine {
     });
   }
 
+  /** A table's frames changed (a drawing being edited): send the new version to the audio thread. */
+  tableUpdated(id: number) {
+    this.tablesSent.delete(id);
+    this.loadTable(id);
+  }
+
   /** Prepare a wavetable's mipmaps and hand them to the audio thread, once per table. */
   private loadTable(id: number) {
     if (!this.tableLoader || this.tablesSent.has(id) || !WAVETABLES[id]) return;

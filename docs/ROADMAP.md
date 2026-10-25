@@ -233,6 +233,14 @@ What the browser still limits, whatever we do:
 - Draw 2–4 keyframes (waves) with the mouse, or start from harmonic sliders. The app blends between them to make the full table.
 - Live preview while drawing.
 - **Done when:** you can draw a table, hear it, and save it.
+- Status: done 2026-10-25 (checked by ear on the MiniLab).
+  - **Editor:** "Draw a table…" in the Wavetable tab (or ✎ on a saved drawing) replaces the controls under the table view. It starts with sine → saw. 2 to 4 keyframes, spread evenly along the table. Draw with the mouse (every sample between two mouse points gets a value, so no gaps), or start from Sine/Triangle/Saw/Square, "From <table>" (the wave the table that played before has at that place), Smooth, Flip, Clear. The 32 harmonic bars can be dragged across. MiniLab knobs 1–8 are harmonics 1–8 of the selected keyframe, and the OLED shows them.
+  - **Blending** (`tableDraw.ts`): *Harmonics* (the default) moves each harmonic's strength in a straight line and its phase the short way round, so nothing cancels between keyframes. *Crossfade* mixes the waves, like the oscillator does between frames. 31 or 32 frames, so every keyframe lands exactly on a frame. There is no DC offset, and one gain for the whole table (a quiet keyframe stays quiet).
+  - **Live preview:** while the editor is open, a draft table at the end of the list plays. It is rebuilt at most every 40 ms and sent to the audio thread again. Held notes pick it up on the next block. Saving keeps the draft as a new table, or writes over the drawing that was opened. Cancel removes the draft and brings back the table that played before.
+  - **Storage:** a drawing is stored like an imported table, and also keeps its keyframes and blend mode, so it opens again for editing after a reload.
+  - **Checked in the browser** (Helium, headless): draw, bars, knob, add a keyframe, save, reload, edit, cancel, edit and save again, delete. No errors.
+  - **Tests:** `tableDraw.test.ts` (lines without gaps, harmonic strengths read back, smoothing, keyframes landing on frames, crossfade vs harmonics on a wave and its upside-down copy, one gain, a flat keyframe).
+  - **Render check:** not run. The sound path did not change; only new tables were added.
 
 ## Phase D: playing
 

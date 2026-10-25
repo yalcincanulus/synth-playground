@@ -23,8 +23,10 @@ export interface WavetableDef {
   harmonics?: { count: number; amp: (t: number, h: number) => number; phases?: number[] };
   /** ...or ready-made frames (an imported table), any number of them. */
   frames?: Float32Array[];
-  /** An imported table's key in the browser's storage (see tableStore.ts). */
+  /** An imported or drawn table's key in the browser's storage (see tableStore.ts). */
   storeKey?: number;
+  /** A drawn table's keyframes and how they blend, so it can be opened and edited again (see tableDraw.ts). */
+  drawn?: { keys: Float32Array[]; blend: "harmonics" | "crossfade" };
 }
 
 const TAU = 2 * Math.PI;
@@ -155,6 +157,24 @@ export function removeTable(id: number) {
   for (const cache of [frameCache, harmonicsCache]) for (const key of [...cache.keys()]) if (key >= id) cache.delete(key);
 }
 
+/** Give a table a new name (a drawing when it is saved). */
+export function renameTable(id: number, name: string, short: string) {
+  const def = WAVETABLES[id];
+  if (!def || id < BUILTIN_TABLES) return;
+  def.name = name;
+  def.short = short;
+  WAVETABLE_NAMES[id] = short;
+}
+
+/** New frames for an imported or drawn table (a drawing being edited, or saved over). */
+export function replaceFrames(id: number, frames: Float32Array[]) {
+  const def = WAVETABLES[id];
+  if (!def || id < BUILTIN_TABLES) return;
+  def.frames = frames;
+  frameCache.delete(id);
+  harmonicsCache.delete(id);
+}
+
 /** A table's id after table `removed` was taken out (a table that was removed falls back to the first). */
 export const idAfterRemoval = (id: number, removed: number) => (id === removed ? 0 : id > removed ? id - 1 : id);
 
@@ -239,7 +259,7 @@ function twiddle(n: number) {
 }
 
 /** In-place radix-2 FFT (inverse = conjugate twiddles, unscaled). */
-function fft(re: Float64Array, im: Float64Array, inverse: boolean) {
+export function fft(re: Float64Array, im: Float64Array, inverse: boolean) {
   const n = re.length;
   const [cos, sin] = twiddle(n);
   for (let i = 1, j = 0; i < n; i++) {

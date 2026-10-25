@@ -8,14 +8,18 @@
   import LiveCanvas from "../synth/LiveCanvas.svelte";
   import ParamControl from "../synth/ParamControl.svelte";
   import * as draw from "./draw";
+  import TableEditor from "./TableEditor.svelte";
 
   let { pg, accent }: { pg: Playground; accent: string } = $props();
 
   const color = () => accent;
   let engine = $derived(pg.engine);
-  // pg.tables is read so the description follows imports and deletions.
+  let editor = $derived(pg.tableEditor);
+  // pg.tables is read so the description follows imports and deletions (and editor.built, a drawing's rebuilds).
   let table = $derived(pg.tables && tableDef(pg.values.wtTable));
-  let frameCount = $derived(table.frames?.length);
+  let frameCount = $derived((editor?.built, table.frames?.length));
+  /** While drawing, knobs 1-8 are the keyframe's first 8 harmonics. */
+  let harmonics = $derived(editor ? (editor.version, editor.amps().slice(0, 8).map((a) => Math.min(1, a))) : null);
   let cutMode = $state<CutMode>("auto");
   let dragging = $state(false);
   let fileInput: HTMLInputElement;
@@ -69,11 +73,17 @@
     <div class="knobmap">
       <div class="title">MiniLab knobs · encoder picks the table</div>
       <ol>
-        {#each WAVETABLE_KNOBS as id, i (i)}
-          <li class:hot={pg.touched?.param === id}>
-            <span class="n">{i + 1}</span>{PARAMS[id].label}<span class="v">{formatValue(id, pg.values[id])}</span>
-          </li>
-        {/each}
+        {#if harmonics}
+          {#each harmonics as amp, i (i)}
+            <li><span class="n">{i + 1}</span>Harmonic {i + 1}<span class="v">{Math.round(amp * 100)}%</span></li>
+          {/each}
+        {:else}
+          {#each WAVETABLE_KNOBS as id, i (i)}
+            <li class:hot={pg.touched?.param === id}>
+              <span class="n">{i + 1}</span>{PARAMS[id].label}<span class="v">{formatValue(id, pg.values[id])}</span>
+            </li>
+          {/each}
+        {/if}
       </ol>
     </div>
   </aside>
@@ -89,18 +99,20 @@
     <div class="left">
       <nav class="tables" aria-label="Wavetables">
         {#each pg.tables as def, i (def)}
-          {#if i === BUILTIN_TABLES}<div class="title imported">Imported</div>{/if}
+          {#if i === BUILTIN_TABLES}<div class="title imported">Yours</div>{/if}
           <div class="row">
             <button class="pick" class:active={pg.values.wtTable === i} onclick={() => pg.selectTable(i)} title={def.name}>
-              <canvas use:surface={{ draw: draw.thumbnail(i, pg.values.wtTable === i ? accent : "#9aa7ab"), key: `${pg.values.wtTable === i}${i}` }}></canvas>
+              <canvas use:surface={{ draw: draw.thumbnail(i, pg.values.wtTable === i ? accent : "#9aa7ab"), key: `${pg.values.wtTable === i}${i}${def === editor?.draft ? editor.built : ""}` }}></canvas>
               <span>{def.name}</span>
             </button>
-            {#if i >= BUILTIN_TABLES}<button class="del" title="Delete this table" onclick={() => remove(i)}>×</button>{/if}
+            {#if def.drawn}<button class="del" title="Edit this drawing" disabled={!!editor} onclick={() => pg.openTableEditor(i)}>✎</button>{/if}
+            {#if def.storeKey !== undefined}<button class="del" title="Delete this table" onclick={() => remove(i)}>×</button>{/if}
           </div>
         {/each}
       </nav>
       <div class="import">
         <button onclick={() => fileInput.click()} disabled={pg.importing}>{pg.importing ? "Importing…" : "Import a sound…"}</button>
+        <button onclick={() => pg.openTableEditor()} disabled={!!editor}>Draw a table…</button>
         <input bind:this={fileInput} type="file" accept=".wav,audio/*" hidden onchange={(e) => {
           importFiles(e.currentTarget.files);
           e.currentTarget.value = "";
@@ -138,37 +150,41 @@
     </div>
   </div>
 
-  <div class="controls">
-    <div class="group">
-      <div class="title">Oscillators</div>
-      <div class="params">
-        <ParamControl {pg} id="osc1Wave" />
-        <ParamControl {pg} id="osc2Wave" />
-        <ParamControl {pg} id="wtPos" />
-        <ParamControl {pg} id="oscMix" />
+  {#if editor}
+    <TableEditor {pg} {editor} {accent} />
+  {:else}
+    <div class="controls">
+      <div class="group">
+        <div class="title">Oscillators</div>
+        <div class="params">
+          <ParamControl {pg} id="osc1Wave" />
+          <ParamControl {pg} id="osc2Wave" />
+          <ParamControl {pg} id="wtPos" />
+          <ParamControl {pg} id="oscMix" />
+        </div>
+      </div>
+      <div class="group">
+        <div class="title">Move the position {#if lfoOnPosition}<span class="on">● moving</span>{/if}</div>
+        {#if pg.explain}<p class="note">Set LFO 2 "To" to <em>WT Pos</em>, pick a shape and speed, then raise Depth. Or set the mod strip's target to <em>WT Pos</em> and scan with your finger.</p>{/if}
+        <div class="params">
+          <ParamControl {pg} id="lfo2Target" />
+          <ParamControl {pg} id="lfo2Wave" />
+          <ParamControl {pg} id="lfo2Rate" />
+          <ParamControl {pg} id="lfo2Depth" />
+          <ParamControl {pg} id="modTarget" />
+        </div>
+      </div>
+      <div class="group">
+        <div class="title">Then shape it</div>
+        <div class="params">
+          <ParamControl {pg} id="cutoff" />
+          <ParamControl {pg} id="resonance" />
+          <ParamControl {pg} id="unison" />
+          <ParamControl {pg} id="chorus" />
+        </div>
       </div>
     </div>
-    <div class="group">
-      <div class="title">Move the position {#if lfoOnPosition}<span class="on">● moving</span>{/if}</div>
-      {#if pg.explain}<p class="note">Set LFO 2 "To" to <em>WT Pos</em>, pick a shape and speed, then raise Depth. Or set the mod strip's target to <em>WT Pos</em> and scan with your finger.</p>{/if}
-      <div class="params">
-        <ParamControl {pg} id="lfo2Target" />
-        <ParamControl {pg} id="lfo2Wave" />
-        <ParamControl {pg} id="lfo2Rate" />
-        <ParamControl {pg} id="lfo2Depth" />
-        <ParamControl {pg} id="modTarget" />
-      </div>
-    </div>
-    <div class="group">
-      <div class="title">Then shape it</div>
-      <div class="params">
-        <ParamControl {pg} id="cutoff" />
-        <ParamControl {pg} id="resonance" />
-        <ParamControl {pg} id="unison" />
-        <ParamControl {pg} id="chorus" />
-      </div>
-    </div>
-  </div>
+  {/if}
 </section>
 
 <style>
@@ -197,7 +213,7 @@
   .pick span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pick.active { border-color: var(--accent); color: var(--accent); }
   .del { padding: 0 7px; font-size: 14px; color: var(--dim); }
-  .del:hover { color: #ff8a80; border-color: #ff8a80; }
+  .del:hover:not(:disabled) { color: #ff8a80; border-color: #ff8a80; }
   .imported { margin: 6px 0 0; }
   .import { display: grid; gap: 6px; padding-top: 6px; border-top: 1px solid var(--line); font-size: 11px; }
   .import label { display: flex; align-items: center; justify-content: space-between; gap: 6px; color: var(--dim); }

@@ -1,5 +1,5 @@
-// Imported wavetables, kept in the browser's IndexedDB (a 256-frame table is 2 MB: too big for localStorage).
-// They are read once at startup, before the app starts, so presets that use them find them.
+// Imported and drawn wavetables, kept in the browser's IndexedDB (a 256-frame table is 2 MB: too big for
+// localStorage). They are read once at startup, before the app starts, so presets that use them find them.
 
 import { addTable, FRAME_SIZE, type WavetableDef } from "./wavetables";
 
@@ -12,6 +12,8 @@ interface StoredTable {
   explain: string;
   /** Every frame back to back, FRAME_SIZE samples each. */
   samples: Float32Array;
+  /** A drawn table's keyframes, back to back, and how they blend. */
+  drawn?: { keys: Float32Array; blend: "harmonics" | "crossfade" };
 }
 
 let opening: Promise<IDBDatabase> | null = null;
@@ -37,15 +39,32 @@ function request<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => ID
   );
 }
 
+const join = (frames: Float32Array[]) => {
+  const out = new Float32Array(frames.length * FRAME_SIZE);
+  frames.forEach((f, i) => out.set(f, i * FRAME_SIZE));
+  return out;
+};
+const split = (samples: Float32Array) =>
+  Array.from({ length: samples.length / FRAME_SIZE }, (_, f) => samples.subarray(f * FRAME_SIZE, (f + 1) * FRAME_SIZE));
+
+const toStored = (def: WavetableDef): StoredTable => ({
+  name: def.name,
+  short: def.short,
+  explain: def.explain,
+  samples: join(def.frames ?? []),
+  drawn: def.drawn && { keys: join(def.drawn.keys), blend: def.drawn.blend },
+});
+
 const toDef = (t: StoredTable, storeKey: number): WavetableDef => ({
   name: t.name,
   short: t.short,
   explain: t.explain,
   storeKey,
-  frames: Array.from({ length: t.samples.length / FRAME_SIZE }, (_, f) => t.samples.subarray(f * FRAME_SIZE, (f + 1) * FRAME_SIZE)),
+  frames: split(t.samples),
+  drawn: t.drawn && { keys: split(t.drawn.keys).map((k) => Float32Array.from(k)), blend: t.drawn.blend },
 });
 
-/** Add every saved table to the table list, in the order they were imported. Never fails: a broken store is skipped. */
+/** Add every saved table to the table list, in the order they were saved. Never fails: a broken store is skipped. */
 export async function loadImportedTables(): Promise<void> {
   try {
     const [keys, tables] = await Promise.all([
@@ -60,11 +79,20 @@ export async function loadImportedTables(): Promise<void> {
 
 /** Save a new table and add it to the list; returns its id. */
 export async function saveImportedTable(def: Omit<WavetableDef, "frames" | "storeKey">, frames: Float32Array[]): Promise<number> {
-  const samples = new Float32Array(frames.length * FRAME_SIZE);
-  frames.forEach((f, i) => samples.set(f, i * FRAME_SIZE));
-  const stored: StoredTable = { name: def.name, short: def.short, explain: def.explain, samples };
+  const stored = toStored({ ...def, frames });
   const key = (await request("readwrite", (s) => s.add(stored))) as number;
   return addTable(toDef(stored, key));
+}
+
+/** Save a table that is already in the list (a new drawing); sets its storeKey. */
+export async function storeTable(def: WavetableDef): Promise<void> {
+  def.storeKey = (await request("readwrite", (s) => s.add(toStored(def)))) as number;
+}
+
+/** Save over a stored table (a drawing edited again). */
+export async function updateStoredTable(def: WavetableDef): Promise<void> {
+  if (def.storeKey === undefined) return;
+  await request("readwrite", (s) => s.put(toStored(def), def.storeKey));
 }
 
 export async function deleteImportedTable(storeKey: number): Promise<void> {

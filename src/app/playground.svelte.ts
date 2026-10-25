@@ -22,8 +22,10 @@ import {
   type NoteSeqSettings,
 } from "../audio/stepSequencer";
 import { TABLE_WAVE } from "../audio/oscCore";
-import { BUILTIN_TABLES, idAfterRemoval, removeTable, tableDef, WAVETABLES, type WavetableDef } from "../audio/wavetables";
-import { deleteImportedTable, saveImportedTable } from "../audio/tableStore";
+import { addTable, BUILTIN_TABLES, idAfterRemoval, removeTable, renameTable, replaceFrames, tableDef, tableFrames, WAVETABLES, type WavetableDef } from "../audio/wavetables";
+import { deleteImportedTable, saveImportedTable, storeTable, updateStoredTable } from "../audio/tableStore";
+import { blendKeyframes, shapeWave } from "../audio/tableDraw";
+import { TableEditor } from "./wavetable/tableEditor.svelte";
 import { cutIntoFrames, decodeSoundFile, type CutMode } from "../audio/wavImport";
 import { findPorts, isMainPort, MiniLab, requestMidi } from "../minilab/device";
 import { Freezes, Rolling } from "./timing";
@@ -165,6 +167,9 @@ export class Playground {
   /** A WAV import in progress, and how the last one went. */
   importing = $state(false);
   importResult = $state<{ ok: boolean; text: string } | null>(null);
+  /** The "Draw a table" editor, while it is open. */
+  tableEditor = $state.raw<TableEditor | null>(null);
+  private draftTimer = 0;
 
   bpm = $state(120);
   drumsOn = $state(true);
@@ -359,6 +364,12 @@ export class Playground {
 
   /** Knob i to control position t (0..1). `cc` is set when it came from the hardware. */
   setKnob(i: number, t: number, cc?: number) {
+    // Drawing a table: knobs 1-8 are harmonics 1-8 of the keyframe being drawn.
+    if (this.tableEditor && this.view === "wavetable") {
+      this.tableEditor.setHarmonic(i, t);
+      if (cc !== undefined) this.device?.send(parameterMessage(cc, `Harmonic ${i + 1}`, `${Math.round(t * 100)}%`), "display");
+      return;
+    }
     const id = this.knobParams[i];
     if (!id) return;
     this.setParam(id, fromControl(id, t));
@@ -822,14 +833,22 @@ export class Playground {
     }
   }
 
-  /**
-   * Delete an imported table. The tables after it move down one place, so both parts, the Dice patches
-   * and the saved user presets are updated to match; whatever used the deleted table gets the first one.
-   */
+  /** Delete an imported or drawn table (from the browser's storage too). */
   async deleteTable(id: number) {
     const def = WAVETABLES[id];
     if (id < BUILTIN_TABLES || def?.storeKey === undefined) return;
+    if (this.tableEditor?.original === def) this.cancelTableEditor();
     await deleteImportedTable(def.storeKey);
+    this.dropTable(WAVETABLES.indexOf(def));
+    this.importResult = { ok: true, text: `Deleted ${def.name}.` };
+  }
+
+  /**
+   * Take a table out of the list. The tables after it move down one place, so both parts, the Dice patches
+   * and the saved user presets are updated to match; whatever used the removed table gets the first one.
+   */
+  private dropTable(id: number) {
+    if (id < BUILTIN_TABLES) return;
     const oldCount = WAVETABLES.length;
     removeTable(id);
     this.tables = [...WAVETABLES];
@@ -851,8 +870,104 @@ export class Playground {
       saveUserPresets(user);
       this.presets = [...FACTORY_PRESETS, ...user];
     }
-    this.importResult = { ok: true, text: `Deleted ${def.name}.` };
     this.realignKnobs();
+  }
+
+  // ------------------------------------------------------------------ drawing a table
+
+  /**
+   * Open the table editor: a new drawing (sine to saw), or `editId`, a saved drawing, again. While it is
+   * open the synth plays a draft table at the end of the list, rebuilt as you draw.
+   */
+  openTableEditor(editId?: number) {
+    if (this.tableEditor) return;
+    const original = editId !== undefined && WAVETABLES[editId]?.drawn ? WAVETABLES[editId] : null;
+    const keys = original ? original.drawn!.keys.map((k) => Float32Array.from(k)) : [shapeWave("sine"), shapeWave("saw")];
+    const blend = original?.drawn!.blend ?? "harmonics";
+    const draft: WavetableDef = {
+      name: "Drawing…",
+      short: "Drawing",
+      explain: original ? `Editing ${original.name}. Not saved yet.` : "The table you are drawing. Not saved yet.",
+      frames: blendKeyframes(keys, blend),
+    };
+    const previous = tableDef(this.values.wtTable);
+    const id = addTable(draft);
+    this.tables = [...WAVETABLES];
+    this.engine.tablesChanged(id, id);
+    const editor = new TableEditor(original, draft, previous, keys, blend, (fromKnob) => this.draftChanged(fromKnob));
+    const drawings = WAVETABLES.filter((t) => t.drawn).length;
+    editor.name = original?.name ?? `Drawing ${drawings + 1}`;
+    this.tableEditor = editor;
+    this.setView("wavetable");
+    this.selectTable(id);
+  }
+
+  /** Rebuild the draft table from the keyframes, at most every 40 ms (it takes a few ms). */
+  private draftChanged(fromKnob: boolean) {
+    if (!fromKnob) this.realignKnobs();
+    if (this.draftTimer) return;
+    this.draftTimer = window.setTimeout(() => {
+      this.draftTimer = 0;
+      const editor = this.tableEditor;
+      const id = editor ? WAVETABLES.indexOf(editor.draft) : -1;
+      if (!editor || id < 0) return;
+      replaceFrames(id, editor.frames());
+      this.engine.tableUpdated(id);
+      editor.built++;
+    }, 40);
+  }
+
+  /** Play the drawing (after another table was picked while drawing). */
+  playDraft() {
+    const editor = this.tableEditor;
+    if (editor) this.selectTable(WAVETABLES.indexOf(editor.draft));
+  }
+
+  /** Save the drawing: as a new table, or over the drawing that was opened. */
+  async saveTableEditor() {
+    const editor = this.tableEditor;
+    if (!editor) return;
+    clearTimeout(this.draftTimer);
+    this.draftTimer = 0;
+    const frames = editor.frames();
+    const name = editor.name.trim().slice(0, 24) || "Drawing";
+    const target = editor.original ?? editor.draft;
+    target.explain = `Drawn by you: ${editor.keys.length} keyframes, blended by ${editor.blend === "harmonics" ? "harmonics (each one's strength moves smoothly)" : "crossfade (the waves are mixed)"}.`;
+    target.drawn = { keys: editor.keys.map((k) => Float32Array.from(k)), blend: editor.blend };
+    const id = WAVETABLES.indexOf(target);
+    renameTable(id, name, name.slice(0, 8));
+    replaceFrames(id, frames);
+    try {
+      if (editor.original) await updateStoredTable(editor.original);
+      else await storeTable(editor.draft);
+    } catch (e) {
+      this.importResult = { ok: false, text: `Couldn't save ${name}: ${e instanceof Error ? e.message : String(e)}` };
+      return;
+    }
+    this.tableEditor = null;
+    this.engine.tableUpdated(id);
+    // Editing a saved drawing: the draft was only for listening.
+    if (editor.original) this.dropTable(WAVETABLES.indexOf(editor.draft));
+    this.tables = [...WAVETABLES];
+    this.selectTable(WAVETABLES.indexOf(target));
+    this.importResult = { ok: true, text: `Saved ${name}.` };
+  }
+
+  /** Close the editor without saving: the draft goes, and the table that played before comes back. */
+  cancelTableEditor() {
+    const editor = this.tableEditor;
+    if (!editor) return;
+    clearTimeout(this.draftTimer);
+    this.draftTimer = 0;
+    this.tableEditor = null;
+    this.dropTable(WAVETABLES.indexOf(editor.draft));
+    this.selectTable(Math.max(0, WAVETABLES.indexOf(editor.previous)));
+  }
+
+  /** The frames of the table that played before the editor opened (to copy a keyframe from). */
+  previousFrames(): Float32Array[] {
+    const editor = this.tableEditor;
+    return tableFrames(editor ? Math.max(0, WAVETABLES.indexOf(editor.previous)) : 0);
   }
 
   setView(view: View) {
@@ -1148,6 +1263,11 @@ export class Playground {
 
   /** Move the device's stored knob values to what they now control, so the next turn doesn't jump. */
   private realignKnobs() {
+    if (this.tableEditor && this.view === "wavetable") {
+      const amps = this.tableEditor.amps();
+      for (let i = 0; i < 8; i++) this.device?.send(knobValueMessage(i, Math.round(Math.min(1, amps[i]) * 127)), `knob-${i}`);
+      return;
+    }
     if (this.seqEdit) {
       for (let i = 0; i < NOTE_STEPS; i++) this.device?.send(knobValueMessage(i, Math.round(this.stepKnobPosition(i) * 127)), `knob-${i}`);
       return;
