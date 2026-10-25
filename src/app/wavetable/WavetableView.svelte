@@ -1,6 +1,7 @@
 <script lang="ts">
   import { formatValue, PARAMS } from "../../audio/params";
-  import { WAVETABLES } from "../../audio/wavetables";
+  import { BUILTIN_TABLES, tableDef } from "../../audio/wavetables";
+  import { CUT_MODE_NAMES, CUT_MODES, type CutMode } from "../../audio/wavImport";
   import { surface } from "../components/canvas";
   import type { Playground } from "../playground.svelte";
   import { usesTable, WAVETABLE_KNOBS } from "../synth/blocks";
@@ -12,12 +13,44 @@
 
   const color = () => accent;
   let engine = $derived(pg.engine);
-  let table = $derived(WAVETABLES[pg.values.wtTable]);
+  // pg.tables is read so the description follows imports and deletions.
+  let table = $derived(pg.tables && tableDef(pg.values.wtTable));
+  let frameCount = $derived(table.frames?.length);
+  let cutMode = $state<CutMode>("auto");
+  let dragging = $state(false);
+  let fileInput: HTMLInputElement;
+
+  function importFiles(files: FileList | null | undefined) {
+    const file = files?.[0];
+    if (file) pg.importTable(file, cutMode);
+  }
+
+  function drop(e: DragEvent) {
+    e.preventDefault();
+    dragging = false;
+    importFiles(e.dataTransfer?.files);
+  }
+
+  function remove(i: number) {
+    if (confirm(`Delete the wavetable "${pg.tables[i].name}"? Presets that use it switch to the first table.`)) pg.deleteTable(i);
+  }
   let active = $derived(usesTable(pg.values));
   let lfoOnPosition = $derived(pg.values.lfoTarget === 4 || pg.values.lfo2Target === 4 || pg.values.modTarget === 4);
 </script>
 
-<section class="wt">
+<section
+  class="wt"
+  class:dragging
+  ondragover={(e) => {
+    e.preventDefault();
+    dragging = true;
+  }}
+  ondragleave={(e) => {
+    if (e.currentTarget === e.target || !e.currentTarget.contains(e.relatedTarget as Node)) dragging = false;
+  }}
+  ondrop={drop}
+  aria-label="Wavetable"
+>
   <aside class="detail">
     <div>
       <h3>Wavetable</h3>
@@ -30,7 +63,7 @@
       {/if}
     </div>
     <div>
-      <h3>{table.name}</h3>
+      <h3>{table.name}{#if frameCount}<span class="frames">{frameCount} frame{frameCount > 1 ? "s" : ""}</span>{/if}</h3>
       <p>{table.explain}</p>
     </div>
     <div class="knobmap">
@@ -53,14 +86,35 @@
   {/if}
 
   <div class="main">
-    <nav class="tables" aria-label="Wavetables">
-      {#each WAVETABLES as def, i (i)}
-        <button class:active={pg.values.wtTable === i} onclick={() => pg.selectTable(i)}>
-          <canvas use:surface={{ draw: draw.thumbnail(i, pg.values.wtTable === i ? accent : "#9aa7ab"), key: pg.values.wtTable === i }}></canvas>
-          <span>{def.name}</span>
-        </button>
-      {/each}
-    </nav>
+    <div class="left">
+      <nav class="tables" aria-label="Wavetables">
+        {#each pg.tables as def, i (def)}
+          {#if i === BUILTIN_TABLES}<div class="title imported">Imported</div>{/if}
+          <div class="row">
+            <button class="pick" class:active={pg.values.wtTable === i} onclick={() => pg.selectTable(i)} title={def.name}>
+              <canvas use:surface={{ draw: draw.thumbnail(i, pg.values.wtTable === i ? accent : "#9aa7ab"), key: `${pg.values.wtTable === i}${i}` }}></canvas>
+              <span>{def.name}</span>
+            </button>
+            {#if i >= BUILTIN_TABLES}<button class="del" title="Delete this table" onclick={() => remove(i)}>×</button>{/if}
+          </div>
+        {/each}
+      </nav>
+      <div class="import">
+        <button onclick={() => fileInput.click()} disabled={pg.importing}>{pg.importing ? "Importing…" : "Import a sound…"}</button>
+        <input bind:this={fileInput} type="file" accept=".wav,audio/*" hidden onchange={(e) => {
+          importFiles(e.currentTarget.files);
+          e.currentTarget.value = "";
+        }} />
+        <label>
+          <span>Cut as</span>
+          <select bind:value={cutMode}>
+            {#each CUT_MODES as mode (mode)}<option value={mode}>{CUT_MODE_NAMES[mode]}</option>{/each}
+          </select>
+        </label>
+        <p class="hint">Or drop a file anywhere here. A Serum table (WAV, 2048-sample frames) is read as it is; any other short sound is cut into frames.</p>
+        {#if pg.importResult}<p class="result" class:error={!pg.importResult.ok}>{pg.importResult.text}</p>{/if}
+      </div>
+    </div>
 
     <div class="view">
       <LiveCanvas height={330} draw={draw.stack(engine, color)} />
@@ -135,9 +189,23 @@
   .notice { display: flex; align-items: center; gap: 12px; padding: 8px 14px; border: 1px solid #ffcc33; border-radius: 8px; background: #ffcc3318; color: #ffe08a; font-size: 12px; }
 
   .main { display: grid; grid-template-columns: 170px 1fr 280px; gap: 12px; align-items: start; }
-  .tables { display: flex; flex-direction: column; gap: 6px; }
-  .tables button { display: grid; grid-template-columns: 48px 1fr; align-items: center; gap: 8px; padding: 4px 8px; text-align: left; font-size: 12px; }
-  .tables button.active { border-color: var(--accent); color: var(--accent); }
+  .wt.dragging .main { outline: 2px dashed var(--accent); outline-offset: 4px; border-radius: 8px; }
+  .left { display: grid; gap: 4px; }
+  .tables { display: flex; flex-direction: column; gap: 6px; max-height: 430px; overflow-y: auto; }
+  .row { display: flex; gap: 4px; }
+  .pick { flex: 1; min-width: 0; display: grid; grid-template-columns: 48px 1fr; align-items: center; gap: 8px; padding: 4px 8px; text-align: left; font-size: 12px; }
+  .pick span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pick.active { border-color: var(--accent); color: var(--accent); }
+  .del { padding: 0 7px; font-size: 14px; color: var(--dim); }
+  .del:hover { color: #ff8a80; border-color: #ff8a80; }
+  .imported { margin: 6px 0 0; }
+  .import { display: grid; gap: 6px; padding-top: 6px; border-top: 1px solid var(--line); font-size: 11px; }
+  .import label { display: flex; align-items: center; justify-content: space-between; gap: 6px; color: var(--dim); }
+  .import select { font-size: 11px; max-width: 110px; }
+  .hint { margin: 0; color: var(--dim); line-height: 1.35; }
+  .result { margin: 0; line-height: 1.35; color: #b9e6b0; overflow-wrap: anywhere; }
+  .result.error { color: #ff8a80; }
+  .frames { margin-left: 8px; font: 10px var(--mono); color: var(--dim); }
   .tables canvas { width: 48px; height: 26px; display: block; }
   .view { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: grid; gap: 8px; }
   .scrub { display: flex; align-items: center; gap: 10px; font-size: 12px; }

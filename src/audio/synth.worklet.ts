@@ -76,7 +76,10 @@ class TableLoader extends AudioWorkletProcessor {
   constructor() {
     super();
     reporter = this.port;
-    this.port.onmessage = (e) => TABLES.set(e.data.id, { frames: e.data.frames, levels: e.data.levels });
+    this.port.onmessage = (e) => {
+      if (e.data.levels) TABLES.set(e.data.id, { frames: e.data.frames, levels: e.data.levels });
+      else TABLES.delete(e.data.id);
+    };
   }
   process() {
     return false;

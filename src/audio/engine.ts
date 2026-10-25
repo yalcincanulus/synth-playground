@@ -6,7 +6,7 @@ import { Part, type PartTapId, type VoiceState } from "./part";
 import workletUrl from "./synth.worklet.ts?worker&url";
 import type { NoteOwner } from "./voice";
 import { CpuGuard, pickVictim } from "./voiceLimit";
-import { buildMips, FRAMES, tableFrames, WAVETABLES } from "./wavetables";
+import { BUILTIN_TABLES, buildMips, tableFrames, WAVETABLES } from "./wavetables";
 
 export { LFO_AMP, LFO_FILTER_CENTS, LFO_PITCH_CENTS, LFO_POSITION, LFO_WIDTH } from "./dsp/lfo";
 export type { VoiceState } from "./part";
@@ -96,8 +96,9 @@ export class Engine {
       const seed = Math.floor(Math.random() * 2 ** 32);
       this.parts.keys.start(seed);
       this.parts.seq.start(seed ^ 0x5eed);
-      // The rest in the background (about 15 ms each), so switching tables later is instant.
-      WAVETABLES.forEach((_, i) => setTimeout(() => this.loadTable(i), 300 + i * 80));
+      // The other built-in tables in the background (about 15 ms each), so switching tables later is instant.
+      // Imported ones can be large (up to 256 frames), so they load when a part first uses them.
+      for (let i = 0; i < BUILTIN_TABLES; i++) setTimeout(() => this.loadTable(i), 300 + i * 80);
     });
 
     // The drums' noise.
@@ -162,9 +163,22 @@ export class Engine {
     if (this.cpuGuard.overloaded(cpu.load)) this.cutForCpu(this.ctx.currentTime);
   }
 
-  /** Send every wavetable to the audio thread now (the render check needs them before rendering starts). */
+  /** Send every built-in wavetable to the audio thread now (the render check needs them before rendering starts). */
   loadAllTables() {
-    WAVETABLES.forEach((_, i) => this.loadTable(i));
+    for (let i = 0; i < BUILTIN_TABLES; i++) this.loadTable(i);
+  }
+
+  /**
+   * The table list changed from `from` on: the audio thread forgets those ids, and gets them again when a
+   * part next uses one. `oldCount` is the list's length before the change (after an import, the same as
+   * `from`: nothing to forget, but a part may already name the new id, say from a preset).
+   */
+  tablesChanged(from: number, oldCount: number) {
+    for (let id = from; id < oldCount; id++) {
+      if (!this.tablesSent.delete(id)) continue;
+      this.tableLoader?.port.postMessage({ id });
+    }
+    for (const part of this.allParts) this.loadTable(part.params.wtTable);
   }
 
   // --- parameters (of the selected part unless another is named)
@@ -217,10 +231,11 @@ export class Engine {
 
   /** Prepare a wavetable's mipmaps and hand them to the audio thread, once per table. */
   private loadTable(id: number) {
-    if (!this.tableLoader || this.tablesSent.has(id)) return;
+    if (!this.tableLoader || this.tablesSent.has(id) || !WAVETABLES[id]) return;
     this.tablesSent.add(id);
-    const levels = buildMips(tableFrames(id));
-    this.tableLoader.port.postMessage({ id, frames: FRAMES, levels }, levels.map((l) => l.buffer));
+    const frames = tableFrames(id);
+    const levels = buildMips(frames);
+    this.tableLoader.port.postMessage({ id, frames: frames.length, levels }, levels.map((l) => l.buffer));
   }
 
   // --- live state of the selected part, for visualisation

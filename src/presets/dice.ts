@@ -1,5 +1,6 @@
 import type { ParamId, ParamValues } from "../audio/params";
 import type { Preset, Rgb } from "./presets";
+import { BUILTIN_TABLES } from "../audio/wavetables";
 
 const rand = (min: number, max: number) => min + Math.random() * (max - min);
 const expRand = (min: number, max: number) => min * Math.pow(max / min, Math.random());
@@ -114,7 +115,7 @@ export function rollDice(): Preset {
 
   // Sometimes a wavetable on Osc 1, with LFO 2 scanning through it.
   if (chance(0.25)) {
-    Object.assign(v, { osc1Wave: 4, wtTable: Math.floor(Math.random() * 8), wtPos: rand(0, 1), lfo2Target: 4, lfo2Depth: rand(0.3, 0.9), lfo2Rate: expRand(0.08, 1.5) });
+    Object.assign(v, { osc1Wave: 4, wtTable: Math.floor(Math.random() * BUILTIN_TABLES), wtPos: rand(0, 1), lfo2Target: 4, lfo2Depth: rand(0.3, 0.9), lfo2Rate: expRand(0.08, 1.5) });
   }
 
   // A few mod matrix routes. Sources: 6 mod env, 7 velocity, 10 random; destinations: 0 pitch, 2 cutoff, 5 wt pos.

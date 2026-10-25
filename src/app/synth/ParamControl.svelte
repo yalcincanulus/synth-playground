@@ -16,24 +16,26 @@
   const BUTTONS = new Set<ParamId>(["osc1Wave", "osc2Wave"]);
 
   let def: ParamDef = $derived(PARAMS[id]);
+  /** The choices; the wavetable list grows and shrinks with imports, so it is read from the playground. */
+  let options = $derived(id === "wtTable" ? pg.tables.map((t) => t.short) : def.options);
   /** Which hardware knob (1-8) controls this right now, if any. */
   let knob = $derived(pg.knobParams.indexOf(id) + 1);
 </script>
 
-{#if def.options && def.options.length > 4 && !BUTTONS.has(id)}
+{#if options && options.length > 4 && !BUTTONS.has(id)}
   <!-- Long choice lists as a compact dropdown, so blocks stay short. -->
   <label class="select" class:hot={pg.touched?.param === id}>
     <span class="label">{#if knob}<span class="k" title="MiniLab knob {knob}">{knob}</span>{/if}{def.label}</span>
     <select value={Math.round(pg.values[id])} onchange={(e) => pg.setParam(id, +e.currentTarget.value)} onclick={(e) => e.stopPropagation()}>
-      {#each def.options as option, i}<option value={i}>{SHORT[option] ?? option}</option>{/each}
+      {#each options as option, i}<option value={i}>{SHORT[option] ?? option}</option>{/each}
     </select>
   </label>
-{:else if def.options}
+{:else if options}
   <!-- Two-way switches fit in one cell, next to a knob; longer lists take the whole row. -->
-  <div class="enum" class:short={def.options.length <= 2} class:hot={pg.touched?.param === id}>
+  <div class="enum" class:short={options.length <= 2} class:hot={pg.touched?.param === id}>
     <div class="label">{#if knob}<span class="k" title="MiniLab knob {knob}">{knob}</span>{/if}{def.label}</div>
     <div class="options">
-      {#each def.options as option, i}
+      {#each options as option, i}
         <button class:active={Math.round(pg.values[id]) === i} onclick={() => pg.setParam(id, i)}>{SHORT[option] ?? option}</button>
       {/each}
     </div>

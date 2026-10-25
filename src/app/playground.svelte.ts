@@ -22,7 +22,9 @@ import {
   type NoteSeqSettings,
 } from "../audio/stepSequencer";
 import { TABLE_WAVE } from "../audio/oscCore";
-import { WAVETABLES } from "../audio/wavetables";
+import { BUILTIN_TABLES, idAfterRemoval, removeTable, tableDef, WAVETABLES, type WavetableDef } from "../audio/wavetables";
+import { deleteImportedTable, saveImportedTable } from "../audio/tableStore";
+import { cutIntoFrames, decodeSoundFile, type CutMode } from "../audio/wavImport";
 import { findPorts, isMainPort, MiniLab, requestMidi } from "../minilab/device";
 import { Freezes, Rolling } from "./timing";
 import {
@@ -157,6 +159,12 @@ export class Playground {
   patch = $state<null | "source" | number>(null);
   /** Synth view: show plain-English explanations on each block. */
   explain = $state(localStorage.getItem(EXPLAIN_KEY) !== "off");
+
+  /** Every wavetable, built-in then imported (a copy of WAVETABLES, replaced when it changes, for the UI). */
+  tables = $state.raw<WavetableDef[]>([...WAVETABLES]);
+  /** A WAV import in progress, and how the last one went. */
+  importing = $state(false);
+  importResult = $state<{ ok: boolean; text: string } | null>(null);
 
   bpm = $state(120);
   drumsOn = $state(true);
@@ -783,14 +791,67 @@ export class Playground {
 
   /** Wavetable tab encoder: step through the tables. Picking a table switches Osc 1 to it if no oscillator plays one. */
   stepTable(delta: number) {
-    const n = WAVETABLES.length;
+    const n = this.tables.length;
     this.selectTable((((this.values.wtTable + delta) % n) + n) % n);
   }
 
   selectTable(id: number) {
     if (!usesTable(this.values)) this.setParam("osc1Wave", TABLE_WAVE);
     this.setParam("wtTable", id);
-    this.showMessage("Wavetable", WAVETABLES[id].name);
+    this.showMessage("Wavetable", tableDef(id).name);
+    this.realignKnobs();
+  }
+
+  /** Read a sound file, cut it into frames, save it as a new table and play it. */
+  async importTable(file: File, mode: CutMode = "auto") {
+    this.importing = true;
+    try {
+      const sound = await decodeSoundFile(await file.arrayBuffer(), this.engine.ctx);
+      const { frames, how } = cutIntoFrames(sound, mode);
+      const name = file.name.replace(/\.[^.]+$/, "").slice(0, 24) || "Imported";
+      const explain = `Imported from ${file.name}. ${how}`;
+      const id = await saveImportedTable({ name, short: name.slice(0, 8), explain }, frames);
+      this.tables = [...WAVETABLES];
+      this.engine.tablesChanged(id, id);
+      this.selectTable(id);
+      this.importResult = { ok: true, text: `${name}: ${how}` };
+    } catch (e) {
+      this.importResult = { ok: false, text: `${file.name}: ${e instanceof Error ? e.message : String(e)}` };
+    } finally {
+      this.importing = false;
+    }
+  }
+
+  /**
+   * Delete an imported table. The tables after it move down one place, so both parts, the Dice patches
+   * and the saved user presets are updated to match; whatever used the deleted table gets the first one.
+   */
+  async deleteTable(id: number) {
+    const def = WAVETABLES[id];
+    if (id < BUILTIN_TABLES || def?.storeKey === undefined) return;
+    await deleteImportedTable(def.storeKey);
+    const oldCount = WAVETABLES.length;
+    removeTable(id);
+    this.tables = [...WAVETABLES];
+    this.engine.tablesChanged(id, oldCount);
+    for (const owner of ["keys", "seq"] as const) {
+      const part = this.parts[owner];
+      if (part.values.wtTable === id) part.dirty = true;
+      const next = idAfterRemoval(part.values.wtTable, id);
+      if (next !== part.values.wtTable) {
+        part.values.wtTable = next;
+        this.engine.setParam("wtTable", next, owner);
+      }
+      if (part.dicePreset?.values.wtTable !== undefined) part.dicePreset.values.wtTable = idAfterRemoval(part.dicePreset.values.wtTable, id);
+    }
+    const user = loadUserPresets();
+    const changed = user.filter((p) => p.values.wtTable !== undefined && p.values.wtTable >= id);
+    for (const p of changed) p.values.wtTable = idAfterRemoval(p.values.wtTable!, id);
+    if (changed.length) {
+      saveUserPresets(user);
+      this.presets = [...FACTORY_PRESETS, ...user];
+    }
+    this.importResult = { ok: true, text: `Deleted ${def.name}.` };
     this.realignKnobs();
   }
 

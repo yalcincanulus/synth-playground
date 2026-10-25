@@ -21,6 +21,10 @@ export interface WavetableDef {
   frame?: (t: number, p: number) => number;
   /** ...or the amplitude of harmonic `h` (1 = fundamental) in frame `t`, with optional fixed phases. */
   harmonics?: { count: number; amp: (t: number, h: number) => number; phases?: number[] };
+  /** ...or ready-made frames (an imported table), any number of them. */
+  frames?: Float32Array[];
+  /** An imported table's key in the browser's storage (see tableStore.ts). */
+  storeKey?: number;
 }
 
 const TAU = 2 * Math.PI;
@@ -130,15 +134,46 @@ export const WAVETABLES: WavetableDef[] = [
   },
 ];
 
+/** The built-in tables come first; imported ones follow, in the order they were imported. */
+export const BUILTIN_TABLES = WAVETABLES.length;
+
+/** Short names of every table, built-in and imported (the Wavetable parameter's choices: kept in step with WAVETABLES). */
 export const WAVETABLE_NAMES = WAVETABLES.map((w) => w.short);
+
+/** Add an imported table at the end of the list; returns its id. */
+export function addTable(def: WavetableDef): number {
+  WAVETABLES.push(def);
+  WAVETABLE_NAMES.push(def.short);
+  return WAVETABLES.length - 1;
+}
+
+/** Take an imported table out of the list. The ones after it move down one id. */
+export function removeTable(id: number) {
+  if (id < BUILTIN_TABLES || id >= WAVETABLES.length) return;
+  WAVETABLES.splice(id, 1);
+  WAVETABLE_NAMES.splice(id, 1);
+  for (const cache of [frameCache, harmonicsCache]) for (const key of [...cache.keys()]) if (key >= id) cache.delete(key);
+}
+
+/** A table's id after table `removed` was taken out (a table that was removed falls back to the first). */
+export const idAfterRemoval = (id: number, removed: number) => (id === removed ? 0 : id > removed ? id - 1 : id);
+
+/** The table with this id, or the first one if there is none (say a preset names an imported table since deleted). */
+export const tableDef = (id: number): WavetableDef => WAVETABLES[id] ?? WAVETABLES[0];
 
 const frameCache = new Map<number, Float32Array[]>();
 
 /** The table's frames, normalised to a peak of 1 with no DC offset. */
 export function tableFrames(id: number): Float32Array[] {
+  if (!WAVETABLES[id]) id = 0;
   let frames = frameCache.get(id);
   if (frames) return frames;
-  const def = WAVETABLES[id] ?? WAVETABLES[0];
+  const def = WAVETABLES[id];
+  // Imported frames were cleaned up when they were cut (wavImport.ts).
+  if (def.frames) {
+    frameCache.set(id, def.frames);
+    return def.frames;
+  }
   frames = [];
   for (let f = 0; f < FRAMES; f++) {
     const t = f / (FRAMES - 1);
@@ -268,6 +303,7 @@ const harmonicsCache = new Map<number, Float32Array[]>();
 
 /** Strength of harmonics 1..count in every frame of a table, scaled so the loudest is 1, for drawing. */
 export function tableHarmonics(id: number, count = 32): Float32Array[] {
+  if (!WAVETABLES[id]) id = 0;
   let out = harmonicsCache.get(id);
   if (out) return out;
   const re = new Float64Array(FRAME_SIZE);

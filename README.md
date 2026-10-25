@@ -79,6 +79,11 @@ right now lit up, plus that wave and its harmonics. Set an oscillator's wave to 
 built-in tables (the encoder steps through them), and move **WT Pos**: by hand, with knob 1, or with an LFO or
 the mod strip set to *WT Pos*. Tables are band-limited per octave, so high notes stay clean.
 
+**Import a sound…** (or drop a file on the tab) adds your own table. A Serum-format WAV (2048-sample frames, up to
+256) is read frame for frame; any other short sound (WAV, MP3, OGG…) is cut into 64 frames: single cycles if it
+has a pitch, looped slices if not. "Cut as" forces one of the three. Imported tables are kept in the browser
+(IndexedDB) and listed under the built-in ones; × deletes one, and presets that used it switch to the first table.
+
 Without a MiniLab, the computer keyboard plays notes (A row; Z/X change octave), and every control works with the mouse.
 
 ## Layout
@@ -91,7 +96,8 @@ Without a MiniLab, the computer keyboard plays notes (A row; Z/X change octave),
   signal that sets the part's chorus and send levels. Each voice's sound path runs at twice the sample rate; the part's sum
   comes back down through a half-band filter (`dsp/halfband.ts`). The effects are Web Audio nodes; the
   output ends in a limiter and a soft clipper (`softClip.ts`).
-  `wavetables.ts` defines the built-in wavetables and prepares their per-octave versions.
+  `wavetables.ts` defines the built-in wavetables and prepares their per-octave versions; `wavImport.ts` reads
+  WAV files and cuts sounds into frames, and `tableStore.ts` keeps imported tables in IndexedDB.
 - `src/presets/`: factory presets; user presets are stored in localStorage.
 - `src/app/`: Svelte UI. `playground.svelte.ts` connects the device, the engine and the UI.
 - `src/probe/`: the raw MIDI probe page used to map the device.

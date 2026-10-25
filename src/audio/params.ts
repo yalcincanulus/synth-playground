@@ -90,7 +90,13 @@ export const PARAMS = {
   oscMix: { label: "Osc Mix", min: 0, max: 1, curve: "lin", default: 0.5, format: (v) => `${Math.round((1 - v) * 100)}/${Math.round(v * 100)}` },
   subLevel: { label: "Sub Osc", min: 0, max: 1, curve: "lin", default: 0, format: pct },
   noiseLevel: { label: "Noise", min: 0, max: 1, curve: "lin", default: 0, format: pct },
-  wtTable: enumParam("Wavetable", WAVETABLE_NAMES, 0),
+  // Imported tables join the list (wavetables.ts), so its top value follows it.
+  wtTable: {
+    ...enumParam("Wavetable", WAVETABLE_NAMES, 0),
+    get max() {
+      return WAVETABLE_NAMES.length - 1;
+    },
+  },
   wtPos: { label: "WT Pos", min: 0, max: 1, curve: "lin", default: 0, format: pct },
   pulseWidth: { label: "PulseWidth", min: 0.05, max: 0.5, curve: "lin", default: 0.5, format: pct },
   oscSync: enumParam("Sync", ["off", "on"], 0),

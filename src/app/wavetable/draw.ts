@@ -7,6 +7,8 @@ import { grid, type Surface } from "../components/canvas";
 type Draw = (s: Surface) => void;
 
 const POINTS = 160;
+/** Most frames drawn in the stack. */
+const MAX_DRAWN = 48;
 
 function wavePath(g: CanvasRenderingContext2D, frame: (p: number) => number, x0: number, y0: number, width: number, amp: number) {
   g.beginPath();
@@ -34,10 +36,15 @@ export function stack(engine: Engine, color: () => string): Draw {
     const width = w - depthX - pad * 2;
     const amp = h * 0.16;
     const baseY = h - amp - pad;
-    const at = (f: number) => [pad + (f / (n - 1)) * depthX, baseY - (f / (n - 1)) * depthY] as const;
+    const last = Math.max(1, n - 1);
+    const at = (f: number) => [pad + (f / last) * depthX, baseY - (f / last) * depthY] as const;
 
-    // Back to front, each frame hiding the ones behind it.
-    for (let f = n - 1; f >= 0; f--) {
+    // Back to front, each frame hiding the ones behind it. Big imported tables show every few frames.
+    const step = Math.ceil(n / MAX_DRAWN);
+    const drawn: number[] = [];
+    for (let f = 0; f < n; f += step) drawn.push(f);
+    if (drawn[drawn.length - 1] !== n - 1) drawn.push(n - 1);
+    for (const f of drawn.reverse()) {
       const [x0, y0] = at(f);
       wavePath(g, sampler(frames[f]), x0, y0, width, amp);
       g.lineTo(x0 + width, y0 + amp + 4);
@@ -131,11 +138,11 @@ export function harmonics(engine: Engine, color: () => string): Draw {
 export function thumbnail(id: number, color: string): Draw {
   return ({ g, w, h }) => {
     const frames = tableFrames(id);
-    const picks = [0, 8, 16, 24, 31];
+    const picks = [...new Set([0, 0.25, 0.5, 0.75, 1].map((t) => Math.round(t * (frames.length - 1))))];
     picks.forEach((f, i) => {
       wavePath(g, sampler(frames[f]), 2, h / 2, w - 4, h * 0.4);
       g.strokeStyle = color;
-      g.globalAlpha = 0.25 + (0.75 * i) / (picks.length - 1);
+      g.globalAlpha = 0.25 + (0.75 * i) / Math.max(1, picks.length - 1);
       g.lineWidth = 1.2;
       g.stroke();
     });
