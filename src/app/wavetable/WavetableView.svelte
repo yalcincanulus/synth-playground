@@ -23,6 +23,8 @@
   let cutMode = $state<CutMode>("auto");
   let dragging = $state(false);
   let fileInput: HTMLInputElement;
+  /** The explanations show two lines each until asked for more. */
+  let more = $state(false);
 
   function importFiles(files: FileList | null | undefined) {
     const file = files?.[0];
@@ -56,19 +58,19 @@
   aria-label="Wavetable"
 >
   <aside class="detail">
-    <div>
-      <h3>Wavetable</h3>
+    <div class="about">
       {#if pg.explain}
-        <p>
-          A wavetable is a stack of single waves ("frames"). <strong>Position</strong> picks a place in the stack and blends the
+        <p class:clamped={!more}>
+          <strong class="h">Wavetable</strong> A wavetable is a stack of single waves ("frames"). <strong>Position</strong> picks a place in the stack and blends the
           frames next to it, so turning it morphs the sound smoothly from one wave to another. The magic is moving it while a note
           plays: send an LFO (or the mod strip) to <em>WT Pos</em>.
         </p>
       {/if}
-    </div>
-    <div>
-      <h3>{table.name}{#if frameCount}<span class="frames">{frameCount} frame{frameCount > 1 ? "s" : ""}</span>{/if}</h3>
-      <p>{table.explain}</p>
+      <p class:clamped={!more}>
+        <strong class="h">{table.name}</strong>{#if frameCount}<span class="frames">{frameCount} frame{frameCount > 1 ? "s" : ""}</span>{/if}
+        {table.explain}
+      </p>
+      {#if pg.explain}<button class="more" onclick={() => (more = !more)}>{more ? "Less" : "More"}</button>{/if}
     </div>
     <div class="knobmap">
       <div class="title">MiniLab knobs · encoder picks the table</div>
@@ -88,13 +90,6 @@
     </div>
   </aside>
 
-  {#if !active}
-    <div class="notice">
-      Neither oscillator is playing the wavetable right now.
-      <button onclick={() => pg.setParam("osc1Wave", 4)}>Play it on Osc 1</button>
-    </div>
-  {/if}
-
   <div class="main">
     <div class="left">
       <nav class="tables" aria-label="Wavetables">
@@ -111,8 +106,10 @@
         {/each}
       </nav>
       <div class="import">
-        <button onclick={() => fileInput.click()} disabled={pg.importing}>{pg.importing ? "Importing…" : "Import a sound…"}</button>
-        <button onclick={() => pg.openTableEditor()} disabled={!!editor}>Draw a table…</button>
+        <div class="buttons">
+          <button onclick={() => fileInput.click()} disabled={pg.importing}>{pg.importing ? "Importing…" : "Import…"}</button>
+          <button onclick={() => pg.openTableEditor()} disabled={!!editor}>Draw…</button>
+        </div>
         <input bind:this={fileInput} type="file" accept=".wav,audio/*" hidden onchange={(e) => {
           importFiles(e.currentTarget.files);
           e.currentTarget.value = "";
@@ -123,13 +120,19 @@
             {#each CUT_MODES as mode (mode)}<option value={mode}>{CUT_MODE_NAMES[mode]}</option>{/each}
           </select>
         </label>
-        <p class="hint">Or drop a file anywhere here. A Serum table (WAV, 2048-sample frames) is read as it is; any other short sound is cut into frames.</p>
+        {#if pg.explain}<p class="hint">Or drop a WAV anywhere here: a Serum table, or any short sound (cut into frames).</p>{/if}
         {#if pg.importResult}<p class="result" class:error={!pg.importResult.ok}>{pg.importResult.text}</p>{/if}
       </div>
     </div>
 
     <div class="view">
-      <LiveCanvas height={330} draw={draw.stack(engine, color)} />
+      {#if !active}
+        <div class="notice">
+          Neither oscillator is playing the wavetable right now.
+          <button onclick={() => pg.setParam("osc1Wave", 4)}>Play it on Osc 1</button>
+        </div>
+      {/if}
+      <LiveCanvas height={editor ? 170 : 196} draw={draw.stack(engine, color)} />
       <label class="scrub">
         <span>Position</span>
         <input type="range" min="0" max="1" step="0.001" value={pg.values.wtPos} oninput={(e) => pg.setParam("wtPos", +e.currentTarget.value)} />
@@ -140,100 +143,123 @@
     <div class="side">
       <div class="panel">
         <div class="title">The wave right now</div>
-        <LiveCanvas height={110} draw={draw.current(engine, color)} />
+        <LiveCanvas height={editor ? 54 : 70} draw={draw.current(engine, color)} />
       </div>
       <div class="panel">
         <div class="title">Its harmonics</div>
-        <LiveCanvas height={90} draw={draw.harmonics(engine, color)} />
-        {#if pg.explain}<p class="note">Bar 1 is the note itself; the others are its overtones. Each wave is a different mix of them.</p>{/if}
+        <LiveCanvas height={editor ? 44 : 54} draw={draw.harmonics(engine, color)} />
+        {#if pg.explain}<p class="note">Bar 1 is the note itself; the others are its overtones.</p>{/if}
       </div>
+    </div>
+
+    <div class="lower">
+      {#if editor}
+        <TableEditor {pg} {editor} {accent} />
+      {:else}
+        <div class="controls">
+          <div class="group osc">
+            <div class="title">Oscillators</div>
+            <div class="params">
+              <ParamControl {pg} id="osc1Wave" />
+              <ParamControl {pg} id="osc2Wave" />
+              <ParamControl {pg} id="wtPos" inline />
+              <ParamControl {pg} id="oscMix" inline />
+            </div>
+          </div>
+          <div class="group move">
+            <div class="title">Move the position {#if lfoOnPosition}<span class="on">● moving</span>{/if}</div>
+            {#if pg.explain}<p class="note">Set LFO 2 To <em>WT Pos</em> and raise Depth, or Mod To <em>WT Pos</em> for the strip.</p>{/if}
+            <div class="params">
+              <ParamControl {pg} id="lfo2Target" />
+              <ParamControl {pg} id="lfo2Wave" />
+              <ParamControl {pg} id="lfo2Rate" inline />
+              <ParamControl {pg} id="lfo2Depth" inline />
+              <ParamControl {pg} id="modTarget" />
+            </div>
+          </div>
+          <div class="group">
+            <div class="title">Then shape it</div>
+            <div class="params">
+              <ParamControl {pg} id="cutoff" inline />
+              <ParamControl {pg} id="resonance" inline />
+              <ParamControl {pg} id="unison" inline />
+              <ParamControl {pg} id="chorus" inline />
+            </div>
+          </div>
+        </div>
+      {/if}
     </div>
   </div>
-
-  {#if editor}
-    <TableEditor {pg} {editor} {accent} />
-  {:else}
-    <div class="controls">
-      <div class="group">
-        <div class="title">Oscillators</div>
-        <div class="params">
-          <ParamControl {pg} id="osc1Wave" />
-          <ParamControl {pg} id="osc2Wave" />
-          <ParamControl {pg} id="wtPos" />
-          <ParamControl {pg} id="oscMix" />
-        </div>
-      </div>
-      <div class="group">
-        <div class="title">Move the position {#if lfoOnPosition}<span class="on">● moving</span>{/if}</div>
-        {#if pg.explain}<p class="note">Set LFO 2 "To" to <em>WT Pos</em>, pick a shape and speed, then raise Depth. Or set the mod strip's target to <em>WT Pos</em> and scan with your finger.</p>{/if}
-        <div class="params">
-          <ParamControl {pg} id="lfo2Target" />
-          <ParamControl {pg} id="lfo2Wave" />
-          <ParamControl {pg} id="lfo2Rate" />
-          <ParamControl {pg} id="lfo2Depth" />
-          <ParamControl {pg} id="modTarget" />
-        </div>
-      </div>
-      <div class="group">
-        <div class="title">Then shape it</div>
-        <div class="params">
-          <ParamControl {pg} id="cutoff" />
-          <ParamControl {pg} id="resonance" />
-          <ParamControl {pg} id="unison" />
-          <ParamControl {pg} id="chorus" />
-        </div>
-      </div>
-    </div>
-  {/if}
 </section>
 
 <style>
-  .wt { display: grid; gap: 10px; }
+  .wt { display: grid; gap: 8px; }
   .detail {
-    display: grid; grid-template-columns: 1.4fr 1.2fr 1.3fr; gap: 20px; align-items: start;
-    background: #10171a; border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; font-size: 12px; line-height: 1.4;
+    display: grid; grid-template-columns: 1fr 520px; gap: 20px; align-items: start;
+    background: #10171a; border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px; font-size: 12px; line-height: 1.4;
   }
-  .detail h3 { margin: 0 0 2px; font-size: 14px; color: var(--accent); }
-  .detail p { margin: 0; color: #b9c5c8; }
+  .about { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; position: relative; padding-right: 50px; }
+  .about p { margin: 0; color: #b9c5c8; }
+  .about p:only-of-type { grid-column: 1 / -1; }
+  .h { color: var(--accent); font-size: 13px; margin-right: 4px; }
+  /* Two lines each until "More" opens the whole text. */
+  .clamped { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .more { position: absolute; top: 0; right: 0; font-size: 11px; padding: 0 8px; color: var(--dim); }
   .title { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
-  ol { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; grid-auto-flow: column; grid-template-rows: repeat(4, auto); gap: 2px 14px; }
+  /* Two rows of four, like the knobs on the MiniLab. */
+  ol { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px 14px; }
   li { display: flex; gap: 6px; align-items: baseline; white-space: nowrap; overflow: hidden; }
   li.hot { color: var(--accent); }
   .n { font: 600 10px var(--mono); color: var(--dim); }
   .v { margin-left: auto; font: 10px var(--mono); color: var(--dim); }
 
-  .notice { display: flex; align-items: center; gap: 12px; padding: 8px 14px; border: 1px solid #ffcc33; border-radius: 8px; background: #ffcc3318; color: #ffe08a; font-size: 12px; }
+  /* Over the top of the picture, so it costs no room. */
+  .notice {
+    position: absolute; z-index: 1; top: 14px; left: 16px; display: flex; align-items: center; gap: 12px; padding: 4px 6px 4px 12px;
+    border: 1px solid #ffcc33; border-radius: 6px; background: #2a2510; color: #ffe08a; font-size: 12px;
+  }
+  .notice button { padding: 2px 10px; }
 
-  .main { display: grid; grid-template-columns: 170px 1fr 280px; gap: 12px; align-items: start; }
+  /* The table list runs down the left; the picture, the wave and the controls fill the rest. */
+  .main { display: grid; grid-template-columns: 180px minmax(0, 1fr) 260px; grid-template-rows: auto auto; gap: 10px; align-items: start; }
   .wt.dragging .main { outline: 2px dashed var(--accent); outline-offset: 4px; border-radius: 8px; }
-  .left { display: grid; gap: 4px; }
-  .tables { display: flex; flex-direction: column; gap: 6px; max-height: 430px; overflow-y: auto; }
+  .left { grid-row: 1 / 3; display: grid; gap: 4px; }
+  .lower { grid-column: 2 / 4; }
+  .tables { display: flex; flex-direction: column; gap: 4px; max-height: 340px; overflow-y: auto; }
   .row { display: flex; gap: 4px; }
-  .pick { flex: 1; min-width: 0; display: grid; grid-template-columns: 48px 1fr; align-items: center; gap: 8px; padding: 4px 8px; text-align: left; font-size: 12px; }
+  .pick { flex: 1; min-width: 0; display: grid; grid-template-columns: 44px 1fr; align-items: center; gap: 8px; padding: 2px 8px; text-align: left; font-size: 12px; }
   .pick span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pick.active { border-color: var(--accent); color: var(--accent); }
   .del { padding: 0 7px; font-size: 14px; color: var(--dim); }
   .del:hover:not(:disabled) { color: #ff8a80; border-color: #ff8a80; }
   .imported { margin: 6px 0 0; }
   .import { display: grid; gap: 6px; padding-top: 6px; border-top: 1px solid var(--line); font-size: 11px; }
+  .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
   .import label { display: flex; align-items: center; justify-content: space-between; gap: 6px; color: var(--dim); }
   .import select { font-size: 11px; max-width: 110px; }
   .hint { margin: 0; color: var(--dim); line-height: 1.35; }
   .result { margin: 0; line-height: 1.35; color: #b9e6b0; overflow-wrap: anywhere; }
   .result.error { color: #ff8a80; }
-  .frames { margin-left: 8px; font: 10px var(--mono); color: var(--dim); }
-  .tables canvas { width: 48px; height: 26px; display: block; }
-  .view { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: grid; gap: 8px; }
+  .frames { margin-right: 6px; font: 10px var(--mono); color: var(--dim); }
+  .tables canvas { width: 44px; height: 22px; display: block; }
+  .view { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: grid; gap: 6px; }
   .scrub { display: flex; align-items: center; gap: 10px; font-size: 12px; }
   .scrub input { flex: 1; accent-color: var(--accent); }
   .scrub .v { margin: 0; min-width: 34px; text-align: right; }
-  .side { display: grid; gap: 12px; }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px 10px; }
+  .side { display: grid; gap: 10px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px 8px; }
   .note { margin: 6px 0 0; font-size: 11px; line-height: 1.35; color: #a9b6ba; }
 
-  .controls { display: grid; grid-template-columns: 1fr 1.4fr 1fr; gap: 12px; }
-  .group { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px 10px; }
+  .controls { display: grid; grid-template-columns: 1fr 1.4fr 1fr; gap: 10px; }
+  .group { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px 8px; }
   .group .note { margin: 0 0 6px; }
   .on { color: #ffcc33; text-transform: none; letter-spacing: 0; margin-left: 6px; }
-  .params { display: grid; grid-template-columns: repeat(auto-fill, minmax(74px, 1fr)); gap: 8px 6px; align-items: start; justify-items: center; }
+  .params { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 6px 8px; align-items: start; }
+  /* The wave choices with their label beside them, and the menus two to a row: the row stays short. */
+  .osc :global(.enum) { flex-direction: row; align-items: center; justify-content: space-between; }
+  .move .params { grid-template-columns: 1fr 1fr; column-gap: 18px; }
+  .move :global(.select) { grid-column: auto; }
+  @media (max-width: 1100px) {
+    .detail { grid-template-columns: 1fr; }
+  }
 </style>

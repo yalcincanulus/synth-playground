@@ -3,7 +3,7 @@
   import Knob from "../components/Knob.svelte";
   import type { Playground } from "../playground.svelte";
 
-  let { pg, id }: { pg: Playground; id: ParamId } = $props();
+  let { pg, id, inline = false }: { pg: Playground; id: ParamId; inline?: boolean } = $props();
 
   const SHORT: Record<string, string> = {
     sine: "Sine", triangle: "Tri", sawtooth: "Saw", square: "Sqr",
@@ -43,10 +43,11 @@
     </div>
   </div>
 {:else}
-  <div class="knob-wrap" class:target>
+  <div class="knob-wrap" class:target class:inline>
     {#if knob}<span class="k knob-k" title="MiniLab knob {knob}">{knob}</span>{/if}
     <Knob
-      size={44}
+      size={inline ? 30 : 38}
+      {inline}
       label={def.label}
       display={formatValue(id, pg.values[id])}
       position={toControl(id, pg.values[id])}
@@ -59,7 +60,7 @@
 
 <style>
   .enum { display: flex; flex-direction: column; gap: 3px; grid-column: 1 / -1; }
-  .enum.short { grid-column: auto; align-items: center; padding-top: 6px; }
+  .enum.short { grid-column: auto; align-items: center; padding-top: 4px; }
   .select { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; }
   .select select { font-size: 11px; padding: 1px 4px; max-width: 60%; }
   .label { font-size: 11px; color: var(--text); }
@@ -68,6 +69,7 @@
   .options .active { background: var(--accent); color: #0b1314; border-color: var(--accent); }
   .hot .label { color: var(--accent); }
   .knob-wrap { position: relative; }
+  .knob-wrap.inline { width: 100%; }
   /* The control a recipe step asks for. */
   .target { outline: 2px solid #ffcc33; outline-offset: 2px; border-radius: 6px; }
   .target .label { color: #ffe08a; }
@@ -76,4 +78,5 @@
     border-radius: 50%; background: var(--accent); color: #0b1314; font: 600 9px var(--mono); vertical-align: 1px;
   }
   .knob-k { position: absolute; top: 0; right: 2px; margin: 0; }
+  .inline .knob-k { top: -3px; left: -3px; right: auto; }
 </style>

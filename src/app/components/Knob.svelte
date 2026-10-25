@@ -10,10 +10,12 @@
     number?: number;
     /** Rendered size in pixels. */
     size?: number;
+    /** Label and value beside the knob instead of under it: half the height, for dense panels. */
+    inline?: boolean;
     onchange: (position: number) => void;
     onreset?: () => void;
   }
-  let { label, display, position, hot = false, number, size = 64, onchange, onreset }: Props = $props();
+  let { label, display, position, hot = false, number, size = 64, inline = false, onchange, onreset }: Props = $props();
 
   const R = 26;
   const START = 225;
@@ -30,7 +32,7 @@
   let pointer = $derived(point(position, 14));
 </script>
 
-<div class="knob" class:hot class:small={size < 56}>
+<div class="knob" class:hot class:small={size < 56} class:inline>
   <svg
     style:width="{size}px"
     style:height="{size}px"
@@ -49,12 +51,20 @@
     <circle cx="32" cy="32" r="18" class="face" />
     <line x1="32" y1="32" x2={pointer[0]} y2={pointer[1]} class="pointer" />
   </svg>
-  <div class="label">{#if number}<span class="num">{number}</span>{/if}{label}</div>
-  <div class="display">{display}</div>
+  <div class="text">
+    <div class="label">{#if number}<span class="num">{number}</span>{/if}{label}</div>
+    <div class="display">{display}</div>
+  </div>
 </div>
 
 <style>
   .knob { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
+  .knob:not(.inline) .text { display: contents; }
+  .knob.inline { flex-direction: row; gap: 4px; width: 100%; }
+  .inline svg { flex: none; }
+  .inline .text { min-width: 0; display: grid; }
+  .inline .label, .inline .display { overflow: hidden; text-overflow: ellipsis; }
+  .inline .label { font-size: 10.5px; }
   svg { width: 64px; height: 64px; cursor: ns-resize; touch-action: none; outline: none; }
   svg:focus-visible .face { stroke: var(--accent); }
   .track { fill: none; stroke: var(--line); stroke-width: 4; stroke-linecap: round; }

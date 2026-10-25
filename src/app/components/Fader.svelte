@@ -6,10 +6,11 @@
     display: string;
     position: number;
     hot?: boolean;
+    /** Track length in pixels. */
+    height?: number;
     onchange: (position: number) => void;
   }
-  let { label, display, position, hot = false, onchange }: Props = $props();
-  const HEIGHT = 120;
+  let { label, display, position, hot = false, height = 120, onchange }: Props = $props();
 </script>
 
 <div class="fader" class:hot>
@@ -21,8 +22,8 @@
     aria-valuenow={Math.round(position * 127)}
     aria-valuemin={0}
     aria-valuemax={127}
-    style:height="{HEIGHT}px"
-    use:dragValue={{ get: () => position, set: onchange, range: HEIGHT }}
+    style:height="{height}px"
+    use:dragValue={{ get: () => position, set: onchange, range: height }}
   >
     <div class="fill" style:height="{position * 100}%"></div>
     <div class="thumb" style:bottom="{position * 100}%"></div>

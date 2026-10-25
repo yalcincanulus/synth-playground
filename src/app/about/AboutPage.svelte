@@ -29,19 +29,21 @@
     <section>
       <h3>What's inside</h3>
       <ul>
-        <li><strong>Playground:</strong> presets, Dice (a random patch), a drum loop with step editing, waveform and spectrum views.</li>
+        <li><strong>Play:</strong> the MiniLab's knobs and faders on screen, presets, Dice (a random patch), a drum loop with step editing, waveform and spectrum views.</li>
         <li><strong>Step sequencer:</strong> 8 steps with notes, rests and slides, played on the MiniLab's knobs and pads. Play chords over it, or transpose it from the keys.</li>
         <li><strong>Two parts:</strong> the keys and the step sequencer each have their own sound, say a pad over a bass line. Pick the part to edit above the presets, or with Shift + any key on the MiniLab.</li>
         <li><strong>Synth:</strong> the whole synth as blocks with live signals and cables, plain-English explanations, and "Listen here" to hear any stage on its own.</li>
-        <li><strong>Wavetable:</strong> eight built-in wavetables in 3D, with the wave playing right now and its harmonics. Import your own: a Serum-format WAV, or any short sound, which is cut into frames. Imported tables stay in this browser.</li>
+        <li><strong>Wavetable:</strong> eight built-in wavetables in 3D, with the wave playing right now and its harmonics. Import your own (a Serum-format WAV, or any short sound, which is cut into frames) or draw one. Your tables stay in this browser.</li>
+        <li><strong>Scale lock and chord mode:</strong> every key lands on a note of the scale, or plays a whole chord of it. The chord you play is named above the keyboard.</li>
+        <li><strong>Recipes:</strong> 15 classic sounds to build step by step, from Init.</li>
         <li><strong>Sound:</strong> two oscillators with pulse width, hard sync, FM and wavetables; sub and noise; a clean or a ladder filter with a low-pass to high-pass morph, an optional second filter, and drive; stereo unison and panning; amp, filter, pitch and mod envelopes; two LFOs; a mod matrix with 8 routes that also reaches the effects and the LFOs; a three-line chorus, a stereo or ping-pong delay, and a reverb with damping.</li>
       </ul>
 
       <h3>Coming later <span class="tag">not in yet</span></h3>
       <ul class="later">
-        <li>Drawing your own wavetables</li>
-        <li>Scale lock and chord mode</li>
-        <li>Guided recipes: build a sound step by step</li>
+        <li>Undo, redo and compare with the saved preset</li>
+        <li>An arpeggiator</li>
+        <li>A preset browser, more effects, more modulation</li>
         <li>An interactive course that introduces one topic at a time</li>
       </ul>
 
@@ -51,6 +53,24 @@
         <li>On the MiniLab, hold <strong>Shift</strong> and tap <strong>Prog</strong> to switch to DAW mode. The pads light up and the screen follows the app.</li>
         <li>No MiniLab? The computer keyboard plays notes (A row; Z / X change octave), and every control works with the mouse.</li>
       </ol>
+
+      <h3 id="shortcuts">Shortcuts</h3>
+      <dl class="keys">
+        <dt>Computer keyboard</dt>
+        <dd>A to ' plays notes (W, E, T… are the black keys); Z / X shift the octave</dd>
+        <dt>Encoder</dt>
+        <dd>Turn: browse presets, click to load, hold for Dice. Synth view: turn for the knob pages, click to listen at the selected block. Wavetable view: turn to pick the table</dd>
+        <dt>Shift + encoder</dt>
+        <dd>Turn: the next view (Waveform, Spectrum, Synth, Wavetable). Click: drum step edit (turn to pick the drum), again: sequencer edit, again: off</dd>
+        <dt>Shift + any knob</dt>
+        <dd>Tempo</dd>
+        <dt>Shift + any key</dt>
+        <dd>Switch part (Keys or Sequencer)</dd>
+        <dt>Shift + pads</dt>
+        <dd>▶ play, ■ stop, ● record, ⟲ clear the drum loop, Tap tempo</dd>
+        <dt>Mouse</dt>
+        <dd>Drag a knob or fader up and down; double-click a knob to reset it</dd>
+      </dl>
 
       <h3>This browser</h3>
       <dl class="facts">
@@ -145,6 +165,9 @@
   strong { color: var(--text); font-weight: 600; }
   .tag { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #ffcc33; border: 1px solid #ffcc3366; border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: 2px; }
   .later { color: var(--dim); }
+  .keys { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; }
+  .keys dt { color: var(--text); white-space: nowrap; }
+  .keys dd { margin: 0; font: inherit; color: inherit; }
   .facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; }
   dt { color: var(--dim); }
   dd { margin: 0; font-family: var(--mono); font-size: 12px; color: var(--accent); }

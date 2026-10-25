@@ -9,9 +9,15 @@
     id: BlockId;
     /** Greyed out when it currently has no effect (e.g. a source at level 0). */
     inactive?: string | null;
+    /** Folded away: just the title, so cables still have somewhere to land. */
+    compact?: boolean;
     children: Snippet;
   }
-  let { pg, id, inactive = null, children }: Props = $props();
+  let { pg, id, inactive = null, compact = false, children }: Props = $props();
+
+  /** The modulator row is narrow and has room below: its knobs keep their labels underneath. */
+  const MODULATORS: BlockId[] = ["lfo", "lfo2", "filterEnv", "ampEnv", "pitchEnv", "modEnv", "perf"];
+  let inline = $derived(!MODULATORS.includes(id));
 
   let def = $derived(BLOCKS[id]);
   let params = $derived(def.params.filter((p) => SHOWN_WHEN[id]?.[p]?.(pg.values) ?? true));
@@ -26,8 +32,8 @@
 <!-- Clicking anywhere on a block points the MiniLab knobs at its page. -->
 <!-- Keyboard users reach the block's own controls; the click is a shortcut for focusing the knobs. -->
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-<section role="group" aria-label={def.title} class="block" class:listening class:focused class:on-page={onPage} class:inactive={!!inactive} class:pickable class:patching={pg.patch !== null} class:target={pg.recipeBlock === id} data-block={id} onclick={() => pg.blockClick(id)}>
-  <header>
+<section role="group" aria-label={def.title} class="block" class:listening class:focused class:on-page={onPage} class:inactive={!!inactive} class:compact class:pickable class:patching={pg.patch !== null} class:target={pg.recipeBlock === id} data-block={id} onclick={() => pg.blockClick(id)}>
+  <header title={def.short}>
     <h3>{def.title}</h3>
     {#if inactive}<span class="note">{inactive}</span>{/if}
     {#if tap}
@@ -43,12 +49,13 @@
       >
     {/if}
   </header>
-  {#if pg.explain}<p class="explain">{def.short}</p>{/if}
-  {@render children()}
-  {#if params.length}
-    <div class="params">
+  {#if !compact}
+    {@render children()}
+  {/if}
+  {#if params.length && !compact}
+    <div class="params" class:inline>
       {#each params as param (param)}
-        <ParamControl {pg} id={param} />
+        <ParamControl {pg} id={param} {inline} />
       {/each}
     </div>
   {/if}
@@ -57,7 +64,7 @@
 <style>
   .block {
     position: relative; z-index: 1; background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
-    padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 6px; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s;
+    padding: 6px 8px 8px; display: flex; flex-direction: column; gap: 5px; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s;
   }
   .block:hover { border-color: #3a454b; }
   .block.on-page { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
@@ -74,8 +81,9 @@
   .block.target { border-color: #ffcc33; animation: target 1.6s ease-in-out infinite; }
   @keyframes target { 0%, 100% { box-shadow: 0 0 0 1px #ffcc33, 0 0 6px #ffcc3333; } 50% { box-shadow: 0 0 0 2px #ffcc33, 0 0 22px #ffcc3388; } }
   .block.listening { border-color: #ffcc33; box-shadow: 0 0 0 1px #ffcc33, 0 0 22px #ffcc3355; }
-  h3 { margin: 0; font-size: 13px; font-weight: 600; }
+  h3 { margin: 0; font-size: 12.5px; font-weight: 600; }
+  .block.compact { padding: 5px 8px; }
   .note { font-size: 10px; color: var(--dim); }
-  .explain { margin: 0; font-size: 11.5px; line-height: 1.35; color: #a9b6ba; }
-  .params { display: grid; grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); gap: 6px 4px; align-items: start; justify-items: center; }
+  .params.inline { grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 6px 4px; justify-items: start; }
+  .params { display: grid; grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: 4px 2px; align-items: start; justify-items: center; }
 </style>

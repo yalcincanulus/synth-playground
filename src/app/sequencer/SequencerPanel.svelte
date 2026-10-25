@@ -21,7 +21,6 @@
 
 <section class="panel seq" class:off={!s.enabled}>
   <div class="head">
-    <div class="title">Step sequencer</div>
     <button class:active={s.enabled} onclick={() => pg.setSeqEnabled(!s.enabled)}>{s.enabled ? "On" : "Off"}</button>
     <button class:active={pg.seqEdit} onclick={() => pg.setSeqEdit(!pg.seqEdit)} title="Shift + encoder click (twice: drum steps, then sequencer)">
       Edit on MiniLab
@@ -44,16 +43,7 @@
     {/if}
   </div>
 
-  {#if pg.explain}
-    <p class="explain">
-      A step sequencer plays a short loop of notes by itself, in time with the drums. Each column is one step: the knob sets its
-      note, the button below switches it on or off (off is a rest), and <b>Slide</b> holds the note into the next step and glides
-      to it. Press ▶ to hear it, then play chords over it. <b>Keys</b> picks what the keyboard does while it runs: play notes,
-      move the whole line up or down (Transpose), or both (Split: the low keys transpose, the rest play).
-    </p>
-  {/if}
-
-  <div class="body">
+  <div class="body" class:explained={pg.explain}>
     <div class="steps">
       {#each s.steps as step, i (i)}
         <div class="col" class:outside={i >= s.length}>
@@ -63,7 +53,7 @@
             display={pg.noteName(pg.stepNote(i))}
             position={pg.stepKnobPosition(i)}
             hot={pg.seqStep === i}
-            size={52}
+            size={44}
             onchange={(t) => pg.setStepKnob(i, t)}
           />
           <button
@@ -79,15 +69,23 @@
     </div>
     <div class="faders">
       {#each SEQ_FADERS as label, i (label)}
-        <Fader {label} display={pg.seqFaderDisplay(i)} position={pg.seqFaderPosition(i)} onchange={(t) => pg.setSeqFader(i, t)} />
+        <Fader {label} height={96} display={pg.seqFaderDisplay(i)} position={pg.seqFaderPosition(i)} onchange={(t) => pg.setSeqFader(i, t)} />
       {/each}
     </div>
+    {#if pg.explain}
+      <p class="explain">
+        A step sequencer plays a short loop of notes by itself, in time with the drums. Each column is one step: the knob sets its
+        note, the button below switches it on or off (off is a rest), and <b>Slide</b> holds the note into the next step and glides
+        to it. Press ▶ to hear it, then play chords over it. <b>Keys</b> picks what the keyboard does while it runs: play notes,
+        move the whole line up or down (Transpose), or both (Split: the low keys transpose, the rest play).
+      </p>
+    {/if}
   </div>
 </section>
 
 <style>
+  .seq { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
   .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
-  .head .title { margin: 0 6px 0 0; }
   .head button { font-size: 12px; padding: 2px 10px; }
   .head .active { border-color: var(--accent); color: var(--accent); }
   .keys { display: flex; align-items: center; gap: 2px; font-size: 12px; color: var(--dim); }
@@ -96,9 +94,10 @@
   .small { font-size: 11px !important; padding: 0 6px !important; }
   .hint { font-size: 12px; }
   .shifted { color: var(--accent); }
-  .explain { margin: 0 0 10px; font-size: 13px; color: var(--dim); max-width: 900px; line-height: 1.45; }
+  .explain { margin: 0; font-size: 12px; color: #a9b6ba; line-height: 1.4; }
 
-  .body { display: grid; grid-template-columns: 1fr auto; gap: 28px; align-items: center; }
+  .body { display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: center; }
+  .body.explained { grid-template-columns: 1fr auto minmax(220px, 300px); }
   .steps { display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px; }
   .col { display: flex; flex-direction: column; align-items: center; gap: 6px; transition: opacity 0.15s; }
   .col.outside { opacity: 0.3; }
@@ -112,7 +111,7 @@
   .seq.off .steps { opacity: 0.6; }
 
   @media (max-width: 1000px) {
-    .body { grid-template-columns: 1fr; justify-items: center; }
+    .body, .body.explained { grid-template-columns: 1fr; justify-items: center; }
     .steps { grid-template-columns: repeat(4, 1fr); }
   }
 </style>

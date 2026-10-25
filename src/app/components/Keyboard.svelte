@@ -65,7 +65,7 @@
 </div>
 
 <style>
-  .keyboard { position: relative; height: 90px; user-select: none; touch-action: none; }
+  .keyboard { position: relative; height: 76px; user-select: none; touch-action: none; }
   .key { position: absolute; top: 0; bottom: 0; background: #e9edee; border: 1px solid #0b0e10; border-radius: 0 0 4px 4px; cursor: pointer; display: flex; align-items: flex-end; justify-content: center; }
   .key span { font: 9px var(--mono); color: #667; margin-bottom: 4px; pointer-events: none; }
   .key.black { bottom: 38%; background: #15191b; z-index: 1; border-color: #000; }

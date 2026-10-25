@@ -2,9 +2,7 @@
   import { onMount } from "svelte";
   import { formatValue, LFO_TARGETS, PARAMS, toControl, type ParamId } from "../audio/params";
   import { FADERS } from "../presets/presets";
-  import EnvelopeView from "./components/EnvelopeView.svelte";
   import Fader from "./components/Fader.svelte";
-  import FilterCurve from "./components/FilterCurve.svelte";
   import Keyboard from "./components/Keyboard.svelte";
   import ScaleBar from "./components/ScaleBar.svelte";
   import ChordDisplay from "./components/ChordDisplay.svelte";
@@ -49,6 +47,23 @@
     if (name) pg.saveAsUserPreset(name);
   }
 
+  // The on-screen keyboard can fold away (the MiniLab and the computer keyboard still play); remembered per browser.
+  const KEYS_OPEN_KEY = "minilab3.keyboard";
+  let keysOpen = $state(localStorage.getItem(KEYS_OPEN_KEY) !== "closed");
+  function toggleKeys() {
+    keysOpen = !keysOpen;
+    localStorage.setItem(KEYS_OPEN_KEY, keysOpen ? "open" : "closed");
+  }
+
+  // Play view: the drums or the step sequencer below the knobs. Editing either on the MiniLab brings its tab up.
+  let rhythm = $state<"drums" | "seq">("drums");
+  $effect(() => {
+    if (pg.seqEdit) rhythm = "seq";
+  });
+  $effect(() => {
+    if (pg.stepMode) rhythm = "drums";
+  });
+
   onMount(() => {
     // Reconnect silently if MIDI was allowed before; otherwise wait for the button.
     navigator.permissions
@@ -83,17 +98,18 @@
   };
 </script>
 
+
 <svelte:window onkeydown={(e) => pg.handleKey(e, true)} onkeyup={(e) => pg.handleKey(e, false)} />
 
 <div class="app" style:--accent={accent}>
-  <header>
+  <!-- Row 1: where you are (the views) and the app's state (MiniLab, CPU, help). -->
+  <header class="top">
     <h1>MiniLab 3 <span>Playground</span></h1>
     <nav class="views" aria-label="View">
-      <button class:active={pg.view === "playground"} onclick={() => pg.setView("playground")}>Playground</button>
-      <button class:active={pg.view === "synth"} onclick={() => pg.setView("synth")} title="Shift + encoder">Synth</button>
-      <button class:active={pg.view === "wavetable"} onclick={() => pg.setView("wavetable")} title="Shift + encoder">Wavetable</button>
+      <button class:active={pg.view === "playground"} onclick={() => pg.setView("playground")} title="Play: the MiniLab's knobs and faders, the pads, drums and step sequencer (Shift + encoder)">Play</button>
+      <button class:active={pg.view === "synth"} onclick={() => pg.setView("synth")} title="The whole synth as blocks: see and change every part of the sound (Shift + encoder)">Synth</button>
+      <button class:active={pg.view === "wavetable"} onclick={() => pg.setView("wavetable")} title="Pick, import and draw wavetables (Shift + encoder)">Wavetable</button>
     </nav>
-    <button class="about-link" class:active={pg.view === "about"} onclick={() => pg.setView("about")}>About</button>
     <button class="recipes-link" class:active={!!pg.recipe || pg.recipeList} onclick={() => pg.openRecipes()} title="Build a classic sound step by step">Recipes</button>
 
     <div class="midi">
@@ -101,11 +117,11 @@
         <span class="pill ok">● {pg.deviceName}{pg.program ? ` · ${pg.program === "daw" ? "DAW" : "Arturia"} mode` : ""}</span>
         <span class="shift" class:on={pg.shift} title="Shift button on the MiniLab">Shift</span>
         {#if pg.program === "arturia"}
-          <span class="hint">Pad lights and the screen need DAW mode: hold Shift and tap Prog.</span>
+          <span class="hint" title="Pad lights and the screen need DAW mode: hold Shift and tap Prog.">Lights and screen need DAW mode: Shift + Prog.</span>
         {/if}
       {:else}
         <button class="primary" onclick={() => pg.connectMidi()}>Connect MiniLab</button>
-        <span class="hint">{MIDI_TEXT[pg.midiStatus]}</span>
+        <span class="hint" title={MIDI_TEXT[pg.midiStatus]}>{MIDI_TEXT[pg.midiStatus]}</span>
       {/if}
     </div>
 
@@ -124,186 +140,212 @@
         CPU {Math.round(pg.cpu.load * 100)}%
       </span>
     {/if}
+    <label class="explain-toggle" title="Plain-English explanations on every view">
+      <input type="checkbox" checked={pg.explain} onchange={(e) => pg.setExplain(e.currentTarget.checked)} /> Explanations
+    </label>
+    <button class="about-link" class:active={pg.view === "about"} onclick={() => pg.setView("about")} title="What this is, the MiniLab and keyboard shortcuts, and this browser's limits">About & shortcuts</button>
+  </header>
 
-    <div class="transport">
-      <button class:active={pg.playing} onclick={() => pg.togglePlay()} title="Play / stop (Shift + ▶)">{pg.playing ? "■" : "▶"}</button>
-      <button class="rec" class:active={pg.recording} onclick={() => pg.toggleRecord()} title="Record pads into the loop (Shift + ●)">●</button>
+  <!-- Row 2: the sound being edited, and time (shared by the drums and the sequencer). -->
+  <section class="soundbar">
+    <div class="group sound">
+      <div class="parts" role="group" aria-label="Part" title="Which sound the knobs, faders and presets edit (Shift + any key on the MiniLab)">
+        {#each ["keys", "seq"] as const as part (part)}
+          <button class:active={pg.part === part} onclick={() => pg.selectPart(part)}>
+            <span class="part-name">{PART_NAMES[part]}</span>
+            <span class="part-preset">{pg.presetOf(part).name}</span>
+          </button>
+        {/each}
+      </div>
+      <button onclick={() => pg.loadPreset(pg.presetIndex - 1)} aria-label="Previous preset">◀</button>
+      <!-- `selected` per option rather than select.value: the Dice option appears in the same update that selects it. -->
+      <select onchange={(e) => pg.loadPreset(+e.currentTarget.value)} aria-label="Preset">
+        {#if pg.dicePreset}<option value={-1} disabled selected>{pg.dicePreset.from === "recipe" ? "Recipe:" : "🎲"} {pg.dicePreset.name} · {pg.dicePreset.category}</option>{/if}
+        {#each presetGroups as [category, entries] (category)}
+          <optgroup label={category}>
+            {#each entries as { p, i } (i)}
+              <option value={i} selected={!pg.dicePreset && i === pg.presetIndex}>{i + 1}. {p.name}{pg.isUserPreset(i) ? " (user)" : ""}</option>
+            {/each}
+          </optgroup>
+        {/each}
+      </select>
+      <button onclick={() => pg.loadPreset(pg.presetIndex + 1)} aria-label="Next preset">▶</button>
+      <button onclick={() => pg.dice()} title="Random patch (hold the encoder down)">🎲 Dice</button>
+      <button onclick={savePreset}>Save as…</button>
+      {#if pg.isUserPreset()}<button onclick={() => pg.deleteUserPreset()}>Delete</button>{/if}
+      {#if pg.browseIndex !== null}
+        <span class="browse">Encoder: {pg.presets[pg.browseIndex].name}, click to load</span>
+      {:else if pg.dirty}
+        <span class="dirty">edited</span>
+      {/if}
+    </div>
+
+    <div class="group transport" role="group" aria-label="Transport">
+      <button class:active={pg.playing} onclick={() => pg.togglePlay()} title="Play / stop the drums and the step sequencer (Shift + ▶)">{pg.playing ? "■" : "▶"}</button>
+      <button class="rec" class:active={pg.recording} onclick={() => pg.toggleRecord()} title="Record pads into the drum loop (Shift + ●)">●</button>
       <label class="bpm" title="Shift + any knob on the MiniLab">
         <input type="number" min="40" max="240" value={pg.bpm} onchange={(e) => pg.setBpm(+e.currentTarget.value)} />
         BPM
       </label>
       <button onclick={() => pg.tap()} title="Tap tempo (Shift + Tap)">Tap</button>
-      <button onclick={() => pg.clearPattern()} title="Clear the drum loop (Shift + ⟲)">Clear</button>
     </div>
-  </header>
-
-  <section class="presets">
-    <div class="parts" role="group" aria-label="Part" title="Which sound the knobs, faders and presets edit (Shift + any key on the MiniLab)">
-      {#each ["keys", "seq"] as const as part (part)}
-        <button class:active={pg.part === part} onclick={() => pg.selectPart(part)}>
-          <span class="part-name">{PART_NAMES[part]}</span>
-          <span class="part-preset">{pg.presetOf(part).name}</span>
-        </button>
-      {/each}
-    </div>
-    <button onclick={() => pg.loadPreset(pg.presetIndex - 1)} aria-label="Previous preset">◀</button>
-    <!-- `selected` per option rather than select.value: the Dice option appears in the same update that selects it. -->
-    <select onchange={(e) => pg.loadPreset(+e.currentTarget.value)}>
-      {#if pg.dicePreset}<option value={-1} disabled selected>{pg.dicePreset.from === "recipe" ? "Recipe:" : "🎲"} {pg.dicePreset.name} · {pg.dicePreset.category}</option>{/if}
-      {#each presetGroups as [category, entries] (category)}
-        <optgroup label={category}>
-          {#each entries as { p, i } (i)}
-            <option value={i} selected={!pg.dicePreset && i === pg.presetIndex}>{i + 1}. {p.name}{pg.isUserPreset(i) ? " (user)" : ""}</option>
-          {/each}
-        </optgroup>
-      {/each}
-    </select>
-    <button onclick={() => pg.loadPreset(pg.presetIndex + 1)} aria-label="Next preset">▶</button>
-    <button class="dice" onclick={() => pg.dice()} title="Random patch (hold the encoder down)">🎲 Dice</button>
-    {#if pg.browseIndex !== null}
-      <span class="browse">Encoder: {pg.presets[pg.browseIndex].name}, click to load</span>
-    {/if}
-    {#if pg.dirty}<span class="dirty">edited</span>{/if}
-    <span class="spacer"></span>
-    <button onclick={savePreset}>Save as…</button>
-    {#if pg.isUserPreset()}<button onclick={() => pg.deleteUserPreset()}>Delete</button>{/if}
   </section>
 
   {#if pg.view === "playground"}
-  <section class="viz">
-    <div class="panel main-viz">
-      <div class="tabs">
-        <button class:active={pg.vizMode === "scope"} onclick={() => (pg.vizMode = "scope")}>Waveform</button>
-        <button class:active={pg.vizMode === "spectrum"} onclick={() => (pg.vizMode = "spectrum")}>Spectrum</button>
-        <span class="hint" class:shifted={pg.shift}>Shift + encoder switches view</span>
-      </div>
-      <div class="canvas">
-        {#if pg.vizMode === "scope"}
-          <Scope analyser={pg.engine.analyser} color={accent} />
-        {:else}
-          <Spectrum analyser={pg.engine.analyser} color={accent} />
+    <div class="play">
+      <section class="surface panel" aria-label="The MiniLab's knobs and faders">
+        <div class="strips">
+          <div class="strip" title="Pitch bend strip">
+            <div class="bend" style:top="{50 - Math.max(0, pg.bend) * 50}%" style:bottom="{50 + Math.min(0, pg.bend) * 50}%"></div>
+            <div class="center"></div>
+            <span>Pitch</span>
+          </div>
+          <div class="strip" title="Mod strip: adds LFO to {LFO_TARGETS[pg.parts.keys.values.modTarget]} (Keys part)">
+            <div class="mod" style:height="{pg.mod * 100}%"></div>
+            <span>Mod</span>
+          </div>
+        </div>
+
+        <div class="knobs">
+          {#each pg.preset.knobs as id, i (i)}
+            <Knob
+              number={i + 1}
+              label={PARAMS[id].label}
+              display={display(id)}
+              position={toControl(id, pg.values[id])}
+              hot={pg.touched?.param === id}
+              size={46}
+              onchange={(t) => pg.setKnob(i, t)}
+              onreset={() => resetParam(id)}
+            />
+          {/each}
+        </div>
+
+        <div class="faders">
+          {#each FADERS as id, i (id)}
+            <Fader
+              label={PARAMS[id].label}
+              display={display(id)}
+              position={toControl(id, pg.values[id])}
+              hot={pg.touched?.param === id}
+              height={96}
+              onchange={(t) => pg.setFader(i, t)}
+            />
+          {/each}
+        </div>
+        {#if pg.explain}
+          <p class="surface-note">The MiniLab's knobs and faders. Each preset puts its main controls on the knobs; the <b>Synth</b> view has the rest.</p>
         {/if}
-      </div>
-    </div>
-    <div class="side">
-      <div class="panel"><div class="title">Filter</div><div class="canvas"><FilterCurve ctx={pg.engine.ctx} values={pg.values} color={accent} /></div></div>
-      <div class="panel"><div class="title">Envelopes</div><div class="canvas"><EnvelopeView values={pg.values} color={accent} /></div></div>
-    </div>
-  </section>
+      </section>
 
-  <section class="surface panel">
-    <div class="strips">
-      <div class="strip" title="Pitch bend strip">
-        <div class="bend" style:top="{50 - Math.max(0, pg.bend) * 50}%" style:bottom="{50 + Math.min(0, pg.bend) * 50}%"></div>
-        <div class="center"></div>
-        <span>Pitch</span>
-      </div>
-      <div class="strip" title="Mod strip: adds LFO to {LFO_TARGETS[pg.parts.keys.values.modTarget]} (Keys part)">
-        <div class="mod" style:height="{pg.mod * 100}%"></div>
-        <span>Mod</span>
-      </div>
+      <section class="panel main-viz">
+        <div class="tabs">
+          <button class:active={pg.vizMode === "scope"} onclick={() => (pg.vizMode = "scope")}>Waveform</button>
+          <button class:active={pg.vizMode === "spectrum"} onclick={() => (pg.vizMode = "spectrum")}>Spectrum</button>
+          <span class="hint" class:shifted={pg.shift}>Shift + encoder: next view</span>
+        </div>
+        <div class="canvas">
+          {#if pg.vizMode === "scope"}
+            <Scope analyser={pg.engine.analyser} color={accent} />
+          {:else}
+            <Spectrum analyser={pg.engine.analyser} color={accent} />
+          {/if}
+        </div>
+      </section>
     </div>
 
-    <div class="knobs">
-      {#each pg.preset.knobs as id, i (i)}
-        <Knob
-          number={i + 1}
-          label={PARAMS[id].label}
-          display={display(id)}
-          position={toControl(id, pg.values[id])}
-          hot={pg.touched?.param === id}
-          onchange={(t) => pg.setKnob(i, t)}
-          onreset={() => resetParam(id)}
-        />
-      {/each}
-    </div>
-
-    <div class="faders">
-      {#each FADERS as id, i (id)}
-        <Fader
-          label={PARAMS[id].label}
-          display={display(id)}
-          position={toControl(id, pg.values[id])}
-          hot={pg.touched?.param === id}
-          onchange={(t) => pg.setFader(i, t)}
-        />
-      {/each}
-    </div>
-  </section>
-
-  <section class="bottom">
-    <div class="panel pads-panel">
-      <div class="title pads-title">
-        {#if pg.shift}
-          <span class="shifted">Shift held · pads are transport controls</span>
-        {:else if pg.seqEdit}
-          <span class="shifted">Sequencer edit · {pg.bank === "A" ? "steps on/off, hold + key sets the note" : "slides"}</span>
-        {:else if pg.stepMode}
-          <span class="shifted">Step edit · {pg.drumName(pg.stepTrack)} · steps {pg.bank === "A" ? "1–8" : "9–16"}</span>
-        {:else}
-          Pads · bank A: drums · bank B: 8 favourite presets
-        {/if}
-      </div>
-      <div class="pad-modes">
-        <button class:active={pg.stepMode} onclick={() => pg.toggleStepMode()} title="Shift + encoder click">Step edit</button>
-        {#if pg.seqEdit}
-          <button class:active={pg.bank === "A"} onclick={() => (pg.bank = "A")} title="Pad bank A">Steps</button>
-          <button class:active={pg.bank === "B"} onclick={() => (pg.bank = "B")} title="Pad bank B">Slides</button>
-        {:else if pg.stepMode}
-          <button class:active={pg.bank === "A"} onclick={() => (pg.bank = "A")} title="Pad bank A">1–8</button>
-          <button class:active={pg.bank === "B"} onclick={() => (pg.bank = "B")} title="Pad bank B">9–16</button>
-        {:else}
-          <button class:active={pg.spectrumPads} onclick={() => pg.setSpectrumPads(!pg.spectrumPads)} title="Pad lights follow the sound">Spectrum lights</button>
-        {/if}
-      </div>
-      <div class="pads">
-        {#each pg.padLevels as level, i}
-          {@const step = i + (pg.bank === "B" ? 8 : 0)}
-          {@const seqStep = pg.noteSeq.steps[i]}
-          {@const editing = pg.stepMode || pg.seqEdit}
-          {@const stepOn = pg.seqEdit ? (pg.bank === "A" ? seqStep.on : seqStep.slide) : pg.pattern[pg.stepTrack][step] > 0}
-          <button
-            class="pad"
-            class:shifted={pg.shift}
-            class:device-only={pg.shift && SHIFT_PADS[i].deviceOnly}
-            class:step={editing && !pg.shift}
-            class:step-on={editing && stepOn}
-            class:slide={pg.seqEdit && pg.bank === "B"}
-            class:playhead={pg.seqEdit ? pg.seqStep === i : pg.stepMode && pg.playStep === step}
-            class:outside={pg.seqEdit && i >= pg.noteSeq.length}
-            style:--level={editing ? 0 : pg.spectrumPads ? pg.spectrumLevels[i] : level}
-            style:--glow={pg.spectrumPads && !editing ? spectrumCss(i) : "var(--accent)"}
-            onpointerdown={() => pg.hitPad(i, 100)}
-            onpointerup={() => pg.releasePad(i)}
-            onpointerleave={() => pg.releasePad(i)}
-          >
-            {#if pg.shift}{SHIFT_PADS[i].label}
-            {:else if pg.seqEdit}{pg.bank === "A" ? `${i + 1} · ${pg.noteName(pg.stepNote(i))}` : `Slide ${i + 1}`}
-            {:else if pg.stepMode}Step {step + 1}
-            {:else}{pg.drumName(i)}{/if}
+    <section class="rhythm">
+      <div class="rhythm-bar">
+        <div class="seg" role="tablist" aria-label="Rhythm">
+          <button role="tab" aria-selected={rhythm === "drums"} class:active={rhythm === "drums"} onclick={() => (rhythm = "drums")}>
+            Drums <i class="dot" class:on={pg.drumsOn}></i>
           </button>
-        {/each}
+          <button role="tab" aria-selected={rhythm === "seq"} class:active={rhythm === "seq"} onclick={() => (rhythm = "seq")}>
+            Step sequencer <i class="dot" class:on={pg.noteSeq.enabled}></i>
+          </button>
+        </div>
+        <span class="hint">Both play together with ▶, in time with each other.</span>
       </div>
-    </div>
-    <div class="panel seq-panel" class:muted={!pg.drumsOn}>
-      <div class="title seq-title">
-        Drum loop {pg.recording ? "· recording pad hits" : ""}
-        <button class:active={pg.drumsOn} onclick={() => pg.setDrumsOn(!pg.drumsOn)} title="Mute the drum loop (the sequencer keeps playing)">
-          {pg.drumsOn ? "On" : "Off"}
-        </button>
-      </div>
-      <SeqGrid
-        pattern={pg.pattern}
-        getStep={() => pg.seq.currentStep}
-        levels={pg.padLevels}
-        selected={pg.stepMode ? pg.stepTrack : null}
-        ontoggle={(t, s) => pg.toggleStep(t, s)}
-        onselect={(t) => pg.selectTrack(t)}
-      />
-    </div>
-  </section>
 
-  <SequencerPanel {pg} />
+      {#if rhythm === "drums"}
+        <div class="drums">
+          <div class="panel pads-panel">
+            <div class="pads-head">
+              <div class="title pads-title">
+                {#if pg.shift}
+                  <span class="shifted">Shift held · pads are transport controls</span>
+                {:else if pg.seqEdit}
+                  <span class="shifted">Sequencer edit · {pg.bank === "A" ? "steps on/off, hold + key sets the note" : "slides"}</span>
+                {:else if pg.stepMode}
+                  <span class="shifted">Step edit · {pg.drumName(pg.stepTrack)} · steps {pg.bank === "A" ? "1–8" : "9–16"}</span>
+                {:else}
+                  Pads <span class="bank">A: drums · B: favourite presets</span>
+                {/if}
+              </div>
+              <div class="pad-modes">
+                <button class:active={pg.stepMode} onclick={() => pg.toggleStepMode()} title="Shift + encoder click">Step edit</button>
+                {#if pg.seqEdit}
+                  <button class:active={pg.bank === "A"} onclick={() => (pg.bank = "A")} title="Pad bank A">Steps</button>
+                  <button class:active={pg.bank === "B"} onclick={() => (pg.bank = "B")} title="Pad bank B">Slides</button>
+                {:else if pg.stepMode}
+                  <button class:active={pg.bank === "A"} onclick={() => (pg.bank = "A")} title="Pad bank A">1–8</button>
+                  <button class:active={pg.bank === "B"} onclick={() => (pg.bank = "B")} title="Pad bank B">9–16</button>
+                {:else}
+                  <button class:active={pg.spectrumPads} onclick={() => pg.setSpectrumPads(!pg.spectrumPads)} title="Pad lights follow the sound">Spectrum lights</button>
+                {/if}
+              </div>
+            </div>
+            <div class="pads">
+              {#each pg.padLevels as level, i}
+                {@const step = i + (pg.bank === "B" ? 8 : 0)}
+                {@const seqStep = pg.noteSeq.steps[i]}
+                {@const editing = pg.stepMode || pg.seqEdit}
+                {@const stepOn = pg.seqEdit ? (pg.bank === "A" ? seqStep.on : seqStep.slide) : pg.pattern[pg.stepTrack][step] > 0}
+                <button
+                  class="pad"
+                  class:shifted={pg.shift}
+                  class:device-only={pg.shift && SHIFT_PADS[i].deviceOnly}
+                  class:step={editing && !pg.shift}
+                  class:step-on={editing && stepOn}
+                  class:slide={pg.seqEdit && pg.bank === "B"}
+                  class:playhead={pg.seqEdit ? pg.seqStep === i : pg.stepMode && pg.playStep === step}
+                  class:outside={pg.seqEdit && i >= pg.noteSeq.length}
+                  style:--level={editing ? 0 : pg.spectrumPads ? pg.spectrumLevels[i] : level}
+                  style:--glow={pg.spectrumPads && !editing ? spectrumCss(i) : "var(--accent)"}
+                  onpointerdown={() => pg.hitPad(i, 100)}
+                  onpointerup={() => pg.releasePad(i)}
+                  onpointerleave={() => pg.releasePad(i)}
+                >
+                  {#if pg.shift}{SHIFT_PADS[i].label}
+                  {:else if pg.seqEdit}{pg.bank === "A" ? `${i + 1} · ${pg.noteName(pg.stepNote(i))}` : `Slide ${i + 1}`}
+                  {:else if pg.stepMode}Step {step + 1}
+                  {:else}{pg.drumName(i)}{/if}
+                </button>
+              {/each}
+            </div>
+          </div>
+          <div class="panel seq-panel" class:muted={!pg.drumsOn}>
+            <div class="title seq-title">
+              Drum loop {pg.recording ? "· recording pad hits" : ""}
+              <button class:active={pg.drumsOn} onclick={() => pg.setDrumsOn(!pg.drumsOn)} title="Mute the drum loop (the sequencer keeps playing)">
+                {pg.drumsOn ? "On" : "Off"}
+              </button>
+              <button class="clear" onclick={() => pg.clearPattern()} title="Clear the drum loop (Shift + ⟲)">Clear</button>
+            </div>
+            <SeqGrid
+              pattern={pg.pattern}
+              getStep={() => pg.seq.currentStep}
+              levels={pg.padLevels}
+              selected={pg.stepMode ? pg.stepTrack : null}
+              ontoggle={(t, s) => pg.toggleStep(t, s)}
+              onselect={(t) => pg.selectTrack(t)}
+            />
+          </div>
+        </div>
+      {:else}
+        <SequencerPanel {pg} />
+      {/if}
+    </section>
   {:else if pg.view === "synth"}
     <SynthView {pg} {accent} />
   {:else if pg.view === "wavetable"}
@@ -312,25 +354,24 @@
     <AboutPage {pg} />
   {/if}
 
-  <section class="panel">
+  <section class="panel keys" class:folded={!keysOpen}>
     <div class="keys-head">
       <ChordDisplay {pg} />
       <ScaleBar {pg} />
+      <button class="fold" onclick={toggleKeys} aria-expanded={keysOpen} title="{keysOpen ? 'Hide' : 'Show'} the on-screen keyboard. The MiniLab and the computer keyboard (A–' row) play either way">
+        Keyboard <span class="chev">{keysOpen ? "▾" : "▴"}</span>
+      </button>
     </div>
-    <Keyboard
-      notes={keyboardNotes}
-      onnoteon={(n) => pg.noteOn(n, 100)}
-      onnoteoff={(n) => pg.noteOff(n)}
-      playable={(n) => playable(n, pg.scale)}
-      root={pg.scale.scale === "off" ? null : pg.scale.root}
-    />
+    {#if keysOpen}
+      <Keyboard
+        notes={keyboardNotes}
+        onnoteon={(n) => pg.noteOn(n, 100)}
+        onnoteoff={(n) => pg.noteOff(n)}
+        playable={(n) => playable(n, pg.scale)}
+        root={pg.scale.scale === "off" ? null : pg.scale.root}
+      />
+    {/if}
   </section>
-
-  <footer>
-    Keys: computer keyboard A–' plays notes, Z / X shifts octave · Encoder: browse presets, click to load, hold for Dice (Synth view: knob pages, click to listen; Wavetable view: pick the table) ·
-    Shift + encoder click: drum step edit (turn to pick the drum), click again: sequencer edit, again: off ·
-    Shift + any knob: tempo · Shift + pads: ▶ play, ■ stop, ● record, ⟲ clear loop, Tap tempo · Double-click a knob to reset it
-  </footer>
 
   {#if !pg.audioRunning}
     <button class="start" onclick={() => pg.startAudio()}>
@@ -341,28 +382,55 @@
 </div>
 
 <style>
-  .app { display: grid; gap: 12px; padding: 12px 16px 16px; max-width: 1400px; margin: 0 auto; }
-  header { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
-  h1 { margin: 0; font-size: 18px; letter-spacing: 0.02em; }
+  .app { display: grid; gap: 8px; padding: 8px 16px 12px; max-width: 1400px; margin: 0 auto; }
+  .hint { color: var(--dim); font-size: 12px; }
+  .shifted { color: var(--accent); }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+  .title { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+
+  /* ---- header row 1: views and app state */
+  .top { display: flex; align-items: center; gap: 14px; min-width: 0; }
+  h1 { margin: 0; font-size: 17px; letter-spacing: 0.02em; white-space: nowrap; }
   h1 span { color: var(--accent); font-weight: 400; }
+  .top > :not(.midi) { flex: none; }
   .views { display: flex; gap: 2px; background: #0b0e10; border: 1px solid var(--line); border-radius: 6px; padding: 2px; }
-  .views button { border: none; background: none; font-size: 13px; padding: 4px 14px; border-radius: 4px; color: var(--dim); }
-  .views .active { background: var(--accent); color: #0b1314; font-weight: 600; }
-  .about-link { background: none; border: none; color: var(--dim); font-size: 13px; padding: 4px 6px; margin-left: -12px; }
-  .about-link:hover { color: var(--text); }
+  .views button { border: none; background: none; font-size: 13px; padding: 4px 16px; border-radius: 4px; color: var(--dim); }
+  .views button:hover { color: var(--text); }
+  .views .active, .views .active:hover { background: var(--accent); color: #0b1314; font-weight: 600; }
   .recipes-link { border-color: color-mix(in srgb, var(--accent) 50%, transparent); color: var(--accent); font-size: 13px; padding: 4px 12px; }
   .recipes-link.active { background: color-mix(in srgb, var(--accent) 18%, transparent); }
-  .about-link.active { color: var(--accent); text-decoration: underline; text-underline-offset: 4px; }
-  .midi { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+  /* Pushed to the right; the hint shortens first, and the row wraps before the button is covered. */
+  .midi { display: flex; align-items: center; gap: 10px; flex: 0 1 auto; min-width: 140px; margin-left: auto; }
+  .midi .hint { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .midi button { flex: none; }
   .pill { border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: 12px; white-space: nowrap; }
   .pill.ok { color: var(--accent); border-color: var(--accent); }
-  .hint { color: var(--dim); font-size: 12px; }
+  .shift { border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px; font-size: 12px; color: var(--dim); transition: all 0.08s; }
+  .shift.on { background: var(--accent); border-color: var(--accent); color: #0b1314; font-weight: 600; box-shadow: 0 0 12px var(--accent); }
   .cpu {
-    font: 11px var(--mono); color: var(--dim); border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px; min-width: 64px; text-align: center;
+    font: 11px var(--mono); color: var(--dim); border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px; min-width: 64px; text-align: center; white-space: nowrap;
     background: linear-gradient(to right, color-mix(in srgb, var(--accent) 30%, transparent) calc(var(--load) * 100%), transparent 0);
   }
   .cpu.hot { color: #ff6b6b; border-color: #ff6b6b; }
-  .transport { display: flex; align-items: center; gap: 6px; }
+  .explain-toggle { font-size: 12px; display: flex; align-items: center; gap: 6px; white-space: nowrap; color: var(--dim); }
+  .about-link { background: none; border: none; color: var(--dim); font-size: 12px; padding: 4px 2px; white-space: nowrap; }
+  .about-link:hover { color: var(--text); }
+  .about-link.active { color: var(--accent); text-decoration: underline; text-underline-offset: 4px; }
+
+  /* ---- header row 2: the sound and time */
+  .soundbar { display: flex; gap: 10px; align-items: stretch; }
+  .group button { white-space: nowrap; }
+  .group { display: flex; align-items: center; gap: 6px; padding: 4px 6px; background: #0f1416; border: 1px solid var(--line); border-radius: 8px; }
+  .sound { flex: 1; min-width: 0; }
+  .parts { display: flex; gap: 2px; margin-right: 6px; }
+  .parts button { display: grid; text-align: left; padding: 1px 10px; line-height: 1.2; }
+  .parts button.active { border-color: var(--accent); }
+  .part-name { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); }
+  .parts button.active .part-name { color: var(--accent); }
+  .part-preset { font-size: 12.5px; white-space: nowrap; }
+  .sound select { width: 260px; min-width: 0; font-size: 14px; padding: 4px 8px; }
+  .browse { color: var(--accent); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dirty { color: var(--dim); font-size: 12px; font-style: italic; }
   .transport button { min-width: 34px; }
   .transport .active { background: var(--accent); color: #0b1314; }
   .transport .rec { color: #ff6b6b; }
@@ -371,80 +439,79 @@
   .bpm input { width: 52px; padding: 4px 6px; text-align: center; font: 13px var(--mono); color: var(--text); appearance: textfield; }
   .bpm input::-webkit-inner-spin-button, .bpm input::-webkit-outer-spin-button { appearance: none; margin: 0; }
 
-  .presets { display: flex; align-items: center; gap: 6px; }
-  .parts { display: flex; gap: 2px; margin-right: 8px; }
-  .parts button { display: grid; text-align: left; padding: 2px 10px; line-height: 1.2; }
-  .parts button.active { border-color: var(--accent); }
-  .part-name { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); }
-  .parts button.active .part-name { color: var(--accent); }
-  .part-preset { font-size: 12.5px; }
-  .presets select { min-width: 260px; font-size: 14px; padding: 5px 8px; }
-  .browse { color: var(--accent); font-size: 12px; }
-  .dirty { color: var(--dim); font-size: 12px; font-style: italic; }
-  .spacer { flex: 1; }
-
-  .keys-head { display: flex; gap: 14px; align-items: center; margin-bottom: 8px; }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
-  .title { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
-  .viz { display: grid; grid-template-columns: 1fr 340px; gap: 12px; height: 280px; }
-  .main-viz { display: flex; flex-direction: column; }
-  .canvas { position: relative; }
-  .main-viz .canvas { flex: 1; min-height: 0; }
-  .tabs { display: flex; gap: 4px; align-items: center; margin-bottom: 6px; }
-  .tabs button { font-size: 12px; padding: 2px 10px; }
-  .tabs .active { border-color: var(--accent); color: var(--accent); }
-  .tabs .hint { margin-left: auto; }
-  .side { display: grid; grid-template-rows: 1fr 1fr; gap: 12px; min-height: 0; }
-  .side .panel { display: flex; flex-direction: column; min-height: 0; }
-  .side .canvas { flex: 1; min-height: 0; }
-
-  .surface { display: grid; grid-template-columns: auto 1fr auto; gap: 28px; align-items: center; }
-  .strips { display: flex; gap: 10px; }
-  .strip { width: 30px; height: 150px; background: #0b0e10; border-radius: 5px; position: relative; overflow: hidden; }
+  /* ---- Play view: the MiniLab's controls and the sound, then the rhythm */
+  .play { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 10px; }
+  .surface { display: grid; grid-template-columns: auto 1fr auto; column-gap: 24px; align-items: center; padding: 8px 14px; }
+  .surface-note { grid-column: 1 / -1; margin: 4px 0 0; font-size: 11.5px; color: #a9b6ba; }
+  .strips { display: flex; gap: 8px; }
+  .strip { width: 28px; height: 136px; background: #0b0e10; border-radius: 5px; position: relative; overflow: hidden; }
   .strip span { position: absolute; bottom: 4px; width: 100%; text-align: center; font-size: 10px; color: var(--dim); }
   .strip .center { position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: #fff3; }
   .strip .bend { position: absolute; left: 0; right: 0; background: var(--accent); opacity: 0.7; }
   .strip .mod { position: absolute; left: 0; right: 0; bottom: 0; background: var(--accent); opacity: 0.7; }
-  .knobs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px 8px; }
-  .faders { display: grid; grid-template-columns: repeat(4, 64px); }
+  .knobs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px 8px; }
+  .faders { display: grid; grid-template-columns: repeat(4, 58px); }
+  .main-viz { display: flex; flex-direction: column; min-height: 200px; }
+  .canvas { position: relative; flex: 1; min-height: 0; }
+  .tabs { display: flex; gap: 4px; align-items: center; margin-bottom: 6px; }
+  .tabs button { font-size: 12px; padding: 2px 10px; }
+  .tabs .active { border-color: var(--accent); color: var(--accent); }
+  .tabs .hint { margin-left: auto; font-size: 11px; }
 
-  .bottom { display: grid; grid-template-columns: 420px 1fr; gap: 12px; }
+  .rhythm { display: grid; gap: 6px; }
+  .rhythm-bar { display: flex; align-items: center; gap: 12px; }
+  .seg { display: flex; gap: 2px; background: #0b0e10; border: 1px solid var(--line); border-radius: 6px; padding: 2px; }
+  .seg button { border: none; background: none; font-size: 12px; padding: 2px 12px; border-radius: 4px; color: var(--dim); display: flex; align-items: center; gap: 6px; }
+  .seg button:hover { color: var(--text); }
+  .seg .active, .seg .active:hover { background: #222b2f; color: var(--text); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: #3a454b; }
+  .dot.on { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+  .drums { display: grid; grid-template-columns: 380px 1fr; gap: 10px; }
   .pads { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
   .pad {
-    aspect-ratio: 1.6; border-radius: 6px; border: 2px solid var(--accent); background: #101416; font-size: 12px; color: var(--text);
-    box-shadow: 0 0 calc(var(--level) * 24px) var(--accent), inset 0 0 calc(var(--level) * 40px) var(--accent);
+    height: 46px; border-radius: 6px; border: 2px solid var(--accent); background: #101416; font-size: 12px; color: var(--text);
+    box-shadow: 0 0 calc(var(--level) * 24px) var(--glow, var(--accent)), inset 0 0 calc(var(--level) * 40px) var(--glow, var(--accent));
     transition: box-shadow 0.12s;
   }
-  .pad { box-shadow: 0 0 calc(var(--level) * 24px) var(--glow, var(--accent)), inset 0 0 calc(var(--level) * 40px) var(--glow, var(--accent)); }
   .pad.shifted { border-style: dashed; color: var(--accent); }
   .pad.step { color: var(--dim); border-color: var(--line); }
   .pad.step-on { background: var(--accent); color: #0b1314; border-color: var(--accent); }
   .pad.playhead { outline: 2px solid #fff; outline-offset: 2px; }
   .pad.slide.step-on { background: #a35cff; border-color: #a35cff; }
   .pad.outside { opacity: 0.3; }
-  .pads-title { margin-bottom: 4px; }
+  .pad.device-only { opacity: 0.45; }
+  .pads-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; min-height: 22px; }
+  .pads-title { margin: 0; flex: 1; min-width: 0; line-height: 1.25; }
   .seq-title { display: flex; align-items: center; gap: 8px; }
   .seq-title button { font-size: 11px; padding: 1px 10px; text-transform: none; letter-spacing: 0; }
   .seq-title .active { border-color: var(--accent); color: var(--accent); }
+  .seq-title .clear { margin-left: auto; }
   .seq-panel.muted :global(.seq) { opacity: 0.4; }
-  .pad-modes { display: flex; gap: 4px; margin-bottom: 8px; }
+  .pad-modes { display: flex; gap: 4px; flex: none; }
+  .bank { text-transform: none; letter-spacing: 0; }
   .pad-modes button { font-size: 12px; padding: 2px 10px; }
   .pad-modes .active { border-color: var(--accent); color: var(--accent); }
-  .dice { margin-left: 6px; }
-  .pad.device-only { opacity: 0.45; }
-  .shift { border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px; font-size: 12px; color: var(--dim); transition: all 0.08s; }
-  .shift.on { background: var(--accent); border-color: var(--accent); color: #0b1314; font-weight: 600; box-shadow: 0 0 12px var(--accent); }
-  .shifted { color: var(--accent); }
 
-  footer { color: var(--dim); font-size: 12px; text-align: center; }
+  /* ---- the keyboard, on every view */
+  .keys { padding: 8px 10px; }
+  .keys-head { display: flex; gap: 16px; align-items: center; min-height: 32px; margin-bottom: 8px; }
+  .keys.folded .keys-head { margin-bottom: 0; }
+  .fold { flex: none; display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 3px 10px; color: var(--dim); }
+  .fold:hover { color: var(--text); }
+  .chev { font-size: 10px; }
 
+  @media (max-width: 1100px) {
+    .top { flex-wrap: wrap; }
+    .soundbar { flex-wrap: wrap; }
+  }
   @media (max-width: 1000px) {
-    .viz { grid-template-columns: 1fr; height: auto; }
-    .main-viz .canvas { height: 200px; flex: none; }
-    .side { grid-template-rows: 150px 150px; }
-    .surface { grid-template-columns: 1fr; justify-items: center; }
-    .bottom { grid-template-columns: 1fr; }
-    .presets select { min-width: 0; flex: 1; }
+    .play { grid-template-columns: 1fr; }
+    .main-viz { height: 200px; }
+    .drums { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 800px) {
+    .surface { grid-template-columns: 1fr; justify-items: center; row-gap: 12px; }
+    .sound { flex-wrap: wrap; }
   }
 
   .start {

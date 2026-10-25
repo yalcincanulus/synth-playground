@@ -112,63 +112,62 @@
   });
 
   let page = $derived(KNOB_PAGES[pg.focusPage]);
+  /** The detail panel shows the full explanation only when asked: it would push the diagram down. */
+  let more = $state(false);
+
+  // The modulator row folds to a strip of titles (cables still reach them); remembered per browser.
+  const MODS_OPEN_KEY = "minilab3.modulators";
+  let modsOpen = $state(localStorage.getItem(MODS_OPEN_KEY) !== "closed");
+  function toggleMods() {
+    modsOpen = !modsOpen;
+    localStorage.setItem(MODS_OPEN_KEY, modsOpen ? "open" : "closed");
+  }
   let focusDef = $derived(BLOCKS[pg.focusBlock]);
 </script>
 
 <section class="synth">
   {#if pg.recipeList}<RecipeList {pg} />{/if}
-  <div class="bar">
-    <div class="legend">
-      <span><i style:background={accent}></i>sound</span>
-      <span><i class="dash" style:color={LFO}></i>LFO 1</span>
-      <span><i class="dash" style:color={LFO2}></i>LFO 2</span>
-      <span><i class="dash" style:color={FENV}></i>filter envelope</span>
-      <span><i class="dash" style:color={AENV}></i>amp envelope</span>
-      <span><i class="dash" style:color={PENV}></i>pitch envelope</span>
-      <span><i class="dash" style:color={MENV}></i>mod envelope</span>
-      <span><i class="dash" style:color={OSC}></i>sync / FM</span>
-      <span><i class="dash" style:color={PLAY}></i>your playing</span>
-    </div>
-    {#if pg.listening}
-      <button class="listening" onclick={() => pg.listenTo(null)}>
-        🎧 Listening to <strong>{TAP_NAMES[pg.listening]}</strong> only · click (or the encoder) for the full sound
-      </button>
-    {:else}
-      <span class="hint">Click a block to put the MiniLab knobs on it · encoder switches knob pages · 🎧 or encoder click: listen at that point</span>
-    {/if}
-    <label class="explain-toggle"><input type="checkbox" checked={pg.explain} onchange={(e) => pg.setExplain(e.currentTarget.checked)} /> Explanations</label>
-  </div>
+  {#if pg.listening}
+    <button class="listening" onclick={() => pg.listenTo(null)}>
+      🎧 Listening to <strong>{TAP_NAMES[pg.listening]}</strong> only · click (or the encoder) for the full sound
+    </button>
+  {/if}
 
   {#if pg.recipe}
     <RecipePanel {pg} />
   {:else}
-  <aside class="detail">
-    <div class="about">
-      <h3>{focusDef.title}</h3>
-      <p>{focusDef.explain}</p>
-    </div>
-    <p class="try"><strong>Try this:</strong> {focusDef.tryThis}</p>
-    <div class="knobmap">
-      <div class="title">MiniLab knobs → {page.name}</div>
-      <ol>
-        {#each page.knobs as id, i (i)}
-          <li class:hot={id && pg.touched?.param === id}>
-            <span class="n">{i + 1}</span>
-            {#if id}{paramLabel(id, pg.values, PARAMS[id].label)}<span class="v">{formatValue(id, pg.values[id])}</span>{:else}<span class="v">—</span>{/if}
-          </li>
-        {/each}
-      </ol>
-    </div>
-  </aside>
+    <aside class="detail" class:explained={pg.explain}>
+      <div class="about">
+        <h3>{focusDef.title}</h3>
+        {#if pg.explain}
+          <p class:clamped={!more}>{focusDef.explain}</p>
+          <p class="try" class:clamped={!more}><strong>Try this:</strong> {focusDef.tryThis}</p>
+          <button class="more" onclick={() => (more = !more)}>{more ? "Less" : "More"}</button>
+        {:else}
+          <p class="hint">Click a block to put the MiniLab knobs on it. The encoder switches knob pages; 🎧 or an encoder click listens at that point.</p>
+        {/if}
+      </div>
+      <div class="knobmap">
+        <div class="title" title="Click a block to put the MiniLab knobs on it · the encoder switches knob pages">MiniLab knobs → {page.name}</div>
+        <ol>
+          {#each page.knobs as id, i (i)}
+            <li class:hot={id && pg.touched?.param === id}>
+              <span class="n">{i + 1}</span>
+              {#if id}{paramLabel(id, pg.values, PARAMS[id].label)}<span class="v">{formatValue(id, pg.values[id])}</span>{:else}<span class="v">—</span>{/if}
+            </li>
+          {/each}
+        </ol>
+      </div>
+    </aside>
   {/if}
 
   <MatrixPanel {pg} colors={COLORS} />
 
   <div class="diagram" bind:this={container}>
     <div class="col">
-      <Block {pg} id="osc1"><LiveCanvas height={40} draw={viz.scope(() => taps.osc1, color, () => viz.oscIdeal(pg.values, 0, engine))} /></Block>
+      <Block {pg} id="osc1"><LiveCanvas height={32} draw={viz.scope(() => taps.osc1, color, () => viz.oscIdeal(pg.values, 0, engine))} /></Block>
       <Block {pg} id="osc2" inactive={pg.values.oscMix < 0.01 ? (pg.values.fmAmount >= 0.01 ? "FM only" : "mixed out") : null}>
-        <LiveCanvas height={40} draw={viz.scope(() => taps.osc2, color, () => viz.oscIdeal(pg.values, 1, engine))} />
+        <LiveCanvas height={32} draw={viz.scope(() => taps.osc2, color, () => viz.oscIdeal(pg.values, 1, engine))} />
       </Block>
     </div>
 
@@ -187,54 +186,72 @@
                   pg.listenTo(tap);
                 }}>🎧</button
               >
-              <LiveCanvas height={34} draw={viz.scope(() => taps[tap], color, tap === "sub" ? () => viz.idealWave(3) : noise)} />
+              <LiveCanvas height={22} draw={viz.scope(() => taps[tap], color, tap === "sub" ? () => viz.idealWave(3) : noise)} />
             </div>
           {/each}
         </div>
       </Block>
       <Block {pg} id="mixer">
-        <LiveCanvas height={50} draw={viz.mixer(values, color)} />
-        <LiveCanvas height={34} draw={viz.scope(() => taps.mix, color)} />
+        <LiveCanvas height={30} draw={viz.mixer(values, color)} />
+        <LiveCanvas height={22} draw={viz.scope(() => taps.mix, color)} />
       </Block>
       <Block {pg} id="drive" inactive={pg.values.drive < 0.01 ? "off" : null}>
-        <LiveCanvas height={56} draw={viz.drive(values, color)} />
-        <LiveCanvas height={34} draw={viz.scope(() => taps.drive, color)} />
+        <LiveCanvas height={40} draw={viz.drive(values, color)} />
+        <LiveCanvas height={22} draw={viz.scope(() => taps.drive, color)} />
       </Block>
     </div>
 
     <div class="col">
       <Block {pg} id="filter">
-        <LiveCanvas height={110} draw={viz.filter(engine, color)} />
-        <LiveCanvas height={40} draw={viz.scope(() => taps.filter, color)} />
+        <LiveCanvas height={76} draw={viz.filter(engine, color)} />
+        <LiveCanvas height={24} draw={viz.scope(() => taps.filter, color)} />
       </Block>
       <Block {pg} id="filter2" inactive={pg.values.filter2Mode === 0 ? "off" : null}>
-        <LiveCanvas height={70} draw={viz.filter2(engine, color)} />
-        <LiveCanvas height={34} draw={viz.scope(() => taps.filter2, color)} />
+        <LiveCanvas height={46} draw={viz.filter2(engine, color)} />
+        <LiveCanvas height={22} draw={viz.scope(() => taps.filter2, color)} />
       </Block>
     </div>
 
     <div class="col">
-      <Block {pg} id="amp"><LiveCanvas height={56} draw={viz.scope(() => taps.amp, color)} /></Block>
-      <Block {pg} id="chorus" inactive={pg.values.chorus < 0.01 ? "off" : null}><LiveCanvas height={34} draw={viz.chorus(engine, color)} /></Block>
+      <Block {pg} id="amp"><LiveCanvas height={40} draw={viz.scope(() => taps.amp, color)} /></Block>
+      <Block {pg} id="chorus" inactive={pg.values.chorus < 0.01 ? "off" : null}><LiveCanvas height={28} draw={viz.chorus(engine, color)} /></Block>
       <Block {pg} id="output">
-        <LiveCanvas height={34} draw={viz.stereoMeter(() => engine.fx.meters.left, () => engine.fx.meters.right, color)} />
-        <LiveCanvas height={84} draw={viz.stereoPicture(() => engine.fx.meters.left, () => engine.fx.meters.right, color)} />
+        <LiveCanvas height={26} draw={viz.stereoMeter(() => engine.fx.meters.left, () => engine.fx.meters.right, color)} />
+        <LiveCanvas height={48} draw={viz.stereoPicture(() => engine.fx.meters.left, () => engine.fx.meters.right, color)} />
       </Block>
     </div>
 
     <div class="col">
-      <Block {pg} id="delay" inactive={pg.values.delayMix < 0.01 ? "off" : null}><LiveCanvas height={40} draw={viz.delay(values, () => pg.bpm, color)} /></Block>
-      <Block {pg} id="reverb" inactive={pg.values.reverbMix < 0.01 ? "off" : null}><LiveCanvas height={36} draw={viz.reverb(values, color)} /></Block>
+      <Block {pg} id="delay" inactive={pg.values.delayMix < 0.01 ? "off" : null}><LiveCanvas height={34} draw={viz.delay(values, () => pg.bpm, color)} /></Block>
+      <Block {pg} id="reverb" inactive={pg.values.reverbMix < 0.01 ? "off" : null}><LiveCanvas height={30} draw={viz.reverb(values, color)} /></Block>
     </div>
 
-    <div class="mods">
-      <Block {pg} id="pitchEnv"><LiveCanvas height={56} draw={viz.pitchEnvelope(engine, () => PENV)} /></Block>
-      <Block {pg} id="perf"><LiveCanvas height={60} draw={viz.playing(engine, () => pg.bend, () => pg.mod, () => PLAY)} /></Block>
-      <Block {pg} id="lfo"><LiveCanvas height={56} draw={viz.lfo(engine, 0, () => LFO)} /></Block>
-      <Block {pg} id="lfo2"><LiveCanvas height={56} draw={viz.lfo(engine, 1, () => LFO2)} /></Block>
-      <Block {pg} id="filterEnv"><LiveCanvas height={70} draw={viz.envelope(engine, "filter", () => FENV)} /></Block>
-      <Block {pg} id="ampEnv"><LiveCanvas height={70} draw={viz.envelope(engine, "amp", () => AENV)} /></Block>
-      <Block {pg} id="modEnv"><LiveCanvas height={70} draw={viz.envelope(engine, "mod", () => MENV)} /></Block>
+    <div class="modrow" class:folded={!modsOpen}>
+      <div class="mods-head">
+        <button class="fold" onclick={toggleMods} aria-expanded={modsOpen} title={modsOpen ? "Fold the modulators to a row of names" : "Show the modulators' pictures and controls"}>{modsOpen ? "▾" : "▸"} Modulators</button>
+        {#if modsOpen}
+          <div class="legend">
+            <span><i style:background={accent}></i>sound</span>
+            <span><i class="dash" style:color={LFO}></i>LFO 1</span>
+            <span><i class="dash" style:color={LFO2}></i>LFO 2</span>
+            <span><i class="dash" style:color={FENV}></i>filter env</span>
+            <span><i class="dash" style:color={AENV}></i>amp env</span>
+            <span><i class="dash" style:color={PENV}></i>pitch env</span>
+            <span><i class="dash" style:color={MENV}></i>mod env</span>
+            <span><i class="dash" style:color={OSC}></i>sync / FM</span>
+            <span><i class="dash" style:color={PLAY}></i>your playing</span>
+          </div>
+        {/if}
+      </div>
+      <div class="mods">
+        <Block {pg} id="pitchEnv" compact={!modsOpen}><LiveCanvas height={44} draw={viz.pitchEnvelope(engine, () => PENV)} /></Block>
+        <Block {pg} id="perf" compact={!modsOpen}><LiveCanvas height={48} draw={viz.playing(engine, () => pg.bend, () => pg.mod, () => PLAY)} /></Block>
+        <Block {pg} id="lfo" compact={!modsOpen}><LiveCanvas height={44} draw={viz.lfo(engine, 0, () => LFO)} /></Block>
+        <Block {pg} id="lfo2" compact={!modsOpen}><LiveCanvas height={44} draw={viz.lfo(engine, 1, () => LFO2)} /></Block>
+        <Block {pg} id="filterEnv" compact={!modsOpen}><LiveCanvas height={52} draw={viz.envelope(engine, "filter", () => FENV)} /></Block>
+        <Block {pg} id="ampEnv" compact={!modsOpen}><LiveCanvas height={52} draw={viz.envelope(engine, "amp", () => AENV)} /></Block>
+        <Block {pg} id="modEnv" compact={!modsOpen}><LiveCanvas height={52} draw={viz.envelope(engine, "mod", () => MENV)} /></Block>
+      </div>
     </div>
 
     {#if container}<Cables {container} {cables} />{/if}
@@ -242,43 +259,54 @@
 </section>
 
 <style>
-  .synth { display: grid; gap: 10px; }
-  .bar { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
-  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--dim); }
-  .legend i { display: inline-block; width: 18px; height: 3px; margin-right: 6px; vertical-align: middle; border-radius: 2px; }
-  .legend i.dash { background: repeating-linear-gradient(90deg, currentColor 0 5px, transparent 5px 9px); }
-  .hint { color: var(--dim); font-size: 12px; flex: 1 1 320px; }
-  .explain-toggle { font-size: 12px; display: flex; align-items: center; gap: 6px; }
+  .synth { display: grid; gap: 8px; }
+  .listening { text-align: left; background: #ffcc3322; border-color: #ffcc33; color: #ffe08a; font-size: 12px; }
+  .detail {
+    display: grid; grid-template-columns: 1fr 520px; gap: 20px; align-items: start;
+    background: #10171a; border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px; font-size: 12px; line-height: 1.4;
+  }
+  .about { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 16px; align-items: start; position: relative; }
+  .about h3 { grid-column: 1 / -1; margin: 0; font-size: 14px; color: var(--accent); }
+  .about p { margin: 0; color: #b9c5c8; }
+  .about .hint { grid-column: 1 / -1; color: var(--dim); }
+  /* Two lines each until "More" opens the whole text. */
+  .clamped { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .more { position: absolute; top: 0; right: 0; font-size: 11px; padding: 0 8px; color: var(--dim); }
+  .try strong { color: var(--text); }
+  .knobmap .title { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
+  /* Two rows of four, like the knobs on the MiniLab. */
+  ol { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px 14px; }
+  li { display: flex; gap: 6px; align-items: baseline; white-space: nowrap; overflow: hidden; }
+  li.hot { color: var(--accent); }
+  .n { font: 600 10px var(--mono); color: var(--dim); }
+  .v { margin-left: auto; font: 10px var(--mono); color: var(--dim); }
 
   .diagram {
     position: relative;
     display: grid;
     grid-template-columns: 1fr 1fr 1.25fr 1fr 1fr;
-    grid-template-rows: auto auto;
-    gap: 36px 34px;
+    gap: 0 30px;
     align-items: start;
   }
-  .col { display: flex; flex-direction: column; gap: 14px; }
+  .col { display: flex; flex-direction: column; gap: 10px; }
   .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
   .pair span { font-size: 10px; color: var(--dim); }
   .pair .off { opacity: 0.45; }
   .pair > div { position: relative; }
   .listen-mini { position: absolute; top: -2px; right: 0; padding: 0 3px; font-size: 10px; line-height: 14px; background: none; opacity: 0.55; }
   .listen-mini.on { opacity: 1; background: #ffcc33; border-color: #ffcc33; }
-  .listening { flex: 1; text-align: left; background: #ffcc3322; border-color: #ffcc33; color: #ffe08a; font-size: 12px; }
-  /* The modulators: one row of seven under the signal path. */
-  .mods { grid-row: 2; grid-column: 1 / -1; display: grid; grid-template-columns: repeat(7, 1fr); gap: 22px; align-items: start; }
-  .detail {
-    display: grid; grid-template-columns: 1.6fr 1fr 1.3fr; gap: 20px; align-items: start;
-    background: #10171a; border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; font-size: 12px; line-height: 1.4;
+  /* The modulators: one row of seven under the signal path, with the cable colours. */
+  .modrow { grid-column: 1 / -1; display: grid; }
+  .modrow.folded { display: flex; align-items: center; gap: 16px; padding-top: 14px; }
+  .mods-head { display: flex; align-items: center; gap: 16px; padding: 12px 0 6px; position: relative; z-index: 1; }
+  .folded .mods-head { padding: 0; }
+  .fold { background: none; border: none; padding: 0; font-weight: 600; font-size: 13px; color: var(--text); white-space: nowrap; }
+  .legend { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 11px; color: var(--dim); }
+  .legend i { display: inline-block; width: 16px; height: 3px; margin-right: 5px; vertical-align: middle; border-radius: 2px; }
+  .legend i.dash { background: repeating-linear-gradient(90deg, currentColor 0 5px, transparent 5px 9px); }
+  .mods { display: grid; grid-template-columns: repeat(7, 1fr); gap: 18px; align-items: start; }
+  .folded .mods { flex: 1; gap: 12px; }
+  @media (max-width: 1100px) {
+    .detail { grid-template-columns: 1fr; }
   }
-  .detail h3 { margin: 0 0 2px; font-size: 14px; color: var(--accent); }
-  .detail p { margin: 0; color: #b9c5c8; }
-  .try strong { color: var(--text); }
-  .knobmap .title { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
-  ol { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; grid-auto-flow: column; grid-template-rows: repeat(4, auto); gap: 2px 14px; }
-  li { display: flex; gap: 6px; align-items: baseline; white-space: nowrap; overflow: hidden; }
-  li.hot { color: var(--accent); }
-  .n { font: 600 10px var(--mono); color: var(--dim); }
-  .v { margin-left: auto; font: 10px var(--mono); color: var(--dim); }
 </style>
