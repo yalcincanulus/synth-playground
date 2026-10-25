@@ -65,7 +65,8 @@ describe("chords", () => {
     expect(chord(70, { root: 5, scale: "major", chords: "triads" })).toBe("Bb");
     expect(chord(68, { root: 4, scale: "major", chords: "triads" })).toBe("G#m");
     expect(noteNameIn(63, { root: 0, scale: "minorPent", chords: "off" })).toBe("Eb4");
-    expect(noteNameIn(63, { root: 0, scale: "off", chords: "off" })).toBe("D#4");
+    expect(noteNameIn(63, { root: 0, scale: "off", chords: "off" })).toBe("Eb4");
+    expect(noteNameIn(66, { root: 0, scale: "off", chords: "off" })).toBe("F#4");
   });
 
   test("a key outside the scale plays the chord of the note it snaps to", () => {

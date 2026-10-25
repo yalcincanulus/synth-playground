@@ -47,7 +47,7 @@
   </label>
   {#if chords.length}
     <ol class="chords" aria-label="The chords of the scale">
-      {#each chords as name, i (i)}<li class:now={name === pg.lastChord}>{name}</li>{/each}
+      {#each chords as name, i (i)}<li class:now={name === pg.chord?.name}>{name}</li>{/each}
     </ol>
   {/if}
   {#if pg.explain}
@@ -64,7 +64,7 @@
 </div>
 
 <style>
-  .scale { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 8px; font-size: 11px; }
+  .scale { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; flex: 1; min-width: 0; font-size: 11px; }
   .title { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; }
   label { display: flex; align-items: center; gap: 6px; color: var(--dim); }
   select { font-size: 12px; }

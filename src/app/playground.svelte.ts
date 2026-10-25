@@ -25,6 +25,7 @@ import { addTable, BUILTIN_TABLES, idAfterRemoval, removeTable, renameTable, rep
 import { deleteImportedTable, saveImportedTable, storeTable, updateStoredTable } from "../audio/tableStore";
 import { blendKeyframes, shapeWave } from "../audio/tableDraw";
 import { TableEditor } from "./wavetable/tableEditor.svelte";
+import { detectChord, type DetectedChord } from "../audio/chordDetect";
 import { CHORD_MODE_NAMES, chordName, defaultScale, keyNotes, noteNameIn, ROOT_NAMES, scaleLabel, scaleNotes, SCALES, snapToScale, type ScaleSettings } from "../audio/scale";
 import { cutIntoFrames, decodeSoundFile, type CutMode } from "../audio/wavImport";
 import { findPorts, isMainPort, MiniLab, requestMidi } from "../minilab/device";
@@ -163,8 +164,10 @@ export class Playground {
   notes = new SvelteSet<number>();
   /** Scale lock and chord mode: shared by both parts, kept across reloads. */
   scale = $state<ScaleSettings>(loadScale());
-  /** The chord the last key played in chord mode, e.g. "Dm7". */
-  lastChord = $state<string | null>(null);
+  /** The chord in the notes played on the keys (chord detection), kept after they are released. */
+  chord = $state.raw<DetectedChord | null>(null);
+  /** Whether every note of `chord` is still held (the UI dims it once they are released). */
+  chordHeld = $state(false);
   padLevels = $state<number[]>(Array(8).fill(0));
   mod = $state(0);
   bend = $state(0);
@@ -215,6 +218,11 @@ export class Playground {
   private keyPlays = new Map<number, number[]>();
   /** How many held keys play each note: two keys can snap to the same one, and it stops with the last. */
   private noteHolds = new Map<number, number>();
+  /** The notes `chord` was found in, to name them again when the scale changes. */
+  private chordNotes: number[] = [];
+  private chordTimer = 0;
+  /** A key went down since the chord was last found. */
+  private chordPressed = false;
   /** Fader pickup after the faders change job: a fader only takes over once it reaches the value it now controls. */
   private faderLive: boolean[] = Array(FADERS.length).fill(true);
   private faderLast: (number | null)[] = Array(FADERS.length).fill(null);
@@ -430,9 +438,10 @@ export class Playground {
       this.notes.add(n);
     }
     if (plays.length > 1) {
-      this.lastChord = chordName(plays, this.scale);
-      if (this.lastChord) this.showMessage("Chord", this.lastChord);
+      const name = chordName(plays, this.scale);
+      if (name) this.showMessage("Chord", name);
     }
+    this.notesChanged(true);
   }
 
   noteOff(note: number) {
@@ -449,12 +458,34 @@ export class Playground {
       this.engine.noteOff(n);
       this.notes.delete(n);
     }
+    this.notesChanged(false);
+  }
+
+  /**
+   * Name the chord in the held notes, 40 ms after they stop changing: fingers never land together, so
+   * naming every note as it arrives would flicker (C, C5, C). A key press names what is held then. A
+   * release only does while 3 or more notes are left, so letting go of a chord one finger at a time
+   * leaves its name showing (dimmed) instead of walking down through its parts.
+   */
+  private notesChanged(pressed: boolean) {
+    this.chordPressed ||= pressed;
+    clearTimeout(this.chordTimer);
+    this.chordTimer = window.setTimeout(() => {
+      const held = [...this.notes];
+      if (held.length && (this.chordPressed || held.length >= 3)) {
+        this.chordNotes = held;
+        this.chord = detectChord(held, this.scale);
+      }
+      this.chordPressed = false;
+      this.chordHeld = this.chordNotes.length > 0 && this.chordNotes.every((n) => this.notes.has(n));
+    }, 40);
   }
 
   /** Change the scale lock or chord mode. Held keys keep the notes they started; the next press uses the new scale. */
   setScale(change: Partial<ScaleSettings>) {
     this.scale = { ...this.scale, ...change };
-    if (this.scale.scale === "off") this.lastChord = null;
+    // The same notes, named for the new key (spelling and numbers change).
+    if (this.chord) this.chord = detectChord(this.chordNotes, this.scale);
     try {
       localStorage.setItem(SCALE_KEY, JSON.stringify(this.scale));
     } catch {

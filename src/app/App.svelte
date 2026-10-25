@@ -7,6 +7,7 @@
   import FilterCurve from "./components/FilterCurve.svelte";
   import Keyboard from "./components/Keyboard.svelte";
   import ScaleBar from "./components/ScaleBar.svelte";
+  import ChordDisplay from "./components/ChordDisplay.svelte";
   import { playable } from "../audio/scale";
   import Knob from "./components/Knob.svelte";
   import Scope from "./components/Scope.svelte";
@@ -311,7 +312,10 @@
   {/if}
 
   <section class="panel">
-    <ScaleBar {pg} />
+    <div class="keys-head">
+      <ChordDisplay {pg} />
+      <ScaleBar {pg} />
+    </div>
     <Keyboard
       notes={keyboardNotes}
       onnoteon={(n) => pg.noteOn(n, 100)}
@@ -376,6 +380,7 @@
   .dirty { color: var(--dim); font-size: 12px; font-style: italic; }
   .spacer { flex: 1; }
 
+  .keys-head { display: flex; gap: 14px; align-items: center; margin-bottom: 8px; }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
   .title { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
   .viz { display: grid; grid-template-columns: 1fr 340px; gap: 12px; height: 280px; }

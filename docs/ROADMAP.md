@@ -260,6 +260,16 @@ What the browser still limits, whatever we do:
   - **Checked in the browser** (Helium, headless): D dorian C# → C; Dm triad on D; Cmaj7 from C and C# held together stays until both are released; a scale change while a key is held leaves nothing hanging; the computer keyboard plays chords; step knobs and sequencer notes stay in C minor pentatonic; the setting survives a reload.
   - **Tests:** `scale.test.ts` (snapping for every scale and root, the chords of C major, harmonic minor's major V, the borrowed chords, the blue note, spelling), and a `stepSequencer.test.ts` case for the pitch hook (including two steps that snap to one note tied by a slide).
 
+### 14b. Chord detection
+
+- Added 2026-10-25, before the recipes: the UI names the chord you play on the keys. It is not shown on the OLED (the user's choice).
+- Status: done 2026-10-25 (checked on the MiniLab).
+  - **Detection** (`chordDetect.ts`): each held note is tried as the root, and the intervals above it are matched against 21 chord shapes: triads, sus2/sus4, 6ths, 7ths (including m7b5, dim7, 7sus4, m(maj7), maj7#5), add9, 9ths. The best match has the lowest note as its root (otherwise it is written as a slash chord, C/E), uses every note (a 7th or 9th may leave out its 5th), and is the simplest. So C E G A is C6, and with A in the bass it is Am7. One note shows its name. Two notes show the interval, or a power chord (C5) for a 5th. Notes that make no named chord are listed as notes, never given a wrong chord name.
+  - **With scale lock:** the chord's number in the key (I, ii, V7, viiø7; an inversion keeps its number), and "outside the key" when one of its notes isn't in the key. Names are spelled for the key. With the scale off they use the usual spelling (C#, Eb, F#, Ab, Bb), and so do the step names.
+  - **Timing:** the name is found 40 ms after the notes stop changing, so it doesn't flicker while the fingers land. A release only renames the chord while 3 or more notes are still held. Letting go one finger at a time keeps the name showing, dimmed once its notes are released. A scale change renames the held chord.
+  - **What it listens to:** the Keys part's held notes (chord mode's chords included), not the sequencer. In chord mode the strip's chord list lights up the chord being played.
+  - **Tests:** `chordDetect.test.ts` (triads, inversions, 7ths/6ths/9ths, the bass deciding C6 vs Am7, a 7th chord without its 5th, clusters, spelling, numbers in the key, notes outside the key, and every chord that chord mode plays found under the same name).
+
 ## Phase E: guided recipes
 
 ### 15. Guided recipes: the engine and 3 recipes

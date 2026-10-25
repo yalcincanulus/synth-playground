@@ -37,7 +37,9 @@ export const CHORD_MODES = ["off", "triads", "sevenths"] as const;
 export type ChordMode = (typeof CHORD_MODES)[number];
 export const CHORD_MODE_NAMES: Record<ChordMode, string> = { off: "Off", triads: "Triads (3 notes)", sevenths: "7ths (4 notes)" };
 
-export const ROOT_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+/** The usual spelling when there is no key to follow. */
+export const ROOT_NAMES = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
+const SHARP_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const FLAT_NAMES = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
 
 export interface ScaleSettings {
@@ -113,26 +115,26 @@ const QUALITIES: Record<string, string> = {
 };
 
 /**
- * Sharps or flats for this scale: the way that gives each of its 7 notes its own letter (C minor is
+ * Sharps or flats for this scale (the usual mix with the scale off): the way that gives each of its 7 notes its own letter (C minor is
  * C D Eb F G Ab Bb, not C D D# F G G# A#). Plain "b" and "#", so the MiniLab's screen can show them.
  */
-function names(s: ScaleSettings): string[] {
+export function spelling(s: ScaleSettings): string[] {
   if (s.scale === "off") return ROOT_NAMES;
   const def = SCALES[s.scale];
   const letters = (list: string[]) => new Set((def.chords ?? def.steps).map((st) => list[pc(st + s.root)][0])).size;
-  return letters(FLAT_NAMES) > letters(ROOT_NAMES) ? FLAT_NAMES : ROOT_NAMES;
+  return letters(FLAT_NAMES) > letters(SHARP_NAMES) ? FLAT_NAMES : SHARP_NAMES;
 }
 
 /** A note's name with its octave (C4 = 60), spelled for the scale. */
 export function noteNameIn(note: number, s: ScaleSettings): string {
-  return names(s)[pc(note)] + (Math.floor(note / 12) - 1);
+  return spelling(s)[pc(note)] + (Math.floor(note / 12) - 1);
 }
 
 /** A chord's name, from its notes (root first), e.g. "Dm7"; null when it isn't a chord we name. */
 export function chordName(notes: number[], s: ScaleSettings = { root: 0, scale: "off", chords: "off" }): string | null {
   if (notes.length < 3) return null;
   const quality = QUALITIES[notes.slice(1).map((n) => n - notes[0]).join(",")];
-  return quality === undefined ? null : names(s)[pc(notes[0])] + quality;
+  return quality === undefined ? null : spelling(s)[pc(notes[0])] + quality;
 }
 
 /** Every note of the scale from `low` to `high` (both included). */
