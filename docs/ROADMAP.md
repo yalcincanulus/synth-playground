@@ -2,7 +2,9 @@
 
 The next pieces of work, as slices to build in order. Each slice should work on its own, be testable on the MiniLab, and take about one session.
 
-Rewritten 2026-10-24: the engine and sound quality now come first, so recipes and the course are built on a sound that won't change under them. Nothing below "Done" has been started.
+Rewritten 2026-10-24: the engine and sound quality now come first, so recipes and the course are built on a sound that won't change under them.
+
+Updated 2026-10-25: after the recipes, the synth and the app get better first (Phase F: speed on weaker computers, layout, editing safety, presets, arpeggiator, effects, modulation). The course (Phase G) is postponed until that is done.
 
 ## Done
 
@@ -311,11 +313,64 @@ What the browser still limits, whatever we do:
   - **Checked in the browser** (Helium, headless): all 15 recipes built from Init in a row, every step moving on by itself and every control reached through the knob or fader the panel named (the Wavetable menu on screen). All 15 still ticked after a reload.
   - **Tests:** the recipe tests now run for all 15. A new test checks that every control a step asks for is already on show on its block when the step comes (Pulse Width needs a square wave, the Wavetable menu needs a table, Stereo needs unison).
 
-## Phase F: the learning course
+## Phase F: a better synth and a better app
 
-Modelled on Ableton's Learning Synths: short pages, each with a few sentences of text, **one** interactive widget, and only the controls that page needs.
+The synth must run well on weaker computers, and the app should be easier to find your way around. The slices alternate between the app and the sound, so every session shows a visible change. Speed comes first, because every later feature adds work for the computer.
 
-### 17. Course framework and Chapter 1, "Sound and Oscillators"
+### 17. Speed on weaker computers
+
+- **Measure first.** An accurate clock for the CPU meter: today it only counts whole milliseconds, so the peak reading is useless. Time each stage of the voice processor (oscillators, wavetable reads, filters, envelopes, modulation) and the main thread's frame time in each view. Test with Chromium's CPU slowdown (4x and 6x) as the "weak computer".
+- **Audio thread:** speed up what the measurements point to, e.g. work done every sample that could be done once per block, filter settings worked out again when nothing changed, wavetable reads, the mono path when Stereo is 0 (noted in slice 7). WASM only if TypeScript can't get there (it was the backlog's fallback).
+- **Main thread:** the Synth view draws many live pictures at once. Draw only what is on screen, at a lower rate where it can't be seen, and skip frames when nothing changed. MIDI and the keys must stay instant while it draws.
+- Today, on a fast desktop (Ryzen 7 7800X3D), 8 notes of Scan Pad take 39% of the voice processor's time.
+- **Done when:** at a 4x CPU slowdown, 8 notes of the heaviest preset play without dropped notes, every view stays smooth, and the render check still matches.
+
+### 18. Layout and navigation
+
+- **Header:** group it (views, recipes, MIDI, CPU, transport) so it isn't one crowded row.
+- **Views:** make the Playground view's job clear next to the Synth view (the playing surface vs the full synth), so they don't repeat each other.
+- **Synth view:** fit it without long scrolling: a tighter diagram, and a modulator row you can fold away.
+- **Laptop screens:** works from about 1280 x 720, no sideways scrolling.
+- **Done when:** on a laptop screen, each view shows its main controls without scrolling, and nothing has moved somewhere you can't find it.
+
+### 19. Undo, redo and compare
+
+- **Undo and redo** for every sound change (knobs, faders, screen controls, recipe steps, Dice). Ctrl+Z / Ctrl+Shift+Z, buttons on screen, and a MiniLab shortcut. Moving one knob a long way counts as one change.
+- **Compare:** switch between the edited sound and the saved preset (A/B) to hear what your changes did, and a list of what changed ("Cutoff 1.8 kHz → 400 Hz").
+- **Done when:** you can try anything and always get back, and you can hear and read the difference from the saved preset.
+
+### 20. Arpeggiator, and scale and chords on the MiniLab
+
+- **Arpeggiator:** hold notes or a chord and it plays them one at a time: up, down, up-down, random, the order played; 1–3 octaves; rate and gate like the sequencer; latch (keeps going after you let go). On the same clock as the sequencer and drums. Works with chord mode, so one finger makes an arpeggio.
+- **On the MiniLab:** switch the arpeggiator, scale lock and chord mode without the mouse (a Shift combination that is still free), shown on the OLED.
+- **Done when:** one finger plays an in-scale arpeggio in time with the drums, set up from the MiniLab alone.
+
+### 21. Preset browser
+
+- A browser instead of the long dropdown: categories, search, favourites, tags, and your own presets apart from the factory ones.
+- Hear a preset before loading it (a short preview note).
+- Export and import presets as files.
+- **Done when:** you can find a sound by what it is ("dark bass") in a few seconds, and move your presets to another computer.
+
+### 22. Effects
+
+- Effect slots you can reorder, each with its own on/off.
+- New effects: phaser, flanger, distortion types (soft, hard, fold, bit-crusher), EQ, compressor, next to the chorus, delay and reverb.
+- Each effect gets a block in the Synth view, with a picture and a plain-English explanation like the others.
+- **Done when:** every effect can be heard on its own and in any order, and the CPU stays within slice 17's target.
+
+### 23. Modulation
+
+- Patch in the Synth view by dragging a cable from a source to a destination.
+- Show the fixed connections (filter envelope → cutoff, amp envelope → volume) as greyed-out routes in the matrix, so all modulation is in one place.
+- A third LFO.
+- **Done when:** a route can be made, changed and removed by dragging alone, and every modulation the synth does is visible.
+
+## Phase G: the learning course (postponed)
+
+Postponed on 2026-10-25 until Phase F is done. Modelled on Ableton's Learning Synths: short pages, each with a few sentences of text, **one** interactive widget, and only the controls that page needs.
+
+### 24. Course framework and Chapter 1, "Sound and Oscillators"
 
 - **Course mode:** a new tab with a lesson page on the left and a **reduced synth** on the right. A lesson lists the blocks and controls it allows, and everything else is hidden and held at sensible values (e.g. the filter fully open).
 - **Lessons are written as data:**
@@ -326,32 +381,32 @@ Modelled on Ableton's Learning Synths: short pages, each with a few sentences of
 - **Chapter 1, about 6 pages:** what sound is, pitch, loudness, wave shapes, harmonics (with the harmonics bars), detune and beating.
 - **Done when:** someone with no synth knowledge can go through Chapter 1 using only the MiniLab and the page.
 
-### 18. Chapter 2, "Shaping over time" (envelopes)
+### 25. Chapter 2, "Shaping over time" (envelopes)
 
 - Amp envelope stage by stage (each control appears only once it's explained), then the filter envelope.
 - The widgets compare a long attack with a short one, and a pluck with a pad.
 
-### 19. Chapter 3, "Filters"
+### 26. Chapter 3, "Filters"
 
 - Cutoff, resonance, filter types, key tracking, drive, the ladder filter vs the clean filter.
 - A spectrogram widget shows what the filter removes.
 - That spectrogram view gets built in this slice and can be reused in the Synth view.
 
-### 20. Chapter 4, "Movement" (LFOs and modulation)
+### 27. Chapter 4, "Movement" (LFOs and modulation)
 
 - LFO shapes, rate, depth, targets and tempo sync, then the idea of the mod matrix through patching exercises.
 
-### 21. Chapter 5, "Beyond subtractive"
+### 28. Chapter 5, "Beyond subtractive"
 
 - Sync, FM, pulse width and wavetables, ending with a "build your own" page that opens the full Synth view.
 
-### 22. Ear training and sound matching
+### 29. Ear training and sound matching
 
 - **Quizzes:** "which sounds brighter?", "which wave is this?", "is the attack slow or fast?"
 - **Sound matching game:** hear a target sound and recreate it with only the controls the page shows. The app scores how close you are, using measured features like brightness, the shape of the volume, and pitch.
 - Placed at the end of each chapter as an optional challenge.
 
-### 23. Course polish
+### 30. Course polish
 
 - A progress overview, links from course pages to the matching recipes ("now build a Reese bass").
 - A glossary panel: hover a term like "cutoff" to see its definition.
@@ -363,20 +418,17 @@ Modelled on Ableton's Learning Synths: short pages, each with a few sentences of
 - **Sound quality (7–11) comes before recipes and the course** that use it: the acid recipe wants the ladder filter, and the course's filter chapter explains it.
 - **Scale lock (14)** is small and independent; it can move earlier if playing feels more urgent than wavetables.
 - **Recipes (15–16) come before the course**, because a course page's "try this" steps are recipe steps.
+- **Phase F (17–23) comes before the course** (decided 2026-10-25): the course will explain the synth, so the synth and the app should be in their final shape first.
+- **Speed (17) comes first in Phase F**, because each later slice adds work for the computer. The layout (18) comes before the features that add new controls to it.
 
 ## Backlog
 
 Ideas without a place in the order yet. Any of them can slot in between phases.
 
-- Mod matrix: drag cables directly in the Synth view; show the fixed connections (filter envelope → cutoff and so on) as greyed-out routes; a 3rd LFO; a step sequencer as a modulation source.
 - Wavetables: warp modes (bend, mirror, sync).
-- Presets: tags, favourites, search, export/import as files; morphing between two presets with a fader.
-- Pads play notes (which would also make pad pressure useful as a matrix source).
-- Arpeggiator (hold a chord, it plays the notes in turn), on the same clock as the sequencer.
-- Sequencer: 16 steps (second page on pad bank B), per-step velocity/accent, a second row of values as a mod matrix source (e.g. step → cutoff), a Sequencer block in the Synth view, saving sequences.
+- Presets: morphing between two presets with a fader.
+- Sequencer upgrades (kept for later, 2026-10-25): 16 steps (second page on pad bank B), per-step velocity/accent, a second row of values as a mod matrix source (e.g. step → cutoff), a Sequencer block in the Synth view, saving sequences.
 - Looper/recorder, with WAV export.
-- "What changed?" view: compare a tweaked preset with the saved version (A/B).
-- Effects rack: separate effect slots you can reorder; distortion types, phaser, flanger, EQ, bit-crusher, compressor.
-- WASM: rewrite the voice processor in Rust or C++ compiled to WebAssembly, only if the CPU meter shows TypeScript is too slow.
 - MiniLab: small drawings on the OLED (if the protocol allows it), MIDI learn, remembering the knob page and settings for each view.
 - Firefox: lost note-offs when releasing chords (postponed 2026-10-24; Chromium is the target for now). Likely cause: the MIDI input assumes one complete message per event, so bundled messages or running status drop note-offs. Fix: split each event into messages and restore missing status bytes (`src/minilab/protocol.ts`, `src/minilab/device.ts`), then update the About page. The new engine (slices 2–3) removes the other Firefox gap, the missing `cancelAndHoldAtTime`.
+- Not planned: playing notes on the MiniLab's pads (and pad pressure as a source). The user finds the pads unpleasant to play (2026-10-25); they stay drums, sequencer steps and shortcuts.
