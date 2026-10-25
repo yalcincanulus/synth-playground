@@ -269,7 +269,7 @@ export function blockDest(block: BlockId, v: ParamValues): number {
 }
 
 /** Short names, for the OLED (route labels fit its 10 characters). */
-export const MOD_SHORT: Record<string, string> = {
+export const MOD_SHORT: Record<ModSource | ModDest, string> = {
   off: "off", "lfo 1": "LFO1", "lfo 2": "LFO2", "filter env": "FEnv", "amp env": "AEnv", "pitch env": "PEnv", "mod env": "MEnv",
   velocity: "Vel", key: "Key", "mod strip": "Strip", random: "Rand",
   pitch: "Pitch", "osc 2 pitch": "O2Pit", cutoff: "Cut", resonance: "Res", volume: "Vol", "wt pos": "WTPos", width: "Width",

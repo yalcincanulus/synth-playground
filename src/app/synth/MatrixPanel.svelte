@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { formatValue, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, slotIds } from "../../audio/params";
+  import { formatValue, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, slotIds, type ModDest, type ModSource } from "../../audio/params";
   import type { Playground } from "../playground.svelte";
   import { SOURCE_BLOCK } from "./blocks";
   import LiveCanvas from "./LiveCanvas.svelte";
@@ -9,13 +9,18 @@
 
   let open = $state(true);
 
-  const SOURCE_NAMES: Record<string, string> = {
+  // Typed by the real names, so a new source or destination without a name here fails the type check.
+  const SOURCE_NAMES: Record<ModSource, string> = {
+    off: "Off",
     "lfo 1": "LFO 1", "lfo 2": "LFO 2", "filter env": "Filter Env", "amp env": "Amp Env", "pitch env": "Pitch Env", "mod env": "Mod Env",
     velocity: "Velocity", key: "Key", "mod strip": "Mod strip", random: "Random",
   };
-  const DEST_NAMES: Record<string, string> = {
+  const DEST_NAMES: Record<ModDest, string> = {
     pitch: "Pitch", "osc 2 pitch": "Osc 2 pitch", cutoff: "Cutoff", resonance: "Resonance", volume: "Volume", "wt pos": "WT Pos",
-    width: "Pulse width", fm: "FM amount", "osc mix": "Osc mix", sub: "Sub level", noise: "Noise level",
+    width: "Pulse width", fm: "FM amount", "osc mix": "Osc mix", sub: "Sub level", noise: "Noise level", pan: "Pan",
+    morph: "Filter morph", "cutoff 2": "Filter 2 cutoff",
+    chorus: "Chorus amount", delay: "Delay amount", reverb: "Reverb amount",
+    "lfo 1 rate": "LFO 1 rate", "lfo 1 depth": "LFO 1 depth", "lfo 2 rate": "LFO 2 rate", "lfo 2 depth": "LFO 2 depth",
   };
 
   const sourceColor = (n: number) => {
@@ -48,7 +53,7 @@
     {#if pg.patch === "source"}
       <span class="step">Click a <strong>source</strong>: an LFO, an envelope, or Playing (velocity).</span>
     {:else if typeof pg.patch === "number"}
-      <span class="step">From <strong style:color={colors[SOURCE_BLOCK[MOD_SOURCES[pg.patch] as keyof typeof SOURCE_BLOCK]]}>{SOURCE_NAMES[MOD_SOURCES[pg.patch]]}</strong>: now click what it should move (an oscillator, the mixer, filter or amp).</span>
+      <span class="step">From <strong style:color={colors[SOURCE_BLOCK[MOD_SOURCES[pg.patch] as keyof typeof SOURCE_BLOCK]]}>{SOURCE_NAMES[MOD_SOURCES[pg.patch]]}</strong>: now click what it should move (an oscillator, the mixer, a filter, the amp, an effect or an LFO).</span>
     {:else if pg.explain}
       <span class="step dim">Extra connections on top of the normal wiring. Knobs 1–8 (Matrix page) set the amounts.</span>
     {/if}
