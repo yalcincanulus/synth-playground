@@ -62,7 +62,9 @@ on the same input (**parallel**, the two are added). It follows Key Track; the m
 The **Mod Matrix** strip adds up to 8 extra routes: any source (LFOs, the four envelopes including a spare
 Mod Envelope, velocity, key, the mod strip, a random value per note) to any destination (pitch, cutoff,
 resonance, volume, wavetable position, pulse width, FM, osc mix, sub, noise, pan, filter morph, Filter 2's
-cutoff), each with an amount. Press
+cutoff, and for the whole part: the chorus, delay and reverb amounts and both LFOs' rate and depth), each with
+an amount. For those whole-part destinations, per-note sources (envelopes, velocity, key, random) follow the
+newest note. Press
 **Patch**, click a source block, then a destination block; each route is drawn as a cable in its source's colour.
 
 In this view the MiniLab knobs follow the selected block: click a block, or turn the encoder to step
@@ -85,7 +87,8 @@ Without a MiniLab, the computer keyboard plays notes (A row; Z/X change octave),
 - `src/audio/`: the audio engine: voices, effects, drums, sequencer, parameter definitions. Every note is made
   in one AudioWorklet processor (`synth.worklet.ts` runs `dsp/voiceBank.ts`): oscillators (anti-aliased with
   polyBLEP, with sync and FM), the clean and ladder filters, drive (with antiderivative anti-aliasing), envelopes, the LFOs and the mod matrix. `dsp/` is plain
-  TypeScript, tested with `bun test`. Each voice's sound path runs at twice the sample rate; the part's sum
+  TypeScript, tested with `bun test`. The processor also outputs the effect amounts (with their routes) as a
+  signal that sets the part's chorus and send levels. Each voice's sound path runs at twice the sample rate; the part's sum
   comes back down through a half-band filter (`dsp/halfband.ts`). The effects are Web Audio nodes; the
   output ends in a limiter and a soft clipper (`softClip.ts`).
   `wavetables.ts` defines the built-in wavetables and prepares their per-octave versions.

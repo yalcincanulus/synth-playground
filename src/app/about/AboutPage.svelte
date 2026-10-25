@@ -34,13 +34,12 @@
         <li><strong>Two parts:</strong> the keys and the step sequencer each have their own sound, say a pad over a bass line. Pick the part to edit above the presets, or with Shift + any key on the MiniLab.</li>
         <li><strong>Synth:</strong> the whole synth as blocks with live signals and cables, plain-English explanations, and "Listen here" to hear any stage on its own.</li>
         <li><strong>Wavetable:</strong> eight built-in wavetables in 3D, with the wave playing right now and its harmonics.</li>
-        <li><strong>Sound:</strong> two oscillators with pulse width, hard sync, FM and wavetables; sub and noise; a clean or a ladder filter with a low-pass to high-pass morph, an optional second filter, and drive; stereo unison and panning; amp, filter, pitch and mod envelopes; two LFOs; a mod matrix with 8 routes; chorus, delay and reverb.</li>
+        <li><strong>Sound:</strong> two oscillators with pulse width, hard sync, FM and wavetables; sub and noise; a clean or a ladder filter with a low-pass to high-pass morph, an optional second filter, and drive; stereo unison and panning; amp, filter, pitch and mod envelopes; two LFOs; a mod matrix with 8 routes that also reaches the effects and the LFOs; a three-line chorus, a stereo or ping-pong delay, and a reverb with damping.</li>
       </ul>
 
       <h3>Coming later <span class="tag">not in yet</span></h3>
       <ul class="later">
-        <li>Better effects: ping-pong delay, a better chorus and reverb</li>
-        <li>WAV import and drawing your own wavetables</li>
+                <li>WAV import and drawing your own wavetables</li>
         <li>Scale lock and chord mode</li>
         <li>Guided recipes: build a sound step by step</li>
         <li>An interactive course that introduces one topic at a time</li>

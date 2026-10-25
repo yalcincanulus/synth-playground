@@ -29,13 +29,24 @@ export const LFO_SYNCS = ["off", "2 bars", "1 bar", "1/2", "1/4", "1/8", "1/16"]
 export const LFO_SYNC_BEATS = [0, 8, 4, 2, 1, 0.5, 0.25];
 /** Mod matrix sources and destinations (a route's value is the index). */
 export const MOD_SOURCES = ["off", "lfo 1", "lfo 2", "filter env", "amp env", "pitch env", "mod env", "velocity", "key", "mod strip", "random"] as const;
-export const MOD_DESTS = ["pitch", "osc 2 pitch", "cutoff", "resonance", "volume", "wt pos", "width", "fm", "osc mix", "sub", "noise", "pan", "morph", "cutoff 2"] as const;
+export const MOD_DESTS = [
+  "pitch", "osc 2 pitch", "cutoff", "resonance", "volume", "wt pos", "width", "fm", "osc mix", "sub", "noise", "pan", "morph", "cutoff 2",
+  // Shared by the whole part rather than per note (see SHARED_DESTS).
+  "chorus", "delay", "reverb", "lfo 1 rate", "lfo 1 depth", "lfo 2 rate", "lfo 2 depth",
+] as const;
+/**
+ * Destinations that belong to the whole part, not to each note: the effect amounts and the LFOs. Per-note
+ * sources (envelopes, velocity, key, random) reach them from the newest note.
+ */
+export const SHARED_DESTS: readonly ModDest[] = ["chorus", "delay", "reverb", "lfo 1 rate", "lfo 1 depth", "lfo 2 rate", "lfo 2 depth"];
 export type ModSource = (typeof MOD_SOURCES)[number];
 export type ModDest = (typeof MOD_DESTS)[number];
 export const MOD_SLOTS = 8;
 
 export const DELAY_DIVS = ["1/16", "1/8", "3/16", "1/4", "3/8", "1/2"] as const;
 export const DELAY_DIV_BEATS = [0.25, 0.5, 0.75, 1, 1.5, 2];
+/** Stereo: each side echoes on its own side. Ping-pong: the echoes bounce from left to right. */
+export const DELAY_MODES = ["stereo", "ping-pong"] as const;
 
 const hz = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 1 : 2)} kHz` : `${v.toFixed(v < 10 ? 2 : 0)} Hz`);
 const sec = (v: number) => (v >= 1 ? `${v.toFixed(2)} s` : `${Math.round(v * 1000)} ms`);
@@ -151,8 +162,11 @@ export const PARAMS = {
   delayMix: { label: "Delay", min: 0, max: 1, curve: "lin", default: 0, format: pct },
   delayDiv: enumParam("Delay Time", DELAY_DIVS, 3),
   delayFeedback: { label: "Feedback", min: 0, max: 0.9, curve: "lin", default: 0.35, format: pct },
+  delayMode: enumParam("Delay Mode", DELAY_MODES, 0),
   reverbMix: { label: "Reverb", min: 0, max: 1, curve: "lin", default: 0.15, format: pct },
   reverbSize: { label: "Room Size", min: 0.3, max: 8, curve: "exp", default: 2, format: sec },
+  /** How much faster the highs die away than the lows (soft furnishings, a big hall's air). */
+  reverbDamping: { label: "Rev Damp", min: 0, max: 1, curve: "lin", default: 0.4, format: pct },
   volume: { label: "Volume", min: 0, max: 1, curve: "lin", default: 0.7, format: pct },
 } satisfies Record<string, ParamDef>;
 

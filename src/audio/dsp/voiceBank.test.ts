@@ -352,6 +352,67 @@ describe("VoiceBank aliasing (high notes stay clean)", () => {
   });
 });
 
+describe("VoiceBank shared destinations (effects and LFOs)", () => {
+  /** Render and return the effect amounts (chorus, delay, reverb) per sample. */
+  function fxAmounts(b: VoiceBank, messages: BankMessage[], seconds: number) {
+    for (const m of messages) b.post(m);
+    const n = Math.ceil((seconds * SR) / BLOCK) * BLOCK;
+    const fx = [new Float32Array(n), new Float32Array(n), new Float32Array(n)];
+    const l = new Float32Array(BLOCK), r = new Float32Array(BLOCK);
+    for (let i = 0; i < n; i += BLOCK) b.render(l, r, i, null, fx.map((x) => x.subarray(i, i + BLOCK)));
+    return fx;
+  }
+  const range = (x: Float32Array, from: number) => [Math.min(...x.subarray(from)), Math.max(...x.subarray(from))];
+
+  test("without routes the effect amounts are the settings", () => {
+    const [chorus, delay, reverb] = fxAmounts(bank({ chorus: 0.3, delayMix: 0.2, reverbMix: 0.6 }), [], 0.1);
+    expect(chorus[1000]).toBeCloseTo(0.3, 5);
+    expect(delay[1000]).toBeCloseTo(0.2, 5);
+    expect(reverb[1000]).toBeCloseTo(0.6, 5);
+  });
+
+  test("an LFO sweeps the delay amount, kept within 0..1", () => {
+    const [, delay] = fxAmounts(bank({ delayMix: 0.3, lfoRate: 4, ...route(1, "lfo 1", "delay", 0.5) }), [], 1);
+    const [lo, hi] = range(delay, frame(0.1));
+    expect(lo).toBeCloseTo(0, 2);
+    expect(hi).toBeCloseTo(0.8, 2);
+  });
+
+  test("a per-note source reaches an effect from the newest note", () => {
+    // The amp envelope -> reverb: none before the note, up while it sounds.
+    const p = { reverbMix: 0, attack: 0.001, sustain: 1, ...route(1, "amp env", "reverb", 0.5) };
+    const [, , reverb] = fxAmounts(bank(p), [on(1, 0.1)], 0.3);
+    expect(reverb[frame(0.05)]).toBe(0);
+    expect(reverb[frame(0.25)]).toBeCloseTo(0.5, 2);
+  });
+
+  test("the mod strip -> LFO 1 rate speeds the LFO up (100% = 3 octaves)", () => {
+    const b = bank({ lfoRate: 2, ...route(1, "mod strip", "lfo 1 rate", 1) });
+    b.post({ type: "controls", bend: 0, mod: 1 });
+    render(b, [], 0.2);
+    expect(b.lfoState().rate[0]).toBeCloseTo(16, 1);
+  });
+
+  test("a route on LFO depth deepens its own target: tremolo from nothing", () => {
+    // LFO 1 on the volume at depth 0; the mod strip adds depth through the route.
+    const p = { ...SINE, lfoTarget: 2, lfoDepth: 0, lfoRate: 8, ...route(1, "mod strip", "lfo 1 depth", 1) };
+    const still = render(bank(p), [on(1, 0)], 0.5);
+    const b = bank(p);
+    b.post({ type: "controls", bend: 0, mod: 1 });
+    const moving = render(b, [on(1, 0)], 0.5);
+    const swing = (x: Float32Array) => {
+      // Peak level per 10 ms window, after the attack.
+      const peaks = [];
+      for (let i = frame(0.1); i + 480 <= x.length; i += 480) peaks.push(peak(x, i, i + 480));
+      return Math.max(...peaks) - Math.min(...peaks);
+    };
+    expect(swing(still)).toBeLessThan(0.01);
+    expect(swing(moving)).toBeGreaterThan(0.2);
+    // ...and never above full volume.
+    expect(peak(moving)).toBeLessThanOrEqual(peak(still) + 1e-3);
+  });
+});
+
 describe("VoiceBank stereo", () => {
   const PAD: Partial<ParamValues> = { osc1Wave: 2, osc2Wave: 2, unison: 3, sustain: 1, cutoff: 3000, filterEnvAmt: 0 };
   const unisonOn = () => [{ ...on(1, 0, 48), unison: 3, phases: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6] }] as BankMessage[];

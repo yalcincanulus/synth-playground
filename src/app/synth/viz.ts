@@ -6,7 +6,7 @@ import { Engine, LFO_FILTER_CENTS } from "../../audio/engine";
 import { filter2Magnitude, filterMagnitude } from "../../audio/filterResponse";
 import { naive, shapeAt as oscShapeAt } from "../../audio/oscCore";
 import { frameAt, tableFrames } from "../../audio/wavetables";
-import { DELAY_DIV_BEATS, DELAY_DIVS, LFO_SYNCS, MOD_SLOTS, MOD_SOURCES, slotIds, toControl, type ModSource, type ParamId, type ParamValues } from "../../audio/params";
+import { DELAY_DIV_BEATS, DELAY_DIVS, DELAY_MODES, LFO_WAVES, LFO_SYNCS, MOD_SLOTS, MOD_SOURCES, slotIds, toControl, type ModSource, type ParamId, type ParamValues } from "../../audio/params";
 
 /** Whether a mod matrix route from this source is active. */
 function routed(p: ParamValues, source: ModSource) {
@@ -17,6 +17,8 @@ function routed(p: ParamValues, source: ModSource) {
   return false;
 }
 import { filter2Base, filterBase } from "../../audio/dsp/voiceMath";
+import { lfoShape } from "../../audio/dsp/lfo";
+import { CHORUS_LINES, CHORUS_RATE, dampingGain } from "../../audio/fxShapes";
 import { freqX, FREQ_GRID, grid, xFreq, type Surface } from "../components/canvas";
 
 type Draw = (s: Surface) => void;
@@ -500,15 +502,16 @@ export function chorus(engine: Engine, color: () => string): Draw {
     grid(g, w, h, [], [h / 2]);
     const amount = engine.params.chorus;
     const t = engine.ctx.currentTime;
-    // The two delay lines' sweeps (0.31 Hz and 0.43 Hz), over the last 6 seconds.
-    for (const [rate, alpha] of [[0.31, 1], [0.43, 0.6]] as const) {
+    // The three delay lines' sweeps (left, centre, right), a third of a cycle apart, over the last 6 seconds.
+    for (const [n, { phase }] of CHORUS_LINES.entries()) {
       g.strokeStyle = amount > 0 ? color() : DIM;
-      g.globalAlpha = alpha;
+      g.globalAlpha = [1, 0.7, 0.45][n];
       g.lineWidth = 1.5;
       g.beginPath();
       for (let x = 0; x <= w; x++) {
         const time = t - 6 + (x / w) * 6;
-        const y = h / 2 - Math.sin(2 * Math.PI * rate * time) * (h / 2 - 6) * Math.max(0.1, amount);
+        const cycle = (((CHORUS_RATE * time + phase) % 1) + 1) % 1;
+        const y = h / 2 - lfoShape(LFO_WAVES.indexOf("triangle"), cycle) * (h / 2 - 6) * Math.max(0.1, amount);
         if (x === 0) g.moveTo(x, y);
         else g.lineTo(x, y);
       }
@@ -530,12 +533,15 @@ export function delay(values: Values, bpm: () => number, color: () => string): D
       g.fillRect(X(t) - 1.5, bottom - level * (bottom - 6), 3, level * (bottom - 6));
     };
     bar(0, 1, "#ffffff50"); // the original note
+    const pingPong = DELAY_MODES[v.delayMode] === "ping-pong";
     let level = v.delayMix * 0.7;
     for (let k = 1; X(k * seconds) < w && level > 0.01; k++) {
       bar(k * seconds, level, color());
+      // Ping-pong: each echo is on one side, starting left.
+      if (pingPong) label(g, k % 2 ? "L" : "R", X(k * seconds) - 3, 8, "#ffffff90");
       level *= v.delayFeedback;
     }
-    label(g, `${DELAY_DIVS[v.delayDiv]} = ${Math.round(seconds * 1000)} ms`, 4, h - 2);
+    label(g, `${DELAY_DIVS[v.delayDiv]} = ${Math.round(seconds * 1000)} ms${pingPong ? " · ping-pong" : ""}`, 4, h - 2);
   };
 }
 
@@ -559,7 +565,21 @@ export function reverb(values: Values, color: () => string): Draw {
     g.globalAlpha = 1;
     g.strokeStyle = color();
     g.stroke();
-    label(g, `tail ≈ ${v.reverbSize.toFixed(1)} s`, 4, h - 2);
+    // The highs (8 kHz): Damping makes them die away sooner than the lows (the filled shape).
+    if (v.reverbDamping > 0) {
+      g.beginPath();
+      for (let i = 0; i <= 50; i++) {
+        const f = i / 50;
+        const y = bottom - Math.pow(1 - f, 3) * dampingGain(v.reverbDamping, f, 8000, 48000) * (bottom - 6) * Math.max(0.08, v.reverbMix);
+        if (i === 0) g.moveTo(4, y);
+        else g.lineTo(4 + f * len, y);
+      }
+      g.setLineDash([3, 3]);
+      g.strokeStyle = "#ffffffa0";
+      g.stroke();
+      g.setLineDash([]);
+    }
+    label(g, `tail ≈ ${v.reverbSize.toFixed(1)} s${v.reverbDamping > 0 ? " · - - highs" : ""}`, 4, h - 2);
   };
 }
 

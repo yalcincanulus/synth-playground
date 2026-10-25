@@ -29,7 +29,7 @@
   /** Each modulator block's colour, for its cables and matrix routes. */
   const COLORS: Record<string, string> = { lfo: LFO, lfo2: LFO2, filterEnv: FENV, ampEnv: AENV, pitchEnv: PENV, modEnv: MENV, perf: PLAY };
   /** Where matrix route cables land on each destination block. */
-  const DEST_SIDE: Partial<Record<string, Cable["toSide"]>> = { osc1: "r", osc2: "r", filter: "b", filter2: "r", amp: "l", mixer: "r" };
+  const DEST_SIDE: Partial<Record<string, Cable["toSide"]>> = { osc1: "r", osc2: "r", filter: "b", filter2: "r", amp: "l", mixer: "r", lfo: "t", lfo2: "t" };
 
   let container = $state<HTMLElement>();
 

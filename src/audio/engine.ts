@@ -1,7 +1,7 @@
 import { Drums } from "./drums";
 import { Fx } from "./fx";
 import type { Lfo } from "./lfo";
-import { DELAY_DIV_BEATS, type ModSource, type ParamId, type ParamValues } from "./params";
+import { DELAY_DIV_BEATS, DELAY_MODES, type ModSource, type ParamId, type ParamValues } from "./params";
 import { Part, type PartTapId, type VoiceState } from "./part";
 import workletUrl from "./synth.worklet.ts?worker&url";
 import type { NoteOwner } from "./voice";
@@ -205,7 +205,14 @@ export class Engine {
     this.loadTable(part.params.wtTable);
     if (part !== this.parts.keys) return;
     const p = part.params;
-    this.fx.setShared({ delaySeconds: (60 / this.bpm) * DELAY_DIV_BEATS[p.delayDiv], delayFeedback: p.delayFeedback, reverbMix: p.reverbMix, reverbSize: p.reverbSize });
+    this.fx.setShared({
+      delaySeconds: (60 / this.bpm) * DELAY_DIV_BEATS[p.delayDiv],
+      delayFeedback: p.delayFeedback,
+      pingPong: DELAY_MODES[p.delayMode] === "ping-pong",
+      reverbMix: p.reverbMix,
+      reverbSize: p.reverbSize,
+      reverbDamping: p.reverbDamping,
+    });
   }
 
   /** Prepare a wavetable's mipmaps and hand them to the audio thread, once per table. */

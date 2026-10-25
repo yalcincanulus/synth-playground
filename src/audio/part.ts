@@ -3,7 +3,7 @@
 // and Sequencer (what the step sequencer plays).
 
 import { LFO_POSITION, lfoDepths, type PerTarget } from "./dsp/lfo";
-import { TAPS, type LfoState, type TapName } from "./dsp/voiceBank";
+import { FX_AMOUNTS, TAPS, type LfoState, type TapName } from "./dsp/voiceBank";
 import { keySource, MOD_RANGE } from "./dsp/voiceMath";
 import { envelopeAt } from "./envelope";
 import type { PartFx } from "./fx";
@@ -69,13 +69,14 @@ export class Part {
   start(seed: number) {
     const node = new AudioWorkletNode(this.host.ctx, "synth-voices", {
       numberOfInputs: 0,
-      numberOfOutputs: 1 + TAPS.length,
-      outputChannelCount: [2, ...TAPS.map(() => 1)],
+      numberOfOutputs: 1 + TAPS.length + 1,
+      outputChannelCount: [2, ...TAPS.map(() => 1), FX_AMOUNTS],
       processorOptions: { values: this.params, seed },
     });
     node.connect(this.fx.input);
     node.connect(this.taps.amp);
     TAPS.forEach((tap, i) => node.connect(this.taps[tap], 1 + i));
+    node.connect(this.fx.amounts, 1 + TAPS.length);
     node.port.onmessage = (e) => {
       if (e.data.type === "lfo") return this.lfoReport(e.data);
       if (e.data.type !== "pong") return;
@@ -131,7 +132,7 @@ export class Part {
   /** Send the settings to the processor and the effects. */
   apply() {
     const p = this.params;
-    this.fx.set({ chorus: p.chorus, delayMix: p.delayMix, reverbMix: p.reverbMix, volume: p.volume });
+    this.fx.setVolume(p.volume);
     this.applyLfo();
     this.node?.port.postMessage({ type: "params", values: p });
     this.host.changed(this);

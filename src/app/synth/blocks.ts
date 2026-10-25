@@ -78,23 +78,23 @@ export const BLOCKS: Record<BlockId, BlockDef> = {
   chorus: {
     title: "Chorus",
     short: "Wobbling copies that make the sound wider.",
-    explain: "Adds slightly delayed, wobbling copies of the sound, spread left and right. Makes it wider and shimmery.",
-    tryThis: "On a pad, turn Chorus up and down while holding a chord.",
+    explain: "Adds three slightly delayed copies of the sound, placed left, centre and right, each with its delay slowly swept up and down. The sweeps are a third of a cycle apart, so while one copy goes up in pitch another comes down: the sound gets wider and shimmery without going out of tune. Chorus is also a mod matrix destination.",
+    tryThis: "On a pad, turn Chorus up and down while holding a chord. Then patch LFO 2 (slow) to Chorus for a chorus that comes and goes.",
     params: ["chorus"],
   },
   delay: {
     title: "Delay",
     short: "Echoes, in time with the tempo.",
-    explain: "Echoes, timed to the tempo. Feedback sets how many times each echo repeats. Both parts share one delay: each sets how much of it it gets (Delay), but the Delay Time and Feedback are the Keys part's.",
-    tryThis: "Raise Delay and Feedback, then play one short note and listen to the repeats.",
-    params: ["delayMix", "delayDiv", "delayFeedback"],
+    explain: "Echoes, timed to the tempo. Feedback sets how many times each echo repeats. Stereo keeps each side's echoes on its own side; Ping-pong bounces them from left to right and back. Both parts share one delay: each sets how much of it it gets (Delay, also a mod matrix destination), but the Delay Time, Feedback and Mode are the Keys part's.",
+    tryThis: "Raise Delay and Feedback, set Mode to Ping-pong, then play one short note and listen to the repeats bounce. Patch the Mod Envelope to Delay (Decay 300 ms) to echo only each note's start.",
+    params: ["delayMix", "delayDiv", "delayFeedback", "delayMode"],
   },
   reverb: {
     title: "Reverb",
     short: "The reflections of a room or hall.",
-    explain: "Simulates the reflections of a room or hall. Room Size sets how long the tail lasts. Both parts share one reverb: each sets how much of it it gets (Reverb), but the Room Size is the Keys part's.",
-    tryThis: "Set a big Room Size and Reverb at 60%, then play short notes.",
-    params: ["reverbMix", "reverbSize"],
+    explain: "Simulates the reflections of a room or hall. Room Size sets how long the tail lasts. Damping makes the highs die away sooner than the lows, as soft furnishings and air do: low Damping is a bright, hard room (a tiled bathroom), high Damping a warm, dark hall. Both parts share one reverb: each sets how much of it it gets (Reverb, also a mod matrix destination), but the Room Size and Damping are the Keys part's.",
+    tryThis: "Set a big Room Size and Reverb at 60%, then play short notes while turning Damping from 0 to 100%: the tail goes from hiss to a soft glow.",
+    params: ["reverbMix", "reverbSize", "reverbDamping"],
   },
   output: {
     title: "Output",
@@ -235,7 +235,7 @@ export const KNOB_PAGES: KnobPage[] = [
   },
   {
     name: "Effects",
-    knobs: ["chorus", "delayMix", "delayDiv", "delayFeedback", "reverbMix", "reverbSize", "volume", null],
+    knobs: ["chorus", "delayMix", "delayDiv", "delayFeedback", "reverbMix", "reverbSize", "reverbDamping", "volume"],
     blocks: ["chorus", "delay", "reverb", "output"],
   },
 ];
@@ -255,6 +255,7 @@ export const DEST_BLOCK: Record<ModDest, BlockId> = {
   pitch: "osc1", "osc 2 pitch": "osc2", cutoff: "filter", resonance: "filter", volume: "amp",
   "wt pos": "osc1", width: "osc1", fm: "osc2", "osc mix": "mixer", sub: "mixer", noise: "mixer", pan: "output",
   morph: "filter", "cutoff 2": "filter2",
+  chorus: "chorus", delay: "delay", reverb: "reverb", "lfo 1 rate": "lfo", "lfo 1 depth": "lfo", "lfo 2 rate": "lfo2", "lfo 2 depth": "lfo2",
 };
 
 /** Patching: the source a block gives (its first one; change it in the route afterwards). */
@@ -273,6 +274,7 @@ export const MOD_SHORT: Record<string, string> = {
   velocity: "Vel", key: "Key", "mod strip": "Strip", random: "Rand",
   pitch: "Pitch", "osc 2 pitch": "O2Pit", cutoff: "Cut", resonance: "Res", volume: "Vol", "wt pos": "WTPos", width: "Width",
   fm: "FM", "osc mix": "Mix", sub: "Sub", noise: "Noise", pan: "Pan", morph: "Morph", "cutoff 2": "Cut2",
+  chorus: "Chor", delay: "Dly", reverb: "Rev", "lfo 1 rate": "L1Rt", "lfo 1 depth": "L1Dp", "lfo 2 rate": "L2Rt", "lfo 2 depth": "L2Dp",
 };
 
 /** A param's label; route amounts are named by their route ("LFO1>WTPos"). */

@@ -4,7 +4,8 @@ export type Rgb = [number, number, number]; // 0-127, the MiniLab's LED range
 
 export interface Preset {
   name: string;
-  category: "Bass" | "Lead" | "Pad" | "Keys" | "Brass" | "FX";
+  /** "Test": small presets that each show one feature, for trying it out quickly. */
+  category: "Bass" | "Lead" | "Pad" | "Keys" | "Brass" | "FX" | "Test";
   /** Pad LED and UI accent colour. */
   color: Rgb;
   /** What knobs 1-8 control. Faders are always the amp envelope. */
@@ -20,7 +21,9 @@ export const FADERS: [ParamId, ParamId, ParamId, ParamId] = ["attack", "decay", 
 // Filter: 0 lowpass, 1 highpass, 2 bandpass. LFO/mod target: 0 pitch, 1 filter, 2 amp, 3 pulse width.
 // Pitch envelope target: 0 both oscillators, 1 Osc 2 only.
 // Mod matrix sources: 1 LFO 1, 2 LFO 2, 3 filter env, 4 amp env, 5 pitch env, 6 mod env, 7 velocity, 8 key, 9 mod strip, 10 random.
-// Destinations: 0 pitch, 1 osc 2 pitch, 2 cutoff, 3 resonance, 4 volume, 5 wt pos, 6 width, 7 fm, 8 osc mix, 9 sub, 10 noise.
+// Destinations: 0 pitch, 1 osc 2 pitch, 2 cutoff, 3 resonance, 4 volume, 5 wt pos, 6 width, 7 fm, 8 osc mix, 9 sub, 10 noise,
+// 11 pan, 12 morph, 13 cutoff 2, 14 chorus, 15 delay, 16 reverb, 17 LFO 1 rate, 18 LFO 1 depth, 19 LFO 2 rate, 20 LFO 2 depth.
+// LFO sync: 0 off, 1 2 bars, 2 1 bar, 3 1/2, 4 1/4, 5 1/8, 6 1/16. LFO shapes: 0 sine, 1 triangle, 2 saw, 3 square, 4 random.
 // Delay div: 0 1/16, 1 1/8, 2 3/16, 3 1/4, 4 3/8, 5 1/2.
 
 /** Presets in the order they were added; FACTORY_PRESETS below groups them by category. */
@@ -44,7 +47,7 @@ const ALL_PRESETS: Preset[] = [
     category: "Bass",
     color: [127, 110, 0],
     knobs: ["cutoff", "resonance", "filterEnvAmt", "filterDecay", "drive", "glide", "delayMix", "osc1Wave"],
-    values: { mono: 1, glide: 0.08, osc1Wave: 2, oscMix: 0, osc2Detune: 0, cutoff: 320, resonance: 14, filterEnvAmt: 3.5, filterDecay: 0.18, filterSustain: 0, keyTrack: 0.6, attack: 0.002, decay: 0.25, sustain: 0.6, release: 0.06, drive: 0.55, delayMix: 0.2, delayDiv: 2, delayFeedback: 0.4, reverbMix: 0.05, modTarget: 1 },
+    values: { mono: 1, glide: 0.08, osc1Wave: 2, oscMix: 0, osc2Detune: 0, cutoff: 320, resonance: 14, filterEnvAmt: 3.5, filterDecay: 0.18, filterSustain: 0, keyTrack: 0.6, attack: 0.002, decay: 0.25, sustain: 0.6, release: 0.06, drive: 0.55, delayMix: 0.2, delayDiv: 2, delayFeedback: 0.4, reverbMix: 0.05, modTarget: 1, volume: 0.55 },
   },
   {
     name: "Wobble",
@@ -128,7 +131,7 @@ const ALL_PRESETS: Preset[] = [
     category: "Bass",
     color: [127, 50, 50],
     knobs: ["cutoff", "resonance", "filterEnvAmt", "filterDecay", "osc1Wave", "subLevel", "drive", "glide"],
-    values: { mono: 1, glide: 0.015, osc1Wave: 3, oscMix: 0, subLevel: 0.35, cutoff: 280, resonance: 7, filterEnvAmt: 3.2, filterDecay: 0.12, filterSustain: 0.05, keyTrack: 0.5, attack: 0.002, decay: 0.35, sustain: 0.5, release: 0.07, velocity: 0.8, drive: 0.2, reverbMix: 0, modTarget: 1 },
+    values: { mono: 1, glide: 0.015, osc1Wave: 3, oscMix: 0, subLevel: 0.35, cutoff: 280, resonance: 7, filterEnvAmt: 3.2, filterDecay: 0.12, filterSustain: 0.05, keyTrack: 0.5, attack: 0.002, decay: 0.35, sustain: 0.5, release: 0.07, velocity: 0.8, drive: 0.2, reverbMix: 0, modTarget: 1, volume: 0.58 },
   },
   {
     name: "Fifth Lead",
@@ -291,10 +294,76 @@ const ALL_PRESETS: Preset[] = [
     knobs: ["mod1Amt", "mod2Amt", "mod3Amt", "mod4Amt", "wtPos", "lfo2Depth", "chorus", "reverbMix"],
     values: { osc1Wave: 4, wtTable: 0, wtPos: 0.4, osc2Wave: 2, osc2Detune: 10, oscMix: 0.4, unison: 2, mod1Src: 10, mod1Dst: 0, mod1Amt: 0.006, mod2Src: 10, mod2Dst: 2, mod2Amt: 0.2, mod3Src: 10, mod3Dst: 5, mod3Amt: 0.3, mod4Src: 8, mod4Dst: 2, mod4Amt: 0.3, lfo2Target: 4, lfo2Wave: 0, lfo2Rate: 0.08, lfo2Depth: 0.4, cutoff: 1800, resonance: 0.9, filterEnvAmt: 0.6, filterAttack: 1, filterDecay: 2, filterSustain: 0.6, keyTrack: 0.2, attack: 1, decay: 1.5, sustain: 0.9, release: 3, velocity: 0.3, chorus: 0.4, reverbMix: 0.55, reverbSize: 6, volume: 0.6 },
   },
+
+  // ---- Test: one feature each (slice 11: effects and the shared mod matrix destinations).
+  {
+    // Short notes: the echoes bounce left, right, left. Knob 1 switches back to Stereo to compare.
+    name: "Ping-pong Pluck",
+    category: "Test",
+    color: [127, 60, 0],
+    knobs: ["delayMode", "delayMix", "delayFeedback", "delayDiv", "cutoff", "filterEnvAmt", "filterDecay", "reverbMix"],
+    values: { osc1Wave: 3, osc2Wave: 1, osc2Semi: 12, oscMix: 0.3, osc2Detune: 3, cutoff: 600, resonance: 3, filterEnvAmt: 4, filterDecay: 0.18, filterSustain: 0, keyTrack: 0.7, attack: 0.001, decay: 0.4, sustain: 0, release: 0.3, delayMode: 1, delayMix: 0.5, delayDiv: 3, delayFeedback: 0.55, reverbMix: 0.1, reverbDamping: 0.5, velocity: 0.6 },
+  },
+  {
+    // Short chords into a long room; turn knob 1 (Damping) from 0 to 100%: the tail goes from hiss to a soft glow.
+    name: "Damping Room",
+    category: "Test",
+    color: [60, 0, 127],
+    knobs: ["reverbDamping", "reverbSize", "reverbMix", "cutoff", "chorus", "release", "osc2Detune", "volume"],
+    values: { osc1Wave: 2, osc2Wave: 2, osc2Detune: 10, cutoff: 5000, resonance: 0.7, filterEnvAmt: 0, attack: 0.002, decay: 0.25, sustain: 0, release: 0.15, reverbMix: 0.7, reverbSize: 7, reverbDamping: 0, velocity: 0.4 },
+  },
+  {
+    // Hold a chord: the chorus comes and goes with a slow LFO 2 (knob 1: how much, knob 2: how fast). Knob 3 is the chorus on its own.
+    name: "Chorus Tide",
+    category: "Test",
+    color: [0, 90, 127],
+    knobs: ["mod1Amt", "lfo2Rate", "chorus", "cutoff", "unison", "stereoWidth", "reverbMix", "osc2Detune"],
+    values: { osc1Wave: 2, osc2Wave: 2, osc2Detune: 4, cutoff: 2600, resonance: 0.7, filterEnvAmt: 0, attack: 0.3, decay: 1, sustain: 1, release: 1.2, chorus: 0.4, reverbMix: 0.25, lfo2Rate: 0.15, lfo2Depth: 0, mod1Src: 2, mod1Dst: 14, mod1Amt: 0.6, velocity: 0.3 },
+  },
+  {
+    // Play steady notes with the drum loop running: a square LFO 2, synced to 1 bar, throws the delay on for half of each bar.
+    name: "Delay Throw",
+    category: "Test",
+    color: [127, 127, 0],
+    knobs: ["mod1Amt", "lfo2Sync", "delayMix", "delayFeedback", "delayDiv", "delayMode", "cutoff", "reverbMix"],
+    values: { osc1Wave: 3, osc2Wave: 2, oscMix: 0.4, osc2Detune: 6, cutoff: 1400, resonance: 2, filterEnvAmt: 2, filterDecay: 0.25, filterSustain: 0.2, attack: 0.002, decay: 0.3, sustain: 0.3, release: 0.2, delayMix: 0.3, delayDiv: 2, delayFeedback: 0.5, delayMode: 1, reverbMix: 0.1, lfo2Wave: 3, lfo2Sync: 2, lfo2Depth: 0, mod1Src: 2, mod1Dst: 15, mod1Amt: 0.6 },
+  },
+  {
+    // Play a short, soft phrase and leave a gap: the reverb follows a slow LFO 2, so some notes ring out and some stay dry.
+    name: "Reverb Breath",
+    category: "Test",
+    color: [0, 127, 90],
+    knobs: ["mod1Amt", "lfo2Rate", "reverbMix", "reverbSize", "reverbDamping", "cutoff", "filterEnvAmt", "release"],
+    values: { osc1Wave: 1, osc2Wave: 0, osc2Semi: 12, oscMix: 0.3, osc2Detune: 0, cutoff: 2500, resonance: 1, filterEnvAmt: 2, filterDecay: 0.3, filterSustain: 0, attack: 0.002, decay: 0.6, sustain: 0, release: 0.4, reverbMix: 0.4, reverbSize: 5, reverbDamping: 0.4, lfo2Rate: 0.12, lfo2Depth: 0, mod1Src: 2, mod1Dst: 16, mod1Amt: 0.5, velocity: 0.5 },
+  },
+  {
+    // Hold a chord: only each note's start goes into the delay (the Mod Envelope opens it for 300 ms), so the echoes stay clean.
+    name: "Echo Starts",
+    category: "Test",
+    color: [127, 0, 127],
+    knobs: ["mod1Amt", "modEnvDecay", "delayFeedback", "delayDiv", "delayMode", "cutoff", "release", "reverbMix"],
+    values: { osc1Wave: 2, osc2Wave: 3, oscMix: 0.4, osc2Detune: 8, cutoff: 1800, resonance: 1.5, filterEnvAmt: 2, filterDecay: 0.3, filterSustain: 0.4, attack: 0.003, decay: 0.4, sustain: 0.7, release: 0.3, delayMix: 0, delayDiv: 1, delayFeedback: 0.55, delayMode: 1, reverbMix: 0.15, modEnvAttack: 0.001, modEnvDecay: 0.3, modEnvSustain: 0, mod1Src: 6, mod1Dst: 15, mod1Amt: 1 },
+  },
+  {
+    // Hold a note and push the mod strip up: the vibrato gets faster (strip -> LFO 1 rate, up to 8x). The strip's usual depth goes nowhere here.
+    name: "Strip Vibrato",
+    category: "Test",
+    color: [127, 90, 90],
+    knobs: ["mod1Amt", "lfoRate", "lfoDepth", "lfoWave", "cutoff", "glide", "mono", "reverbMix"],
+    values: { mono: 1, glide: 0.05, osc1Wave: 2, osc2Wave: 3, oscMix: 0.3, osc2Detune: 5, cutoff: 2200, resonance: 2, filterEnvAmt: 1, filterDecay: 0.4, filterSustain: 0.5, attack: 0.02, decay: 0.3, sustain: 0.9, release: 0.3, lfoTarget: 0, lfoRate: 2, lfoDepth: 0.35, modTarget: 4, mod1Src: 9, mod1Dst: 17, mod1Amt: 1, reverbMix: 0.2, delayMix: 0.15, delayDiv: 3 },
+  },
+  {
+    // Play soft, then hard: harder notes get more vibrato (velocity -> LFO 1 depth). Velocity is at 0 so the level stays the same.
+    name: "Velocity Vibrato",
+    category: "Test",
+    color: [90, 127, 0],
+    knobs: ["mod1Amt", "lfoRate", "lfoDepth", "cutoff", "attack", "release", "reverbMix", "chorus"],
+    values: { osc1Wave: 3, osc2Wave: 1, osc2Semi: 12, oscMix: 0.25, osc2Detune: 2, pulseWidth: 0.35, cutoff: 2800, resonance: 1, filterEnvAmt: 0.5, attack: 0.05, decay: 0.5, sustain: 0.8, release: 0.5, lfoTarget: 0, lfoRate: 5.5, lfoDepth: 0, modTarget: 4, mod1Src: 7, mod1Dst: 18, mod1Amt: 0.7, velocity: 0, reverbMix: 0.25 },
+  },
 ];
 
 /** Category order in the preset list and dropdown. */
-const CATEGORIES: Preset["category"][] = ["Lead", "Bass", "Pad", "Brass", "Keys", "FX"];
+const CATEGORIES: Preset["category"][] = ["Lead", "Bass", "Pad", "Brass", "Keys", "FX", "Test"];
 
 /** Grouped by category, so the numbers count up within each group (and the encoder browses group by group). */
 export const FACTORY_PRESETS: Preset[] = CATEGORIES.flatMap((c) => ALL_PRESETS.filter((p) => p.category === c));

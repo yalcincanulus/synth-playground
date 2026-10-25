@@ -2,7 +2,8 @@
 //
 // "synth-voices": one processor runs every voice of a part, with its LFOs (dsp/voiceBank.ts).
 // Output 0 is all voices in stereo; outputs 1.. are the stages (mono) in TAPS order, for the
-// Synth view. Its port also reports what the LFOs are doing, for the drawings.
+// Synth view; the last output is the effect amounts (chorus, delay, reverb; 3 channels), which set
+// the part's effect levels (see PartFx). Its port also reports what the LFOs are doing, for the drawings.
 //
 // Wavetables are prepared on the main thread (wavetables.ts) and sent once to a
 // "table-loader" processor, which stores them where every voice's processor can read them.
@@ -104,8 +105,9 @@ class SynthVoices extends AudioWorkletProcessor {
   process(_inputs: Float32Array[][], outputs: Float32Array[][]) {
     const start = now();
     const [left, right] = outputs[0];
-    for (let i = 1; i < outputs.length; i++) this.taps[i - 1] = outputs[i][0];
-    this.bank.render(left, right, currentFrame, this.taps);
+    const last = outputs.length - 1;
+    for (let i = 1; i < last; i++) this.taps[i - 1] = outputs[i][0];
+    this.bank.render(left, right, currentFrame, this.taps, outputs[last]);
     if (this.bank.voiceCount) account(now() - start, this.bank.voiceCount, this.bank.units);
     if (currentFrame >= this.lfoReportFrame) {
       this.lfoReportFrame = currentFrame + LFO_REPORT_S * sampleRate;

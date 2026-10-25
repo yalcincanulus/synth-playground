@@ -50,6 +50,8 @@ export class LfoCore {
   wrapped = false;
   private rate: number;
   private target: number;
+  /** The last tick's rate multiplier (a mod matrix route on the rate). */
+  private mul = 1;
   private seed: number;
 
   constructor(
@@ -67,15 +69,20 @@ export class LfoCore {
     this.target = hz;
   }
 
+  /** The speed right now, with any rate route. */
   get hz() {
-    return this.rate;
+    return this.rate * this.mul;
   }
 
-  /** The value for this sample; then moves one sample on (setting `wrapped` when a new cycle starts). */
-  tick(): number {
+  /**
+   * The value for this sample; then moves one sample on (setting `wrapped` when a new cycle starts).
+   * `mul` speeds it up or slows it down (a mod matrix route on the rate).
+   */
+  tick(mul = 1): number {
     const v = this.wave === RANDOM ? this.held : lfoShape(this.wave, this.phase);
     this.rate = this.target + (this.rate - this.target) * this.rateCoef;
-    this.phase += this.rate / this.sampleRate;
+    this.mul = mul;
+    this.phase += (this.rate * mul) / this.sampleRate;
     if (this.phase >= 1) {
       this.phase -= Math.floor(this.phase);
       this.held = this.nextRandom();

@@ -60,4 +60,11 @@ export const MOD_RANGE: Record<ModDest, number> = {
   pan: 1, // -1 hard left .. +1 hard right
   morph: 1, // the whole way from low-pass to high-pass
   "cutoff 2": 4800,
+  chorus: 1, // the whole range of each effect amount
+  delay: 1,
+  reverb: 1,
+  "lfo 1 rate": 3, // octaves: x8 faster or slower
+  "lfo 1 depth": 1,
+  "lfo 2 rate": 3,
+  "lfo 2 depth": 1,
 };

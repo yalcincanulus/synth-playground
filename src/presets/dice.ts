@@ -79,6 +79,8 @@ export function rollDice(): Preset {
     delayFeedback: rand(0.2, 0.55),
     reverbMix: rand(0.05, 0.5),
     reverbSize: expRand(1, 6),
+    reverbDamping: rand(0.2, 0.7),
+    delayMode: chance(0.4) ? 1 : 0,
   };
 
   switch (archetype) {
