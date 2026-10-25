@@ -71,6 +71,8 @@ export interface NoteOut {
 export class NoteSequencer {
   /** Called when each step is scheduled, with the audio time it will sound at. */
   onStep: (step: number, time: number) => void = () => {};
+  /** The note a step plays, after its pitch and the transpose are added (scale lock moves it into the scale). */
+  pitch: (note: number) => number = (note) => note;
 
   private nextBeat = 0;
   private pos = -1;
@@ -138,7 +140,7 @@ export class NoteSequencer {
 
     const st = this.s.steps[step];
     if (!st.on || skip) return this.release(time);
-    const note = Math.max(0, Math.min(127, st.note + this.s.transpose));
+    const note = Math.max(0, Math.min(127, this.pitch(st.note + this.s.transpose)));
     if (this.held === note) {
       // Slide into the same pitch: a tie, the note just keeps going.
     } else if (this.held !== null) {

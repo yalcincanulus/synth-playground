@@ -6,6 +6,8 @@
   import Fader from "./components/Fader.svelte";
   import FilterCurve from "./components/FilterCurve.svelte";
   import Keyboard from "./components/Keyboard.svelte";
+  import ScaleBar from "./components/ScaleBar.svelte";
+  import { playable } from "../audio/scale";
   import Knob from "./components/Knob.svelte";
   import Scope from "./components/Scope.svelte";
   import SeqGrid from "./components/SeqGrid.svelte";
@@ -15,7 +17,6 @@
   import WavetableView from "./wavetable/WavetableView.svelte";
   import AboutPage from "./about/AboutPage.svelte";
   import SequencerPanel from "./sequencer/SequencerPanel.svelte";
-  import { noteName } from "../audio/stepSequencer";
 
   const pg = new Playground();
   if (import.meta.env.DEV) Object.assign(window, { pg });
@@ -275,7 +276,7 @@
             onpointerleave={() => pg.releasePad(i)}
           >
             {#if pg.shift}{SHIFT_PADS[i].label}
-            {:else if pg.seqEdit}{pg.bank === "A" ? `${i + 1} · ${noteName(seqStep.note)}` : `Slide ${i + 1}`}
+            {:else if pg.seqEdit}{pg.bank === "A" ? `${i + 1} · ${pg.noteName(pg.stepNote(i))}` : `Slide ${i + 1}`}
             {:else if pg.stepMode}Step {step + 1}
             {:else}{pg.drumName(i)}{/if}
           </button>
@@ -310,7 +311,14 @@
   {/if}
 
   <section class="panel">
-    <Keyboard notes={keyboardNotes} onnoteon={(n) => pg.noteOn(n, 100)} onnoteoff={(n) => pg.noteOff(n)} />
+    <ScaleBar {pg} />
+    <Keyboard
+      notes={keyboardNotes}
+      onnoteon={(n) => pg.noteOn(n, 100)}
+      onnoteoff={(n) => pg.noteOff(n)}
+      playable={(n) => playable(n, pg.scale)}
+      root={pg.scale.scale === "off" ? null : pg.scale.root}
+    />
   </section>
 
   <footer>

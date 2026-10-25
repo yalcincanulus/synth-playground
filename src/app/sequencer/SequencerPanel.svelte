@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { KEYS_MODES, noteName } from "../../audio/stepSequencer";
+  import { KEYS_MODES } from "../../audio/stepSequencer";
   import Fader from "../components/Fader.svelte";
   import Knob from "../components/Knob.svelte";
   import { SEQ_FADERS, type Playground } from "../playground.svelte";
@@ -60,7 +60,7 @@
           <Knob
             number={i + 1}
             label="Step {i + 1}"
-            display={noteName(step.note)}
+            display={pg.noteName(pg.stepNote(i))}
             position={pg.stepKnobPosition(i)}
             hot={pg.seqStep === i}
             size={52}

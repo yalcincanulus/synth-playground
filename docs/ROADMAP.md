@@ -250,6 +250,15 @@ What the browser still limits, whatever we do:
 - Chord mode: one key plays a chord that fits the scale (triads or 7ths).
 - The on-screen keyboard greys out notes outside the scale. It works together with the sequencer: the step knobs snap to the scale.
 - **Done when:** with any scale chosen, random playing sounds musical, and one finger can play chords.
+- Status: done 2026-10-25 (checked on the MiniLab).
+  - **Controls:** a "Scale lock" strip above the on-screen keyboard, in every view: Root, Scale, Chords. The setting is shared by both parts and kept after a reload (localStorage). Each change shows on the OLED.
+  - **Scales** (`scale.ts`): major, minor, dorian, mixolydian, harmonic minor, major and minor pentatonic, blues. A note outside the scale moves to the nearest scale note. When two are equally near, it goes to the lower one.
+  - **Chords:** triads or 7ths, made by stacking every other note of the scale on the key's note. The 5- and 6-note scales borrow their 7-note parent scale (major pentatonic from major, minor pentatonic and blues from minor), so their chords are normal chords. The blues "blue note" has no chord, so in chord mode its key plays a neighbour's chord. The chord's name shows on the OLED and in the strip, together with every chord of the scale. Names are spelled for the key (Eb in C minor, not D#), in plain ASCII so the OLED can show them.
+  - **Keys:** each held key remembers what it played. A scale change never leaves a note hanging. When two keys play the same note, the note stops only when the last of them is released.
+  - **On-screen keyboard:** greys out the keys that move to another note, and marks the root.
+  - **Sequencer:** with scale lock on, a step knob only reaches the scale's notes. Hold a pad + a key, and the note is moved into the scale. Whatever the sequencer plays (step + transpose) is moved into the scale too, so transposing keeps the line in key. Turning scale lock off brings back the stored notes. The step names show the note you hear.
+  - **Checked in the browser** (Helium, headless): D dorian C# → C; Dm triad on D; Cmaj7 from C and C# held together stays until both are released; a scale change while a key is held leaves nothing hanging; the computer keyboard plays chords; step knobs and sequencer notes stay in C minor pentatonic; the setting survives a reload.
+  - **Tests:** `scale.test.ts` (snapping for every scale and root, the chords of C major, harmonic minor's major V, the borrowed chords, the blue note, spelling), and a `stepSequencer.test.ts` case for the pitch hook (including two steps that snap to one note tied by a slide).
 
 ## Phase E: guided recipes
 

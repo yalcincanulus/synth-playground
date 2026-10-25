@@ -10,7 +10,6 @@ import {
   DIRECTIONS,
   NOTE_STEPS,
   NoteSequencer,
-  noteName,
   RATES,
   STEP_NOTE_LOW,
   STEP_NOTE_RANGE,
@@ -26,6 +25,7 @@ import { addTable, BUILTIN_TABLES, idAfterRemoval, removeTable, renameTable, rep
 import { deleteImportedTable, saveImportedTable, storeTable, updateStoredTable } from "../audio/tableStore";
 import { blendKeyframes, shapeWave } from "../audio/tableDraw";
 import { TableEditor } from "./wavetable/tableEditor.svelte";
+import { CHORD_MODE_NAMES, chordName, defaultScale, keyNotes, noteNameIn, ROOT_NAMES, scaleLabel, scaleNotes, SCALES, snapToScale, type ScaleSettings } from "../audio/scale";
 import { cutIntoFrames, decodeSoundFile, type CutMode } from "../audio/wavImport";
 import { findPorts, isMainPort, MiniLab, requestMidi } from "../minilab/device";
 import { Freezes, Rolling } from "./timing";
@@ -51,6 +51,20 @@ export type View = "playground" | "synth" | "wavetable" | "about";
 const SCREENS = ["scope", "spectrum", "synth", "wavetable"] as const;
 const SCREEN_NAMES: Record<(typeof SCREENS)[number], string> = { scope: "Waveform", spectrum: "Spectrum", synth: "Synth", wavetable: "Wavetable" };
 const EXPLAIN_KEY = "minilab3.explain";
+const SCALE_KEY = "minilab3.scale";
+
+function loadScale(): ScaleSettings {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SCALE_KEY) ?? "null");
+    const s = { ...defaultScale(), ...saved };
+    if (s.scale !== "off" && !(s.scale in SCALES)) s.scale = "off";
+    if (!(s.chords in CHORD_MODE_NAMES)) s.chords = "off";
+    s.root = ((Math.round(+s.root || 0) % 12) + 12) % 12;
+    return s;
+  } catch {
+    return defaultScale();
+  }
+}
 
 const BROWSE_TIMEOUT_MS = 4000;
 const LONG_PRESS_MS = 500;
@@ -145,7 +159,12 @@ export class Playground {
   bank = $state<PadBank>("A");
   shift = $state(false);
 
+  /** Notes sounding on the Keys part (with chord mode, every note of each chord). */
   notes = new SvelteSet<number>();
+  /** Scale lock and chord mode: shared by both parts, kept across reloads. */
+  scale = $state<ScaleSettings>(loadScale());
+  /** The chord the last key played in chord mode, e.g. "Dm7". */
+  lastChord = $state<string | null>(null);
   padLevels = $state<number[]>(Array(8).fill(0));
   mod = $state(0);
   bend = $state(0);
@@ -192,6 +211,10 @@ export class Playground {
   private partKeys = new Set<number>();
   /** Keys used to transpose: their release must not stop a note. */
   private transposeKeys = new Set<number>();
+  /** What each held key plays (scale lock and chords can turn one key into other notes, or several). */
+  private keyPlays = new Map<number, number[]>();
+  /** How many held keys play each note: two keys can snap to the same one, and it stops with the last. */
+  private noteHolds = new Map<number, number>();
   /** Fader pickup after the faders change job: a fader only takes over once it reaches the value it now controls. */
   private faderLive: boolean[] = Array(FADERS.length).fill(true);
   private faderLast: (number | null)[] = Array(FADERS.length).fill(null);
@@ -219,6 +242,7 @@ export class Playground {
       },
     });
     this.noteSequencer.onStep = (step, time) => this.atAudioTime(time, () => this.moveSeqHead(step));
+    this.noteSequencer.pitch = (note) => snapToScale(note, this.scale);
     this.seq.notes = this.noteSequencer;
     this.engine.setParams(this.parts.keys.values, "keys");
     this.engine.setParams(this.parts.seq.values, "seq");
@@ -397,14 +421,58 @@ export class Playground {
         return this.setTranspose(note - root);
       }
     }
-    this.engine.noteOn(note, velocity);
-    this.notes.add(note);
+    if (this.keyPlays.has(note)) this.noteOff(note);
+    const plays = keyNotes(note, this.scale);
+    this.keyPlays.set(note, plays);
+    for (const n of plays) {
+      this.noteHolds.set(n, (this.noteHolds.get(n) ?? 0) + 1);
+      this.engine.noteOn(n, velocity);
+      this.notes.add(n);
+    }
+    if (plays.length > 1) {
+      this.lastChord = chordName(plays, this.scale);
+      if (this.lastChord) this.showMessage("Chord", this.lastChord);
+    }
   }
 
   noteOff(note: number) {
     if (this.transposeKeys.delete(note)) return;
-    this.engine.noteOff(note);
-    this.notes.delete(note);
+    const plays = this.keyPlays.get(note) ?? [note];
+    this.keyPlays.delete(note);
+    for (const n of plays) {
+      const holds = (this.noteHolds.get(n) ?? 1) - 1;
+      if (holds > 0) {
+        this.noteHolds.set(n, holds);
+        continue;
+      }
+      this.noteHolds.delete(n);
+      this.engine.noteOff(n);
+      this.notes.delete(n);
+    }
+  }
+
+  /** Change the scale lock or chord mode. Held keys keep the notes they started; the next press uses the new scale. */
+  setScale(change: Partial<ScaleSettings>) {
+    this.scale = { ...this.scale, ...change };
+    if (this.scale.scale === "off") this.lastChord = null;
+    try {
+      localStorage.setItem(SCALE_KEY, JSON.stringify(this.scale));
+    } catch {
+      // Not saved (private window): it still works until the page closes.
+    }
+    const s = this.scale;
+    if ("chords" in change && s.scale !== "off") this.showMessage("Chords", CHORD_MODE_NAMES[s.chords]);
+    else this.showMessage("Scale", s.scale === "off" ? "off" : `${ROOT_NAMES[s.root]} ${SCALES[s.scale].name}`);
+    this.realignKnobs();
+  }
+
+  get scaleName() {
+    return scaleLabel(this.scale);
+  }
+
+  /** A note's name, spelled for the scale (Eb in C minor, D# with the scale off). */
+  noteName(note: number) {
+    return noteNameIn(note, this.scale);
   }
 
   /** If this key should transpose the running sequence, the key that means "no change"; otherwise null. */
@@ -530,31 +598,46 @@ export class Playground {
     this.paintSeqStep(i);
   }
 
-  /** Step knob position (0..1) for a note: two octaves from STEP_NOTE_LOW. */
-  stepKnobPosition(i: number) {
-    return Math.max(0, Math.min(1, (this.noteSeq.steps[i].note - STEP_NOTE_LOW) / STEP_NOTE_RANGE));
+  /** The notes a step knob reaches: two octaves from STEP_NOTE_LOW, only the scale's with scale lock. */
+  private stepKnobNotes() {
+    return scaleNotes(STEP_NOTE_LOW, STEP_NOTE_LOW + STEP_NOTE_RANGE, this.scale);
   }
 
-  /** Knob i in sequencer edit: the pitch of step i, in semitones. `cc` is set when it came from the hardware. */
+  /** Step knob position (0..1) for a step's note. */
+  stepKnobPosition(i: number) {
+    const notes = this.stepKnobNotes();
+    const note = snapToScale(this.noteSeq.steps[i].note, this.scale);
+    let k = notes.findIndex((n) => n >= note);
+    if (k < 0) k = notes.length - 1;
+    return k / (notes.length - 1);
+  }
+
+  /** The note a step plays (before transpose): with scale lock, its note moved into the scale. */
+  stepNote(i: number) {
+    return snapToScale(this.noteSeq.steps[i].note, this.scale);
+  }
+
+  /** Knob i in sequencer edit: the pitch of step i (each knob step is a semitone, or a scale note). `cc` is set when it came from the hardware. */
   setStepKnob(i: number, t: number, cc?: number) {
-    const note = STEP_NOTE_LOW + Math.round(t * STEP_NOTE_RANGE);
+    const notes = this.stepKnobNotes();
+    const note = notes[Math.round(t * (notes.length - 1))];
     if (note === this.noteSeq.steps[i].note) return;
     this.setStepNote(i, note, { on: false, audition: true, realign: false });
-    if (cc !== undefined) this.device?.send(parameterMessage(cc, `Step ${i + 1}`, noteName(note)), "display");
+    if (cc !== undefined) this.device?.send(parameterMessage(cc, `Step ${i + 1}`, this.noteName(note)), "display");
   }
 
   setStepNote(i: number, note: number, { on = false, audition = false, realign = true } = {}) {
     const step = this.noteSeq.steps[i];
-    step.note = Math.max(12, Math.min(108, note));
+    step.note = snapToScale(Math.max(12, Math.min(108, note)), this.scale);
     if (on) step.on = true;
     if (audition && !this.playing) {
-      const n = step.note + this.noteSeq.transpose;
+      const n = snapToScale(step.note + this.noteSeq.transpose, this.scale);
       const now = this.engine.ctx.currentTime;
       this.engine.noteOn(n, 100, now, false, "seq");
       this.engine.noteOff(n, now + AUDITION_S, "seq");
     }
     if (realign && this.seqEdit) this.device?.send(knobValueMessage(i, Math.round(this.stepKnobPosition(i) * 127)), `knob-${i}`);
-    if (!audition || on) this.showMessage(`Step ${i + 1}`, noteName(step.note));
+    if (!audition || on) this.showMessage(`Step ${i + 1}`, this.noteName(step.note));
     this.paintSeqStep(i);
   }
 
@@ -593,10 +676,10 @@ export class Playground {
     this.heldStepKeyed = false;
     if (!this.playing) {
       // Stopped: hear the step's note while the pad is held.
-      this.auditionNote = this.noteSeq.steps[i].note + this.noteSeq.transpose;
+      this.auditionNote = snapToScale(this.noteSeq.steps[i].note + this.noteSeq.transpose, this.scale);
       this.engine.noteOn(this.auditionNote, 100, undefined, false, "seq");
     }
-    this.showMessage(`Step ${i + 1}`, `${noteName(this.noteSeq.steps[i].note)}: press a key`);
+    this.showMessage(`Step ${i + 1}`, `${this.noteName(this.stepNote(i))}: press a key`);
   }
 
   private seqPadUp(i: number) {

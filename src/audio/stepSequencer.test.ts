@@ -6,7 +6,7 @@ type Event = { type: "on" | "off"; note: number; time: number; slide?: boolean }
 const SEC_PER_BEAT = 0.5; // 120 BPM
 
 /** Run the sequencer over `beats` beats the way the drum clock does: one quarter beat at a time. */
-function run(s: NoteSeqSettings, beats: number, from = 0) {
+function run(s: NoteSeqSettings, beats: number, from = 0, pitch?: (note: number) => number) {
   const events: Event[] = [];
   const steps: number[] = [];
   const seq = new NoteSequencer(s, {
@@ -14,6 +14,7 @@ function run(s: NoteSeqSettings, beats: number, from = 0) {
     noteOff: (note, time) => events.push({ type: "off", note, time }),
   });
   seq.onStep = (step) => steps.push(step);
+  if (pitch) seq.pitch = pitch;
   seq.reset();
   for (let b = from; b < from + beats - 1e-9; b += 0.25) seq.schedule(b, b + 0.25, (x) => x * SEC_PER_BEAT, SEC_PER_BEAT);
   return { events, steps, seq };
@@ -88,6 +89,19 @@ describe("NoteSequencer", () => {
     s.steps[1].on = false;
     const off = run(s, 0.25).events.find((e) => e.type === "off")!;
     expect(off.time).toBeCloseTo(0.0625);
+  });
+
+  test("pitch (scale lock) moves the transposed note, and notes that land together tie through a slide", () => {
+    const s = settings({ length: 2, transpose: 1 });
+    s.steps[0].slide = true;
+    const down = (n: number) => n - (n % 2); // even notes only
+    const { events } = run(s, 0.5, 0, down);
+    // 60 + 1 and 61 + 1 become 60 and 62.
+    expect(ons(events).map((e) => e.note)).toEqual([60, 62]);
+    s.steps[1].note = 60;
+    const tie = run(s, 0.5, 0, down).events;
+    expect(ons(tie).map((e) => e.note)).toEqual([60]);
+    expect(tie.filter((e) => e.type === "off").map((e) => e.note)).toEqual([60]);
   });
 
   test("transpose shifts every note", () => {
