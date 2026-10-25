@@ -1,8 +1,10 @@
+import { CLIP_RANGE, softClipCurve } from "./softClip";
+
 /**
  * Effects and master chain. Each part (see part.ts) has its own way in, with its own volume, chorus
  * and sends; the delay, reverb and master are shared:
  *
- *   part -> volume -> chorus -> post --+--> master -> limiter -> analyser -> destination
+ *   part -> volume -> chorus -> post --+--> master -> limiter -> soft clipper -> analyser -> destination
  *                                      +--> delay send --> delay -^
  *                                      +--> reverb send -> reverb -^
  *   drumIn ----------------------------+--> master (and a smaller reverb send)
@@ -50,12 +52,16 @@ export class Fx {
 
     const limiter = new DynamicsCompressorNode(ctx, { threshold: -6, knee: 3, ratio: 20, attack: 0.002, release: 0.15 });
     this.analyser = new AnalyserNode(ctx, { fftSize: 4096, smoothingTimeConstant: 0.75 });
+    // The soft clipper (softClip.ts): its curve covers ±CLIP_RANGE, so the signal is scaled into the
+    // shaper's -1..1 input range. Oversampled, because bending peaks makes new high harmonics.
+    const clipIn = new GainNode(ctx, { gain: 1 / CLIP_RANGE });
+    const clipper = new WaveShaperNode(ctx, { curve: softClipCurve(), oversample: "4x" });
     this.mute = new GainNode(ctx);
-    this.master.connect(limiter).connect(this.analyser).connect(this.mute).connect(ctx.destination);
+    this.master.connect(limiter).connect(clipIn).connect(clipper).connect(this.analyser).connect(this.mute).connect(ctx.destination);
     const split = new ChannelSplitterNode(ctx, { numberOfOutputs: 2 });
     const meter = () => new AnalyserNode(ctx, { fftSize: 2048, channelCount: 1, channelCountMode: "explicit" });
     this.meters = { left: meter(), right: meter() };
-    limiter.connect(split);
+    clipper.connect(split);
     split.connect(this.meters.left, 0);
     split.connect(this.meters.right, 1);
   }

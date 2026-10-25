@@ -182,6 +182,16 @@ What the browser still limits, whatever we do:
 - Oversampling (running at a higher rate inside, then filtering back down) for drive, FM and sync, so high notes don't sound harsh or "digital".
 - A soft clipper on the output, so loud patches saturate instead of distorting harshly.
 - **Done when:** a high FM or driven note sounds clean in a side-by-side test, and the CPU cost is measured.
+- Status: done 2026-10-25 (checked by ear on the MiniLab).
+  - **Measuring it:** `aliasLevel` (`render/analyse.ts`) measures the energy between a steady note's harmonics against the energy on them; fold-back lands between the harmonics. Lower is cleaner. Tests in `voiceBank.test.ts` hold the results below.
+  - **2x sound path:** each voice's oscillators, mixer, drive and filters run at twice the sample rate. Envelopes, routes and LFOs stay at the normal rate and are held for both samples. The voices are summed at 2x and come back down once per part (and once per tap) through a 63-tap half-band filter (`dsp/halfband.ts`: flat to 20 kHz, 85 dB down from 28 kHz), which adds 15.5 samples (0.3 ms) of delay. Noise is made at 2x, scaled to keep its level.
+  - **Drive:** the 2x path fed the drive more harmonics than before, so it got first-order antiderivative anti-aliasing (ADAA: the curve's average between samples, from its integral) instead of its own 2x oversampler.
+  - **FM bug found:** strong FM pushes Osc 1's phase backward for part of each cycle, and the oscillator skipped smoothing (polyBLEP) for edges crossed backward. It now smooths them in both directions; this mattered more than the oversampling for FM on saw and pulse waves.
+  - **Results at C7 (2093 Hz), before → after, dB:** FM sine 100% −4 → −56; FM saw 50% −8 → −35; sync +19 −28 → −36; drive 100% −31 → −39; ladder + drive 100% −23 → −29; plain saw −34 → −45. At C6 the FM sine at 50% was already clean (−92).
+  - **Soft clipper** (`softClip.ts`) after the output limiter: unchanged below 0.7 (−3 dB), then bends smoothly towards full scale, as a WaveShaperNode with 4x oversampling. The limiter needs 2 ms to react, so note starts could go past full scale before; now they saturate instead of clipping.
+  - **CPU (bun, 10 notes):** plain saw 10% → 11%; the heavy test (unison 3, table + saw, drive, sub, noise) 27% → 22%, and 31% → 25% with 8 routes. Cheaper overall, because profiling found the oscillator's edge check allocating on every sample; that fix paid for the 2x path.
+  - **Sound changes:** every preset's level is within 0.3 dB of before; their spectra differ by 1.3 dB at most on average (mostly the removed fold-back, and the noise is a different random sequence). The render reference needs re-saving.
+  - **Not done:** the ladder with heavy drive could run at 4x for another few dB; the plain oscillators' smoothing could be raised from polyBLEP to a longer one. Neither seemed worth the CPU now.
 
 ### 11. Effects pass
 

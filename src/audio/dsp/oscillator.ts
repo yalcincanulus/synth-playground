@@ -97,25 +97,40 @@ class Blep {
 }
 
 /**
- * Record the jumps of `wave` while its phase moves from `a` (0..1) forward by `delta`,
- * over the part of the sample from time `t0` to `t0 + span`. With `side`, the same jumps scaled by
- * `k` (the copy's stereo position) go there too.
+ * Record the jumps of `wave` while its phase moves from `a` (0..1) by `delta`, over the part of the
+ * sample from time `t0` to `t0 + span`. With `side`, the same jumps scaled by `k` (the copy's stereo
+ * position) go there too. The phase can move backward (strong FM pushes it back for part of each
+ * cycle): an edge crossed backward is the same jump the other way.
  */
 function jumps(wave: number, width: number, a: number, delta: number, t0: number, span: number, blep: Blep, side: Blep | null = null, k = 0) {
-  if ((wave !== 2 && wave !== 3) || delta <= 0 || delta >= 1) return; // only the saw and pulse jump
+  if ((wave !== 2 && wave !== 3) || delta === 0 || delta >= 1 || delta <= -1) return; // only the saw and pulse jump
   const b = a + delta;
-  const hit = (c: number, h: number) => {
-    if (c <= a || c > b) return;
-    const d = 1 - (t0 + ((c - a) / delta) * span);
-    blep.add(h, d);
-    side?.add(h * k, d);
-  };
-  if (wave === 2) hit(1, -2);
-  else {
-    hit(width, -2);
-    hit(1, 2);
-    hit(1 + width, -2);
+  // Most samples cross no edge: the phase stays inside one cycle, clear of the pulse's width.
+  const lo = delta > 0 ? a : b;
+  const hi = delta > 0 ? b : a;
+  if (lo >= 0 && hi < 1 && (wave === 2 || hi < width || lo >= width)) return;
+  // The edges near the phase's range, as met going forward: the saw drops at each cycle's end; the
+  // pulse falls at the width and rises at the cycle's end.
+  if (wave === 2) {
+    edge(0, -2, a, delta, t0, span, blep, side, k);
+    edge(1, -2, a, delta, t0, span, blep, side, k);
+  } else {
+    edge(width - 1, -2, a, delta, t0, span, blep, side, k);
+    edge(0, 2, a, delta, t0, span, blep, side, k);
+    edge(width, -2, a, delta, t0, span, blep, side, k);
+    edge(1, 2, a, delta, t0, span, blep, side, k);
+    edge(1 + width, -2, a, delta, t0, span, blep, side, k);
   }
+}
+
+/** If the phase moving from `a` by `delta` crosses `c`, record its jump `h` (reversed when moving backward). */
+function edge(c: number, h: number, a: number, delta: number, t0: number, span: number, blep: Blep, side: Blep | null, k: number) {
+  const b = a + delta;
+  if (delta > 0 ? c <= a || c > b : c >= a || c < b) return;
+  const d = 1 - (t0 + ((c - a) / delta) * span);
+  const jump = delta > 0 ? h : -h;
+  blep.add(jump, d);
+  side?.add(jump * k, d);
 }
 
 const at = (values: Float32Array, i: number) => (values.length === 1 ? values[0] : values[i]);
@@ -206,14 +221,24 @@ export class Oscillator {
     const v1 = (p: number, w: number) => (wave1 === TABLE_WAVE ? this.reader1.read(position, p) : naive(wave1, p, w));
     const v2 = (p: number, w: number) => (wave2 === TABLE_WAVE ? this.reader2.read(position, p) : naive(wave2, p, w));
 
+    // The pitches are only worked out again when their inputs change (they often hold for several samples).
+    let lastBase = NaN, lastCents = NaN, lastEnv = NaN, lastOsc2 = NaN;
+    let f1 = 0, f2 = 0;
     for (let i = from; i < to; i++) {
       const base = at(params.frequency, i);
       const cents = at(params.detune, i);
       const env = at(params.pitchEnv, i);
-      const f1 = base * Math.pow(2, (cents + (envOnBoth ? env : 0)) / 1200);
-      if (osc2Cents.length > 1) osc2Mul = Math.pow(2, osc2Cents[i] / 1200);
+      const osc2 = at(osc2Cents, i);
+      if (base !== lastBase || cents !== lastCents || env !== lastEnv || osc2 !== lastOsc2) {
+        if (osc2 !== lastOsc2) osc2Mul = Math.pow(2, osc2 / 1200);
+        f1 = base * Math.pow(2, (cents + (envOnBoth ? env : 0)) / 1200);
+        f2 = base * Math.pow(2, (cents + env) / 1200) * osc2Mul;
+        lastBase = base;
+        lastCents = cents;
+        lastEnv = env;
+        lastOsc2 = osc2;
+      }
       const fmK = Math.min(2, Math.max(0, at(params.fm, i))) * FM_K;
-      const f2 = base * Math.pow(2, (cents + env) / 1200) * osc2Mul;
       const width = clampWidth(at(params.width, i));
       position = at(params.position, i);
       let s1 = 0;

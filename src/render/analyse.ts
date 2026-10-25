@@ -256,6 +256,35 @@ export function fft(re: Float64Array, im: Float64Array) {
   }
 }
 
+/**
+ * How much of a steady periodic sound is aliasing: the energy away from the harmonics of `f0`, relative to
+ * the energy on them, in dB (lower is cleaner). Aliases are harmonics above the Nyquist frequency folded
+ * back down, so they land between the real harmonics. Measured over `n` samples from `start`, with a
+ * Blackman-Harris window (its leakage is below -92 dB, the floor of this measurement).
+ */
+export function aliasLevel(x: Float32Array, sampleRate: number, f0: number, start = 0, n = 32768): number {
+  const re = new Float64Array(n);
+  const im = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const t = (2 * Math.PI * i) / (n - 1);
+    const w = 0.35875 - 0.48829 * Math.cos(t) + 0.14128 * Math.cos(2 * t) - 0.01168 * Math.cos(3 * t);
+    re[i] = (x[start + i] ?? 0) * w;
+  }
+  fft(re, im);
+  const binHz = sampleRate / n;
+  // The window's main lobe is 4 bins either side; 6 leaves room for the harmonics' own width.
+  const near = 6;
+  let harmonic = 0;
+  let other = 0;
+  for (let b = Math.ceil(20 / binHz); b < n / 2; b++) {
+    const e = re[b] * re[b] + im[b] * im[b];
+    const k = Math.round((b * binHz) / f0);
+    if (k >= 1 && Math.abs(b - (k * f0) / binHz) <= near) harmonic += e;
+    else other += e;
+  }
+  return 10 * Math.log10(Math.max(other, 1e-30) / Math.max(harmonic, 1e-30));
+}
+
 /** Add "loud" and "quiet" issues to presets far from the median level. */
 export function levelOutliers(results: Map<string, Analysis>) {
   const levels = [...results.values()].filter((a) => !a.issues.some((i) => i.kind === "silent")).map((a) => a.rmsDb);

@@ -84,8 +84,10 @@ Without a MiniLab, the computer keyboard plays notes (A row; Z/X change octave),
 - `src/minilab/`: MiniLab 3 protocol (decoding, SysEx builders) and the port connection. See `docs/minilab3-protocol.md`.
 - `src/audio/`: the audio engine: voices, effects, drums, sequencer, parameter definitions. Every note is made
   in one AudioWorklet processor (`synth.worklet.ts` runs `dsp/voiceBank.ts`): oscillators (anti-aliased with
-  polyBLEP, with sync and FM), the clean and ladder filters, drive, envelopes, the LFOs and the mod matrix. `dsp/` is plain
-  TypeScript, tested with `bun test`. The effects are Web Audio nodes.
+  polyBLEP, with sync and FM), the clean and ladder filters, drive (with antiderivative anti-aliasing), envelopes, the LFOs and the mod matrix. `dsp/` is plain
+  TypeScript, tested with `bun test`. Each voice's sound path runs at twice the sample rate; the part's sum
+  comes back down through a half-band filter (`dsp/halfband.ts`). The effects are Web Audio nodes; the
+  output ends in a limiter and a soft clipper (`softClip.ts`).
   `wavetables.ts` defines the built-in wavetables and prepares their per-octave versions.
 - `src/presets/`: factory presets; user presets are stored in localStorage.
 - `src/app/`: Svelte UI. `playground.svelte.ts` connects the device, the engine and the UI.

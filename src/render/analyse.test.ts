@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { analyse, compare, findClicks, findCuts, levelOutliers, stereoWidth, type Analysis, type PhraseNote } from "./analyse";
+import { aliasLevel, analyse, compare, findClicks, findCuts, levelOutliers, stereoWidth, type Analysis, type PhraseNote } from "./analyse";
 
 const SR = 48000;
 const PHRASE: PhraseNote[] = [{ note: 69, on: 0.1, off: 0.6 }];
@@ -84,5 +84,17 @@ describe("stereoWidth", () => {
     expect(stereoWidth([a, a])).toBe(0);
     expect(stereoWidth([a])).toBe(0);
     expect(stereoWidth([a, b])).toBeGreaterThan(50);
+  });
+
+  test("alias level: a band-limited saw is clean, a naive one isn't", () => {
+    const f = 2093;
+    const band = new Float32Array(SR);
+    const raw = new Float32Array(SR);
+    for (let i = 0; i < SR; i++) {
+      for (let k = 1; k * f < SR / 2; k++) band[i] += (-2 / (Math.PI * k)) * Math.sin(2 * Math.PI * k * f * (i / SR));
+      raw[i] = saw(((i / SR) * f) % 1);
+    }
+    expect(aliasLevel(band, SR, f)).toBeLessThan(-80);
+    expect(aliasLevel(raw, SR, f)).toBeGreaterThan(-30);
   });
 });

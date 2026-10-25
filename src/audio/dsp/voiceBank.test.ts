@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { fft, findClicks, findCuts } from "../../render/analyse";
+import { aliasLevel, fft, findClicks, findCuts } from "../../render/analyse";
 import { defaultValues, LFO_WAVES, MOD_DESTS, MOD_SOURCES, slotIds, type ParamValues } from "../params";
 import { TAPS, VoiceBank, type BankMessage } from "./voiceBank";
 
@@ -325,6 +325,30 @@ describe("VoiceBank filter morph and Filter 2", () => {
     const x = render(bank(p), [{ ...on(1, 0), random: -1 }, { ...on(2, 0.05, 96), random: 1 }], 0.4);
     expect(x.every(Number.isFinite)).toBe(true);
     expect(peak(x)).toBeGreaterThan(0.01);
+  });
+});
+
+describe("VoiceBank aliasing (high notes stay clean)", () => {
+  // C7, about 2 kHz: its harmonics pass the Nyquist frequency quickly, so any fold-back shows.
+  const NOTE = 96;
+  const f0 = 440 * Math.pow(2, (NOTE - 69) / 12);
+  const CLEAN: Partial<ParamValues> = { osc1Wave: 2, oscMix: 0, osc2Detune: 0, filterEnvAmt: 0, keyTrack: 0, cutoff: 18000, sustain: 1, velocity: 0 };
+  const level = (p: Partial<ParamValues>) => aliasLevel(render(bank({ ...CLEAN, ...p }), [on(1, 0, NOTE)], 0.8), SR, f0, frame(0.1));
+
+  // Measured 2026-10-25, before -> after slice 10 (dB of fold-back against the harmonics):
+  // FM sine -4 -> -56, FM saw -8 -> -35, sync -28 -> -36, drive -31 -> -39, ladder + drive -23 -> -29.
+  test("FM: sine and saw carriers", () => {
+    expect(level({ osc1Wave: 0, osc2Wave: 0, osc2Semi: 12, fmAmount: 1 })).toBeLessThan(-50);
+    expect(level({ osc2Wave: 0, osc2Semi: 12, fmAmount: 0.5 })).toBeLessThan(-30);
+  });
+
+  test("hard sync", () => {
+    expect(level({ osc2Wave: 2, osc2Semi: 19, oscMix: 1, oscSync: 1 })).toBeLessThan(-33);
+  });
+
+  test("drive, before the clean filter and inside the ladder", () => {
+    expect(level({ drive: 1 })).toBeLessThan(-36);
+    expect(level({ drive: 1, filterModel: 1 })).toBeLessThan(-27);
   });
 });
 

@@ -16,6 +16,12 @@
 // mod), and the mod matrix's routes move its settings sample by sample. The two LFOs, pitch bend and
 // the mod strip are shared by all voices and run here too.
 //
+// Oversampling: each voice's sound path (oscillators to filters) runs at twice the sample rate, so FM,
+// sync, drive and the ladder's saturation make fewer harsh, out-of-tune tones above the audible range
+// that fold back down (aliasing). The voices are summed at 2x and brought back down once per part
+// (dsp/halfband.ts), which delays the sound by HALFBAND_LATENCY samples (about 0.3 ms). Envelopes,
+// routes and LFOs run at the normal rate; the sound path holds their values for both 2x samples.
+//
 // Besides the sound, the bank fills one output per stage (the "taps": raw oscillators, sub, noise,
 // mixer, drive, filter), so the Synth view can show and play each stage on its own.
 //
@@ -23,7 +29,8 @@
 // exact sample; settings and controls apply from the next block.
 
 import { FILTER2_MODES, FILTER_MODELS, LFO_WAVES, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, slotIds, type ParamValues } from "../params";
-import { DRIVE_MIN, driveShape, Oversampled2x } from "./drive";
+import { DRIVE_MIN, DriveAdaa, driveShape } from "./drive";
+import { Decimator2 } from "./halfband";
 import { Ladder, LADDER_MAX_K, ladderGain, ladderOutGain } from "./ladder";
 import { LFO_AMP, LFO_AMP_TARGET, LFO_SCALE, LfoCore, lfoDepths } from "./lfo";
 import { Oscillator, type OscParams, type SideOutputs, type Table } from "./oscillator";
@@ -65,6 +72,10 @@ export interface LfoState {
 }
 
 const MAX_BLOCK = 128;
+/** The sound path's oversampling factor (see above). */
+const OS = 2;
+/** White noise at 2x keeps half its power below the final Nyquist frequency; this restores its level. */
+const NOISE_GAIN = Math.SQRT2;
 /** Parameter changes glide over this time constant. */
 const SMOOTH_S = 0.01;
 /** Pitch bend and the mod strip glide over this one; LFO depths and rates over LFO_SMOOTH_S. */
@@ -114,6 +125,8 @@ interface Event {
 }
 
 const block = () => new Float32Array(MAX_BLOCK);
+/** A block at the sound path's rate. */
+const block2 = () => new Float32Array(MAX_BLOCK * OS);
 
 class Voice {
   readonly id: number;
@@ -131,14 +144,14 @@ class Voice {
   readonly cutoff2: Ramp;
   readonly svf = new Svf();
   readonly ladder = new Ladder();
-  readonly driver = new Oversampled2x();
+  private driver = new DriveAdaa();
+  private driverR = new DriveAdaa();
   /** With unison copies the voice is stereo: these are the right side's (the ones above are the left's). */
   readonly stereo: boolean;
   private svfR = new Svf();
   private ladderR = new Ladder();
   private svf2 = new Svf();
   private svf2R = new Svf();
-  private driverR = new Oversampled2x();
   private side: SideOutputs | null;
   readonly smooth: Float64Array;
   readonly gainScale: number;
@@ -154,9 +167,10 @@ class Voice {
 
   // Per-sample oscillator inputs and outputs, envelope values, and the routes' sum per destination.
   private p: OscParams;
-  private o1 = block();
-  private o2 = block();
-  private os = block();
+  private freqB = block();
+  private o1 = block2();
+  private o2 = block2();
+  private os = block2();
   private ampB = block();
   private aenvB = block();
   private fenvB = block();
@@ -171,9 +185,9 @@ class Voice {
     const { phases } = msg;
     this.id = msg.id;
     let k = 0;
-    this.osc = new Oscillator(msg.unison, bank.sampleRate, bank.tables, () => (k < phases.length ? phases[k++] : 0));
+    this.osc = new Oscillator(msg.unison, bank.sampleRate * OS, bank.tables, () => (k < phases.length ? phases[k++] : 0));
     this.stereo = this.osc.unison > 1;
-    this.side = this.stereo ? { osc1: block(), osc2: block() } : null;
+    this.side = this.stereo ? { osc1: block2(), osc2: block2() } : null;
     this.freq = new Ramp(midiToHz(msg.note));
     this.key = new Ramp(keySource(msg.note));
     this.cutoff = new Ramp(filterBase(bank.values, msg.note));
@@ -192,7 +206,7 @@ class Voice {
     }
     this.noise = msg.seed >>> 0 || 1;
     this.p = {
-      frequency: block(), detune: block(), pitchEnv: block(), osc2Detune: block(), width: block(), fm: block(), position: block(),
+      frequency: block2(), detune: block2(), pitchEnv: block2(), osc2Detune: block2(), width: block2(), fm: block2(), position: block2(),
       envTarget: new Float32Array(1), spread: new Float32Array(1), sync: new Float32Array(1),
       wave1: new Float32Array(1), wave2: new Float32Array(1), table: new Float32Array(1),
     };
@@ -208,6 +222,10 @@ class Voice {
     return (this.noise / 4294967296) * 2 - 1;
   }
 
+  /**
+   * Add samples `from` to `to` (at the normal rate) of this voice to `outL` and `outR`, and each stage to
+   * `taps` (TAPS order) when given. The outputs are at the sound path's rate: OS samples per sample.
+   */
   render(bank: VoiceBank, outL: Float32Array, outR: Float32Array, taps: Float32Array[] | null, from: number, to: number) {
     const s = this.smooth;
     const t = bank.targets;
@@ -229,31 +247,41 @@ class Voice {
       this.menvB[i] = this.modEnv.tick();
       this.penvB[i] = this.pitchEnv.tick();
       this.keyB[i] = this.key.tick();
-      p.frequency[i] = this.freq.tick();
+      this.freqB[i] = this.freq.tick();
     }
     this.applyRoutes(bank, from, to);
     const on = this.modOn;
     const m = this.mods;
     const mod = (dest: number) => (on[dest] ? m[dest] : null);
 
-    // Pass 1: the oscillators' per-sample inputs.
+    // Pass 1: the oscillators' inputs, each held for the OS samples of the sound path.
     const { pitch, width, position } = bank.globals;
     const mPitch = mod(D_PITCH), mOsc2 = mod(D_OSC2), mWidth = mod(D_WIDTH), mFm = mod(D_FM), mPos = mod(D_POS);
     for (let i = from; i < to; i++) {
       for (const j of PASS1) s[j] = t[j] + (s[j] - t[j]) * c;
-      p.detune[i] = pitch[i] + (mPitch ? mPitch[i] : 0);
-      p.pitchEnv[i] = this.penvB[i] * s[PENV];
-      p.osc2Detune[i] = s[OSC2] + (mOsc2 ? mOsc2[i] : 0);
-      p.width[i] = s[WIDTH] + width[i] + (mWidth ? mWidth[i] : 0);
-      p.fm[i] = s[FM] + (mFm ? mFm[i] : 0);
-      p.position[i] = s[POS] + position[i] + (mPos ? mPos[i] : 0);
+      const frequency = this.freqB[i];
+      const detune = pitch[i] + (mPitch ? mPitch[i] : 0);
+      const pitchEnv = this.penvB[i] * s[PENV];
+      const osc2Detune = s[OSC2] + (mOsc2 ? mOsc2[i] : 0);
+      const w = s[WIDTH] + width[i] + (mWidth ? mWidth[i] : 0);
+      const fm = s[FM] + (mFm ? mFm[i] : 0);
+      const pos = s[POS] + position[i] + (mPos ? mPos[i] : 0);
+      for (let o = i * OS; o < (i + 1) * OS; o++) {
+        p.frequency[o] = frequency;
+        p.detune[o] = detune;
+        p.pitchEnv[o] = pitchEnv;
+        p.osc2Detune[o] = osc2Detune;
+        p.width[o] = w;
+        p.fm[o] = fm;
+        p.position[o] = pos;
+      }
     }
-    this.osc.render(p, this.o1, this.o2, this.os, from, to, this.side);
+    this.osc.render(p, this.o1, this.o2, this.os, from * OS, to * OS, this.side);
 
-    // Pass 2: mixer, drive, filter, amp.
+    // Pass 2: mixer, drive, filter, amp. Settings per sample, the sound per 2x sample.
     const g = this.gainScale;
     const drive = v.drive;
-    const sr = bank.sampleRate;
+    const sr = bank.sampleRate * OS;
     const velScale = velocityFilterScale(v, this.velocity);
     const filterLfo = bank.globals.filter;
     const mMix = mod(D_MIX), mSub = mod(D_SUB), mNoise = mod(D_NOISE), mCutoff = mod(D_CUTOFF), mRes = mod(D_RES), mVol = mod(D_VOLUME), mPan = mod(D_PAN);
@@ -268,88 +296,82 @@ class Voice {
     const inGain = ladderGain(drive);
     const outGain = ladderOutGain(drive);
     const side = this.side;
+    const { o1, o2, os } = this;
     for (let i = from; i < to; i++) {
       for (const j of PASS2) s[j] = t[j] + (s[j] - t[j]) * c;
       const mix = mMix ? mMix[i] : 0;
-      const noise = this.nextNoise();
       const g1 = (s[G1] - mix) * g;
       const g2 = (s[G2] + mix) * g;
-      const sub = this.os[i] * (s[SUB] + (mSub ? mSub[i] : 0));
-      const nz = noise * (s[NOISE] + (mNoise ? mNoise[i] : 0));
-      const x = 0.5 * (this.o1[i] * g1 + this.o2[i] * g2 + sub + nz);
+      const subLevel = s[SUB] + (mSub ? mSub[i] : 0);
+      const noiseLevel = (s[NOISE] + (mNoise ? mNoise[i] : 0)) * NOISE_GAIN;
       const cents = this.fenvB[i] * s[FENV] * velScale + filterLfo[i] + (mCutoff ? mCutoff[i] : 0);
       const fg = svfG(this.cutoff.tick() * Math.exp(cents * CENTS_TO_LN), sr);
       const morph = s[MORPH] + (mMorph ? mMorph[i] : 0);
       const cutoff2 = this.cutoff2.tick();
-      // The signal into the filter(s), per side; Filter 2 in parallel takes the same.
-      let inL: number, inR: number;      let left: number, right: number, driven: number;
-      if (ladder) {
-        const k = mRes ? Math.max(0, Math.min(LADDER_MAX_K, s[LK] + mRes[i] * LADDER_K_PER_DB)) : s[LK];
-        if (side) {
-          const d = 0.5 * (side.osc1[i] * g1 + side.osc2[i] * g2) * s[STEREO];
-          inL = x - d;
-          inR = x + d;
-          left = this.ladder.process(inL, fg, k, morph, inGain) * outGain;
-          right = this.ladderR.process(inR, fg, k, morph, inGain) * outGain;
-        } else {
-          inL = inR = x;
-          left = right = this.ladder.process(x, fg, k, morph, inGain) * outGain;
-        }
-        // The drive happens inside the filter; the Drive tap shows its curve on the mixer's signal.
-        driven = taps && driveOn ? driveShape(x, drive) : x;
-      } else {
-        const k = mRes ? resonanceK(s[Q] + mRes[i]) : s[K];
-        if (side) {
-          // The copies' spread: half the mixer's sum of the side signals, times the width.
-          const d = 0.5 * (side.osc1[i] * g1 + side.osc2[i] * g2) * s[STEREO];
-          let xl = x - d;
-          let xr = x + d;
-          if (shapeOn) {
-            xl = this.driver.process(xl, drive);
-            xr = this.driverR.process(xr, drive);
-          }
-          driven = 0.5 * (xl + xr);
-          inL = xl;
-          inR = xr;
-          left = this.svf.process(xl, fg, k, morph);
-          right = this.svfR.process(xr, fg, k, morph);
-        } else {
-          driven = shapeOn ? this.driver.process(x, drive) : x;
-          inL = inR = driven;
-          left = right = this.svf.process(driven, fg, k, morph);
-        }
-      }
-      const filtered1 = 0.5 * (left + right);
-      let filtered2 = 0;
-      if (series || parallel) {
-        const fg2 = svfG(mCutoff2 ? cutoff2 * Math.exp(mCutoff2[i] * CENTS_TO_LN) : cutoff2, sr);
-        const a = series ? left : inL;
-        const b = series ? right : inR;
-        const yl = this.svf2.process(a, fg2, s[K2], s[MORPH2]);
-        const yr = side ? this.svf2R.process(b, fg2, s[K2], s[MORPH2]) : yl;
-        filtered2 = 0.5 * (yl + yr);
-        if (series) {
-          left = yl;
-          right = yr;
-        } else {
-          left += yl;
-          right += yr;
-        }
-      }
+      const fg2 = series || parallel ? svfG(mCutoff2 ? cutoff2 * Math.exp(mCutoff2[i] * CENTS_TO_LN) : cutoff2, sr) : 0;
+      const k = ladder
+        ? mRes ? Math.max(0, Math.min(LADDER_MAX_K, s[LK] + mRes[i] * LADDER_K_PER_DB)) : s[LK]
+        : mRes ? resonanceK(s[Q] + mRes[i]) : s[K];
       const level = this.ampB[i] * (mVol ? 1 + mVol[i] : 1);
       // Pan keeps left + right: hard right is the right side twice as loud and the left silent.
       const pan = mPan ? Math.max(-1, Math.min(1, mPan[i])) : 0;
-      outL[i] += left * level * (1 - pan);
-      outR[i] += right * level * (1 + pan);
-      if (taps) {
-        taps[T_OSC1][i] += this.o1[i];
-        taps[T_OSC2][i] += this.o2[i];
-        taps[T_SUB][i] += this.os[i];
-        taps[T_NOISE][i] += noise;
-        taps[T_MIX][i] += x;
-        taps[T_DRIVE][i] += driven;
-        taps[T_FILTER][i] += filtered1;
-        taps[T_FILTER2][i] += filtered2;
+      const levelL = level * (1 - pan);
+      const levelR = level * (1 + pan);
+      const stereo = s[STEREO];
+
+      for (let o = i * OS; o < (i + 1) * OS; o++) {
+        const noise = this.nextNoise();
+        const x = 0.5 * (o1[o] * g1 + o2[o] * g2 + os[o] * subLevel + noise * noiseLevel);
+        // The signal into the filter(s), per side; Filter 2 in parallel takes the same.
+        let inL = x;
+        let inR = x;
+        if (side) {
+          // The copies' spread: half the mixer's sum of the side signals, times the width.
+          const d = 0.5 * (side.osc1[o] * g1 + side.osc2[o] * g2) * stereo;
+          inL = x - d;
+          inR = x + d;
+        }
+        let left: number, right: number, driven: number;
+        if (ladder) {
+          left = this.ladder.process(inL, fg, k, morph, inGain) * outGain;
+          right = side ? this.ladderR.process(inR, fg, k, morph, inGain) * outGain : left;
+          // The drive happens inside the filter; the Drive tap shows its curve on the mixer's signal.
+          driven = taps && driveOn ? driveShape(x, drive) : x;
+        } else {
+          if (shapeOn) {
+            inL = this.driver.process(inL, drive);
+            inR = side ? this.driverR.process(inR, drive) : inL;
+          }
+          driven = 0.5 * (inL + inR);
+          left = this.svf.process(inL, fg, k, morph);
+          right = side ? this.svfR.process(inR, fg, k, morph) : left;
+        }
+        const filtered1 = 0.5 * (left + right);
+        let filtered2 = 0;
+        if (series || parallel) {
+          const yl = this.svf2.process(series ? left : inL, fg2, s[K2], s[MORPH2]);
+          const yr = side ? this.svf2R.process(series ? right : inR, fg2, s[K2], s[MORPH2]) : yl;
+          filtered2 = 0.5 * (yl + yr);
+          if (series) {
+            left = yl;
+            right = yr;
+          } else {
+            left += yl;
+            right += yr;
+          }
+        }
+        outL[o] += left * levelL;
+        outR[o] += right * levelR;
+        if (taps) {
+          taps[T_OSC1][o] += o1[o];
+          taps[T_OSC2][o] += o2[o];
+          taps[T_SUB][o] += os[o];
+          taps[T_NOISE][o] += noise * NOISE_GAIN;
+          taps[T_MIX][o] += x;
+          taps[T_DRIVE][o] += driven;
+          taps[T_FILTER][o] += filtered1;
+          taps[T_FILTER2][o] += filtered2;
+        }
       }
     }
   }
@@ -499,6 +521,13 @@ export class VoiceBank {
   private events: Event[] = [];
   private seq = 0;
   private steps: [number, number, number][] = [];
+  // The voices' sum at the sound path's rate, and the decimators that bring it back down.
+  private wideL = block2();
+  private wideR = block2();
+  private wideTaps = TAPS.map(block2);
+  private downL = new Decimator2();
+  private downR = new Decimator2();
+  private downTaps = TAPS.map(() => new Decimator2());
 
   constructor(
     readonly sampleRate: number,
@@ -543,21 +572,25 @@ export class VoiceBank {
    * and `right`, and each stage (mono) into `taps` (TAPS order) when given.
    */
   render(left: Float32Array, right: Float32Array, startFrame: number, taps: Float32Array[] | null = null) {
-    left.fill(0);
-    right.fill(0);
-    if (taps) for (const tap of taps) tap.fill(0);
     const n = left.length;
+    this.wideL.fill(0, 0, n * OS);
+    this.wideR.fill(0, 0, n * OS);
+    const wideTaps = taps ? this.wideTaps : null;
+    if (wideTaps) for (const tap of wideTaps) tap.fill(0, 0, n * OS);
     const end = startFrame + n;
     const due = this.events.filter((e) => e.frame < end).sort((a, b) => a.frame - b.frame || a.seq - b.seq);
     if (due.length) this.events = this.events.filter((e) => e.frame >= end);
     let pos = 0;
     for (const e of due) {
       const at = Math.max(0, e.frame - startFrame);
-      if (at > pos) this.renderSegment(left, right, taps, pos, at, startFrame);
+      if (at > pos) this.renderSegment(wideTaps, pos, at, startFrame);
       pos = Math.max(pos, at);
       this.apply(e.msg, startFrame + pos);
     }
-    if (pos < n) this.renderSegment(left, right, taps, pos, n, startFrame);
+    if (pos < n) this.renderSegment(wideTaps, pos, n, startFrame);
+    this.downL.process(this.wideL, left, n);
+    this.downR.process(this.wideR, right, n);
+    if (taps && wideTaps) taps.forEach((tap, i) => this.downTaps[i].process(wideTaps[i], tap, n));
   }
 
   /** The LFOs' phases and rates now, and their random steps since the last call. */
@@ -568,13 +601,16 @@ export class VoiceBank {
     return { phase: lfos.map((l) => l.phase), rate: lfos.map((l) => l.hz), steps };
   }
 
-  private renderSegment(left: Float32Array, right: Float32Array, taps: Float32Array[] | null, from: number, to: number, startFrame: number) {
+  private renderSegment(taps: Float32Array[] | null, from: number, to: number, startFrame: number) {
+    const left = this.wideL;
+    const right = this.wideR;
     this.globals.render(from, to, startFrame, this.steps);
     for (const v of this.voices) v.render(this, left, right, taps, from, to);
     const tremolo = this.globals.tremolo;
-    for (let i = from; i < to; i++) {
-      left[i] *= tremolo[i];
-      right[i] *= tremolo[i];
+    for (let o = from * OS; o < to * OS; o++) {
+      const gain = tremolo[(o / OS) | 0];
+      left[o] *= gain;
+      right[o] *= gain;
     }
   }
 

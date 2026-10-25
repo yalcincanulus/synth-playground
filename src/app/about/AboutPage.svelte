@@ -39,7 +39,7 @@
 
       <h3>Coming later <span class="tag">not in yet</span></h3>
       <ul class="later">
-        <li>Cleaner drive and FM, better effects</li>
+        <li>Better effects: ping-pong delay, a better chorus and reverb</li>
         <li>WAV import and drawing your own wavetables</li>
         <li>Scale lock and chord mode</li>
         <li>Guided recipes: build a sound step by step</li>
@@ -107,7 +107,7 @@
         <li><strong>Background tabs:</strong> browsers slow down hidden tabs. The sequencer and drums keep time (their clock runs in a worker thread, which isn't slowed down), but the visuals pause.</li>
         <li><strong>A busy page:</strong> notes are planned 100 ms ahead. If the page freezes for longer, the steps it missed are skipped, so the loop stays on the beat instead of stumbling.</li>
         <li><strong>Not a plugin:</strong> it can't load in a DAW. To record it, capture the system audio.</li>
-        <li><strong>Sound quality:</strong> drive and the ladder filter aren't oversampled yet, so heavy drive on high notes can sound harsh; the regular oscillators are less clean than the wavetables on very high notes. Panning keeps the sound in mono unchanged, so a hard-panned note is louder on its side than a centred one.</li>
+        <li><strong>Sound quality:</strong> the sound path runs at twice the sample rate and a soft clipper guards the output, but very high notes with strong FM or a fully driven ladder filter still have some harshness; the regular oscillators are less clean than the wavetables on very high notes. Panning keeps the sound in mono unchanged, so a hard-panned note is louder on its side than a centred one.</li>
       </ul>
 
       <h4>The MiniLab</h4>

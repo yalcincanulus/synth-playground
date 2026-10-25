@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { fft } from "../../render/analyse";
-import { driveShape, Oversampled2x } from "./drive";
+import { DriveAdaa, driveShape } from "./drive";
 
 const SR = 48000;
 const N = 16384;
@@ -25,18 +25,29 @@ function spectrum(process: (x: number) => number, hz: number, at: number[]) {
 }
 
 describe("drive", () => {
-  test("oversampling keeps the low notes' tone: the same curve, a sliver of delay", () => {
-    const os = new Oversampled2x();
-    const out = Array.from({ length: 2000 }, (_, i) => os.process(0.5 * Math.sin((2 * Math.PI * 100 * i) / SR), 0.5));
-    const peak = Math.max(...out.slice(1000).map(Math.abs));
-    expect(Math.abs(peak - driveShape(0.5, 0.5))).toBeLessThan(0.01);
+  test("anti-aliasing keeps the low notes' tone: the same curve", () => {
+    for (const drive of [0.1, 0.5, 1]) {
+      const d = new DriveAdaa();
+      const out = Array.from({ length: 4000 }, (_, i) => d.process(1.5 * Math.sin((2 * Math.PI * 50 * i) / SR), drive));
+      const peak = Math.max(...out.slice(2000).map(Math.abs));
+      expect(Math.abs(peak - driveShape(1.5, drive))).toBeLessThan(0.01);
+    }
   });
 
-  test("oversampling cuts the fold-back (aliasing) of a high driven note", () => {
-    // A 7 kHz sine driven hard: its 5th harmonic (35 kHz) folds back to 13 kHz without oversampling.
+  test("anti-aliasing cuts the fold-back of a high driven note", () => {
+    // A 7 kHz sine driven hard: its 5th harmonic (35 kHz) folds back to 13 kHz.
     const [naive] = spectrum((x) => driveShape(x, 1), 7000, [13000]);
-    const os = new Oversampled2x();
-    const [over] = spectrum((x) => os.process(x, 1), 7000, [13000]);
-    expect(over).toBeLessThan(naive - 20);
+    const d = new DriveAdaa();
+    const [adaa] = spectrum((x) => d.process(x, 1), 7000, [13000]);
+    expect(adaa).toBeLessThan(naive - 10);
+  });
+
+  test("stays finite and in range for any input, including a sudden change of drive", () => {
+    const d = new DriveAdaa();
+    for (let i = 0; i < 10000; i++) {
+      const y = d.process(Math.sin(i * 1.3) * 3 + (i % 7 === 0 ? 1e-7 : 0), i < 5000 ? 0.2 : 1);
+      expect(Number.isFinite(y)).toBe(true);
+      expect(Math.abs(y)).toBeLessThanOrEqual(1.0001);
+    }
   });
 });
