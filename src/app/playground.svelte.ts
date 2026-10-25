@@ -28,8 +28,10 @@ import { blendKeyframes, shapeWave } from "../audio/tableDraw";
 import { TableEditor } from "./wavetable/tableEditor.svelte";
 import { detectChord, type DetectedChord } from "../audio/chordDetect";
 import { RecipeRun } from "./recipes/recipeRun.svelte";
+import { Course } from "./course/course.svelte";
+import type { Lesson } from "../course/lesson";
 import { RECIPES } from "../recipes/library";
-import { blockOf, hardwareFor, initPreset, isPlay, stepParam } from "../recipes/recipe";
+import { blockOf, hardwareFor, initPreset, isPlay, stepParam, type PlayCheck } from "../recipes/recipe";
 import {
   CHORD_MODE_NAMES,
   CHORD_MODES,
@@ -68,7 +70,7 @@ import { emptyFilter, filterPresets, isUserPresetId, presetFile, readPresetFile,
 
 export type MidiStatus = "idle" | "unsupported" | "denied" | "not-found" | "connected";
 export type VizMode = "scope" | "spectrum";
-export type View = "playground" | "synth" | "wavetable" | "about";
+export type View = "playground" | "synth" | "wavetable" | "course" | "about";
 /** What Shift + encoder cycles through: the playground's two visualisers, then the Synth and Wavetable views. */
 const SCREENS = ["scope", "spectrum", "synth", "wavetable"] as const;
 const SCREEN_NAMES: Record<(typeof SCREENS)[number], string> = { scope: "Waveform", spectrum: "Spectrum", synth: "Synth", wavetable: "Wavetable" };
@@ -188,6 +190,14 @@ class PartState {
   }
 }
 
+/** The colour of the course's pages (the accent on screen). */
+const COURSE_COLOR: Rgb = [40, 90, 127];
+
+/** A course page's sound: not in the preset list, and never saved. */
+function coursePreset(lesson: Lesson, values: ParamValues): Preset {
+  return { id: `course:${lesson.id}`, name: lesson.title, category: "Test", color: COURSE_COLOR, knobs: [...FACTORY_PRESETS[0].knobs], values, from: "course" };
+}
+
 /** The undo step that starts a recipe is named this, then the recipe. */
 const RECIPE_STEP = "Recipe ";
 
@@ -197,6 +207,9 @@ interface PartSnapshot {
   values: ParamValues;
   dirty: boolean;
 }
+
+/** The OLED's line for a step about playing. */
+const PLAY_SCREEN: Record<PlayCheck["play"], string> = { note: "Play a note", low: "Play a low note", high: "Play a high note", chord: "Play a chord" };
 
 export class Playground {
   readonly engine = new Engine();
@@ -285,6 +298,14 @@ export class Playground {
   recipeList = $state(false);
   /** Recipes you have finished (kept across reloads), for the ticks in the recipe list. */
   recipesDone = $state<string[]>(loadRecipesDone());
+  /** The learning course (the Learn view). */
+  readonly course = new Course(
+    () => this.parts.keys.values,
+    (id, v) => this.setParam(id, v),
+    (values) => this.coursePage(values),
+  );
+  /** What the course put aside while it runs, and gives back when you leave: the Keys part's sound, the arpeggiator and scale lock. */
+  private beforeCourse: { sound: PartSnapshot; arp: boolean; scale: ScaleId } | null = null;
   /** The "Draw a table" editor, while it is open. */
   tableEditor = $state.raw<TableEditor | null>(null);
   private draftTimer = 0;
@@ -634,6 +655,7 @@ export class Playground {
   }
 
   private step(way: "undo" | "redo") {
+    if (this.view === "course") return this.showMessage(way === "undo" ? "Undo" : "Redo", "not in the course");
     this.endCompare();
     const history = this.parts[this.part].history;
     const step = way === "undo" ? history.undo(this.snapshot()) : history.redo(this.snapshot());
@@ -684,12 +706,14 @@ export class Playground {
   // ------------------------------------------------------------------ parameters
 
   setParam(id: ParamId, value: number) {
-    this.remember(PARAMS[id].label, id);
+    // The course's pages each start from their own sound, so their changes aren't undo steps.
+    if (this.view !== "course") this.remember(PARAMS[id].label, id);
     this.values[id] = value;
     this.engine.setParam(id, value);
     this.dirty = true;
     this.touched = { param: id, at: performance.now() };
     this.recipe?.changed();
+    if (this.view === "course") this.course.changed();
   }
 
   /** Knob i to control position t (0..1). `cc` is set when it came from the hardware. */
@@ -701,13 +725,18 @@ export class Playground {
       return;
     }
     const id = this.knobParams[i];
-    if (!id) return;
-    this.setParam(id, fromControl(id, t));
+    if (!id) {
+      if (this.view === "course" && cc !== undefined) this.showMessage(`Knob ${i + 1}`, "not on this page");
+      return;
+    }
+    this.setParam(id, this.view === "course" ? this.course.fromKnob(id, t) : fromControl(id, t));
     this.popup(id, cc);
   }
 
   setFader(i: number, t: number, cc?: number) {
     const id = FADERS[i];
+    // The course only lets you touch what the page explains.
+    if (this.view === "course" && !this.course.lesson.knobs.includes(id)) return this.showMessage(`Fader ${i + 1}`, "not on this page");
     this.setParam(id, fromControl(id, t));
     this.popup(id, cc);
   }
@@ -743,6 +772,7 @@ export class Playground {
     }
     this.notesChanged(true);
     this.recipe?.notePlayed(note, this.notes.size);
+    if (this.view === "course") this.course.notePlayed(note, this.notes.size);
   }
 
   noteOff(note: number) {
@@ -1270,8 +1300,8 @@ export class Playground {
 
   /** Shift + encoder: Waveform -> Spectrum -> Synth -> Wavetable. */
   cycleScreen(delta: number) {
-    // The About page isn't one of the screens: from there, Shift + encoder starts over from the playground.
-    const current = this.view === "playground" || this.view === "about" ? this.vizMode : this.view;
+    // The About page and the course aren't among the screens: from there, Shift + encoder starts over from the playground.
+    const current = this.view === "playground" || this.view === "about" || this.view === "course" ? this.vizMode : this.view;
     const next = SCREENS[(SCREENS.indexOf(current) + delta + SCREENS.length) % SCREENS.length];
     if (next === "synth" || next === "wavetable") this.setView(next);
     else {
@@ -1553,18 +1583,92 @@ export class Playground {
     else if (param) what = `Set ${PARAMS[param].label}`;
     else {
       const play = step.checks.find(isPlay)!.play;
-      what = { note: "Play a note", low: "Play a low note", chord: "Play a chord" }[play];
+      what = PLAY_SCREEN[play];
     }
     return [`Step ${run.index + 1}/${run.total}`, what];
   }
 
   setView(view: View) {
     if (this.view === view) return;
+    const wasCourse = this.view === "course";
+    if (wasCourse) this.leaveCourse();
+    if (view === "course") this.prepareCourse();
     this.view = view;
+    if (view === "course") this.course.open();
+    else if (wasCourse) this.showHome();
     this.patch = null;
     if (view !== "synth") this.listenTo(null);
     this.syncTaps();
     this.realignKnobs();
+  }
+
+  // ------------------------------------------------------------------ course
+
+  /** Before the Learn view opens: the Keys part plays the course alone, with nothing else changing the notes. */
+  private prepareCourse() {
+    this.stopRecipe();
+    this.recipeList = false;
+    if (this.playing) this.stop();
+    if (this.seqEdit) this.setSeqEdit(false);
+    if (this.stepMode) this.toggleStepMode();
+    this.selectPart("keys");
+    this.beforeCourse = { sound: this.snapshot(), arp: this.arp.on, scale: this.scale.scale };
+    if (this.arp.on) this.setArp({ on: false });
+    if (this.scale.scale !== "off") this.setScale({ scale: "off" });
+  }
+
+  /** Leaving the Learn view: your sound, the arpeggiator and scale lock come back as they were. */
+  private leaveCourse() {
+    this.course.close();
+    const before = this.beforeCourse;
+    this.beforeCourse = null;
+    if (!before) return;
+    const keys = this.parts.keys;
+    keys.preset = this.presets.find((p) => p.id === before.sound.preset.id) ?? before.sound.preset;
+    keys.values = { ...before.sound.values };
+    keys.dirty = before.sound.dirty;
+    this.engine.setParams(keys.values, "keys");
+    if (before.arp) this.setArp({ on: true });
+    if (before.scale !== "off") this.setScale({ scale: before.scale });
+  }
+
+  /** A course page opened (with its starting sound), or its step changed. */
+  private coursePage(values: ParamValues | null) {
+    if (values) {
+      const keys = this.parts.keys;
+      keys.preset = coursePreset(this.course.lesson, values);
+      keys.values = values;
+      keys.dirty = false;
+      this.engine.setParams(values, "keys");
+      this.realignKnobs();
+    }
+    this.showHome();
+  }
+
+  /** The encoder in the Learn view: the next or previous page. */
+  private turnPage(delta: number) {
+    if (!this.course.goTo(this.course.index + Math.sign(delta))) this.showMessage("Learn", delta > 0 ? "last page" : "first page");
+  }
+
+  /** The OLED's two lines on a course page: where you are, and what to do now. */
+  private courseScreen(): [string, string] {
+    const c = this.course;
+    const head = `Learn ${c.index + 1}/${c.total}`;
+    const run = c.run;
+    const step = run?.step;
+    if (!run || !step) return [head, `${c.lesson.title}: done`];
+    const param = stepParam(step);
+    if (param) {
+      const k = c.lesson.knobs.indexOf(param);
+      return [head, k >= 0 ? `Knob ${k + 1}: ${PARAMS[param].label}` : `Set ${PARAMS[param].label}`];
+    }
+    return [head, PLAY_SCREEN[step.checks.find(isPlay)!.play]];
+  }
+
+  /** The controls the current recipe step or course step asks for (outlined on screen). */
+  get targetParams(): ParamId[] {
+    const step = this.view === "course" ? this.course.run?.step : this.recipe?.step;
+    return (step?.checks ?? []).flatMap((c) => (isPlay(c) ? [] : [c.param]));
   }
 
   /** The stage taps cost every voice extra work: only the Synth view draws them, and "Listen here" plays them. */
@@ -1588,6 +1692,7 @@ export class Playground {
   /** What the 8 hardware knobs control right now. */
   get knobParams(): (ParamId | null)[] {
     if (this.view === "wavetable") return WAVETABLE_KNOBS;
+    if (this.view === "course") return this.course.knobs;
     return this.view === "synth" ? KNOB_PAGES[this.focusPage].knobs : this.preset.knobs;
   }
 
@@ -1783,7 +1888,7 @@ export class Playground {
     switch (e.type) {
       case "key":
         // Shift + a key switches part; that key doesn't play (nor does its release).
-        if (e.on && this.shift) {
+        if (e.on && this.shift && this.view !== "course") {
           this.partKeys.add(e.note);
           return this.togglePart();
         }
@@ -1822,6 +1927,8 @@ export class Playground {
           this.syncPadLeds();
         }
         if (e.bank === "B" && !this.stepMode && !this.seqEdit) {
+          // The course keeps its page's sound: no preset loads.
+          if (this.view === "course") return;
           const fav = this.padPresets[e.index];
           if (e.on && fav) this.loadPreset(fav.id);
           return;
@@ -1829,6 +1936,7 @@ export class Playground {
         return e.on ? this.hitPad(e.index, e.velocity) : this.releasePad(e.index);
       case "encoder":
         if (e.shifted || this.shift) return this.cycleScreen(e.delta);
+        if (this.view === "course") return this.turnPage(e.delta);
         if (this.stepMode) return this.selectTrack(this.stepTrack + e.delta);
         if (this.view === "wavetable") return this.stepTable(e.delta);
         return this.view === "synth" ? this.cycleFocus(e.delta) : this.browse(e.delta);
@@ -1916,6 +2024,11 @@ export class Playground {
 
   /** Click: load the browsed preset. Long press: Dice. Shift + click: step mode. */
   private encoderClick(pressed: boolean, shifted: boolean) {
+    // The course: a click switches A/B on a comparison page (and never rolls Dice over the page's sound).
+    if (this.view === "course" && !shifted) {
+      if (!pressed) this.course.click();
+      return;
+    }
     if (pressed) {
       this.longPressFired = false;
       if (shifted) {
@@ -1968,7 +2081,8 @@ export class Playground {
       return;
     }
     this.knobParams.forEach((id, i) => {
-      const value = id ? Math.round(toControl(id, this.values[id]) * 127) : 0;
+      const position = !id ? 0 : this.view === "course" ? this.course.knobPosition(id, this.values[id]) : toControl(id, this.values[id]);
+      const value = Math.round(position * 127);
       this.device?.send(knobValueMessage(i, value), `knob-${i}`);
     });
   }
@@ -2027,6 +2141,7 @@ export class Playground {
   }
 
   showHome() {
+    if (this.view === "course") return this.sendDisplay(...this.courseScreen());
     if (this.recipe) return this.sendDisplay(...this.recipeScreen());
     const p = this.preset;
     const list = this.browseList;

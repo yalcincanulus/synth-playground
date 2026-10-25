@@ -37,6 +37,7 @@
         <li><strong>Wavetable:</strong> eight built-in wavetables in 3D, with the wave playing right now and its harmonics. Import your own (a Serum-format WAV, or any short sound, which is cut into frames) or draw one. Your tables stay in this browser.</li>
         <li><strong>Scale lock and chord mode:</strong> every key lands on a note of the scale, or plays a whole chord of it. The chord you play is named above the keyboard.</li>
         <li><strong>Arpeggiator:</strong> hold notes or a chord and it plays them one at a time (up, down, up-down, random, or as played) over 1–3 octaves, in time with the drums. With chord mode, one finger plays an arpeggio. It also runs with the drums stopped. Use it rather than the MiniLab's own Arp button, which keeps its own tempo.</li>
+        <li><strong>Learn:</strong> a course on how sound and synths work, one idea per page, with a picture to play with and only the controls that page needs. Chapter 1, "Sound and Oscillators", has 6 pages. The MiniLab's knobs follow the page and the encoder turns the pages. Your own sound comes back when you leave.</li>
         <li><strong>Recipes:</strong> 18 sounds to build step by step, from Init, three of them famous ones (Classics).</li>
         <li><strong>Classics:</strong> 21 presets that recreate famous synth sounds, each naming the original instrument and a record to compare it with.</li>
         <li><strong>Sound:</strong> two oscillators with pulse width, hard sync, FM and wavetables; sub and noise; a clean or a ladder filter with a low-pass to high-pass morph, an optional second filter, and drive; stereo unison and panning; amp, filter, pitch and mod envelopes; three LFOs; a mod matrix with 8 routes that also reaches the effects and the LFOs, patched by dragging cables in the Synth view; a three-line chorus, a stereo or ping-pong delay, and a reverb with damping.</li>
@@ -44,8 +45,7 @@
 
       <h3>Coming later <span class="tag">not in yet</span></h3>
       <ul class="later">
-        <li>More effects, more modulation</li>
-        <li>An interactive course that introduces one topic at a time</li>
+        <li>More course chapters: envelopes, filters, LFOs and modulation, and beyond subtractive synthesis</li>
       </ul>
 
       <h3>Getting started</h3>
@@ -60,7 +60,7 @@
         <dt>Computer keyboard</dt>
         <dd>A to ' plays notes (W, E, T… are the black keys); Z / X shift the octave</dd>
         <dt>Encoder</dt>
-        <dd>Turn: browse presets (the preset browser's list: a category, your favourites, a search), click to load, hold for Dice. Synth view: turn for the knob pages, click to listen at the selected block. Wavetable view: turn to pick the table</dd>
+        <dd>Turn: browse presets (the preset browser's list: a category, your favourites, a search), click to load, hold for Dice. Synth view: turn for the knob pages, click to listen at the selected block. Wavetable view: turn to pick the table. Learn view: turn for the next or previous page, click to switch A/B on a comparison page</dd>
         <dt>Shift + encoder</dt>
         <dd>Turn: the next view (Waveform, Spectrum, Synth, Wavetable). Click: drum step edit (turn to pick the drum), again: sequencer edit, again: off</dd>
         <dt>Shift + any knob</dt>

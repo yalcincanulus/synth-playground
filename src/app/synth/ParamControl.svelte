@@ -16,12 +16,12 @@
   const BUTTONS = new Set<ParamId>(["osc1Wave", "osc2Wave"]);
 
   let def: ParamDef = $derived(PARAMS[id]);
-  /** The choices; the wavetable list grows and shrinks with imports, so it is read from the playground. */
-  let options = $derived(id === "wtTable" ? pg.tables.map((t) => t.short) : def.options);
+  /** The choices; the wavetable list grows and shrinks with imports, so it is read from the playground. A course page may offer only the first few. */
+  let options = $derived((id === "wtTable" ? pg.tables.map((t) => t.short) : def.options)?.slice(0, (pg.view === "course" && pg.course.choicesOf(id)) || undefined));
   /** Which hardware knob (1-8) controls this right now, if any. */
   let knob = $derived(pg.knobParams.indexOf(id) + 1);
-  /** A recipe step asks for this control. */
-  let target = $derived(pg.recipeParams.includes(id));
+  /** A recipe step (or a course step) asks for this control. */
+  let target = $derived(pg.targetParams.includes(id));
 </script>
 
 {#if options && options.length > 4 && !BUTTONS.has(id)}

@@ -442,9 +442,9 @@ Added 2026-10-26 after slice 23, before the course: the synth recreates famous s
 - **Render check:** 0 of 75 presets have issues; the 54 that were there are unchanged. Feel Love Seq, G-Funk Whine, FM House Bass and Trance Supersaw were made louder to sit with the others. Reference re-saved.
 - Status: done 2026-10-26 (the user tried the ones they know; a full comparison with the records comes later).
 
-## Phase G: the learning course (postponed)
+## Phase G: the learning course
 
-Postponed on 2026-10-25 until Phase F is done. Modelled on Ableton's Learning Synths: short pages, each with a few sentences of text, **one** interactive widget, and only the controls that page needs.
+Postponed on 2026-10-25 until Phase F was done; started 2026-10-26. Modelled on Ableton's Learning Synths: short pages, each with a few sentences of text, **one** interactive widget, and only the controls that page needs.
 
 ### 24. Course framework and Chapter 1, "Sound and Oscillators"
 
@@ -456,6 +456,16 @@ Postponed on 2026-10-25 until Phase F is done. Modelled on Ableton's Learning Sy
 - Next/back, progress saved, and MiniLab knobs mapped only to what the page shows.
 - **Chapter 1, about 6 pages:** what sound is, pitch, loudness, wave shapes, harmonics (with the harmonics bars), detune and beating.
 - **Done when:** someone with no synth knowledge can go through Chapter 1 using only the MiniLab and the page.
+- Status: built 2026-10-26, waiting for a check on the MiniLab.
+  - **Where:** a **Learn** tab next to Play, Synth and Wavetable. The page is on the left: a title, 2–3 short paragraphs (new words in bold), one widget, and "Try this". On the right is the reduced synth: only the page's blocks, in signal order (Oscillator 1 → Output; on the last page also Oscillator 2 and the Mixer), each with only the page's controls. Below it, the knobs the page uses. A row of page chips at the top (✓ when done), with Back and Next.
+  - **Held still:** each page starts from its own sound over the course's base (Init with a sine: one oscillator, filter open, no envelopes, no effects). Opening Learn stops the transport, leaves any recipe, step or sequencer edit, selects the Keys part, and switches the arpeggiator and scale lock off. The sound bar (presets, Dice, undo) is hidden. Leaving gives back the Keys part's sound (preset, edits, "edited" flag), the arpeggiator and the scale. Changes on a course page are not undo steps, and undo is off while the course is open.
+  - **Lessons as data** (`src/course/`): `Lesson` has text, a widget, the blocks, the knobs (MiniLab knobs 1, 2…), a starting sound, choice limits (the Osc 1 wave offers sine to square, without "table"), and steps. The steps are recipe steps and run on the same engine (`RecipeRun`, now generic): they hold for 1.2 s, then stay ticked for 3 s. A new play check, "a high note" (C5 or above).
+  - **Widgets:** live wave (zoomed to fit, or at a fixed scale so its height shows loudness); pitch (the note's name and frequency, and its wave over 10 ms, so a higher note shows more swings); one big knob; harmonic bars (the wave drawn small, "=", then its first 16 harmonics); A/B comparison (each side sets the page's controls, so you see what changed; with the beat rate at the note you play).
+  - **Chapter 1, 6 pages:** What sound is, Pitch, Loudness (Volume), Wave shapes, Harmonics, Detune and beating (A/B, Osc Mix and Detune).
+  - **On the MiniLab:** the knobs control only the page's controls (a limited choice control spreads its few choices over the whole turn). Other knobs and the faders do nothing (the OLED says "not on this page"). The encoder turns the pages, and a click switches A/B. Pad bank B doesn't load presets, a long press doesn't roll Dice, and Shift + key doesn't switch part. The OLED shows "Learn 3/6" and the step's control ("Knob 1: Volume", "Play a high note").
+  - **Progress:** the open page and the done pages are kept after a reload ("N of 6 pages done", with a reset link). A page is done when its last step is.
+  - **Checked in the browser** (Helium, headless, 1280 x 720): all 6 pages done from simulated MiniLab events alone (keys, knobs, encoder turn and click). Faders, unused knobs, pad bank B and a long press changed nothing. Leaving gave back an edited preset with the arpeggiator and a scale on. Progress kept after a reload. With the keyboard folded, pages 1 and 3 fit on the screen and the others scroll by 26–160 px (with it open, 70–245 px). No sideways scrolling at 1280, 1100 or 900 px wide.
+  - **Tests:** `course.test.ts` (each page can be done from its starting sound by following the hints, and no step is done before it starts; steps only ask for the page's knobs; every control is on a block the page shows; aims within range and within the page's choices; short paragraphs; A/B sides only set the page's controls, and A is the starting sound).
 
 ### 25. Chapter 2, "Shaping over time" (envelopes)
 

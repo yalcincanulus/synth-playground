@@ -18,9 +18,9 @@ export interface SettingCheck {
   aim?: number;
 }
 
-/** A condition on what you play: any note, a low one (below C3), or a chord (3 or more notes at once). */
+/** A condition on what you play: any note, a low one (below C3), a high one (C5 or above), or a chord (3 or more notes at once). */
 export interface PlayCheck {
-  play: "note" | "low" | "chord";
+  play: "note" | "low" | "high" | "chord";
 }
 
 export type Check = SettingCheck | PlayCheck;
@@ -47,6 +47,7 @@ export interface Recipe {
 }
 
 export const LOW_NOTE = 48; // C3
+export const HIGH_NOTE = 72; // C5
 /** How long a step's checks must hold before it counts as done, so sweeping a knob through the range doesn't count. */
 export const HOLD_MS = 1200;
 /** How long a done step stays on screen (ticked) before the next one, so you can hear what changed. */
@@ -106,9 +107,13 @@ export function settingHolds(c: SettingCheck, v: ParamValues): boolean {
   return (c.min === undefined || x >= c.min) && (c.max === undefined || x <= c.max);
 }
 
+const PLAY_TEXT: Record<PlayCheck["play"], string> = {
+  note: "Play a note", low: "Play a low note (below C3)", high: "Play a high note (C5 or above)", chord: "Play a chord (3 notes or more)",
+};
+
 /** The check in words: "Cutoff below 900 Hz", "Voice: mono", "Play a chord". */
 export function describe(c: Check): string {
-  if (isPlay(c)) return { note: "Play a note", low: "Play a low note (below C3)", chord: "Play a chord (3 notes or more)" }[c.play];
+  if (isPlay(c)) return PLAY_TEXT[c.play];
   const label = PARAMS[c.param].label;
   const f = (x: number) => formatValue(c.param, x);
   if (c.is !== undefined) return `${label}: ${f(c.is)}`;

@@ -2,12 +2,13 @@
 // about every settings change and every note played. Once a step's checks have held for HOLD_MS it is
 // done: it stays on screen, ticked, for LINGER_MS so you can listen, then the next step comes (or sooner
 // with Next). `onStep` lets the playground point the MiniLab knobs at the next step's control.
+// A course page's "try this" steps run on it too (anything with a list of steps).
 
 import { SvelteSet } from "svelte/reactivity";
 import type { ParamValues } from "../../audio/params";
-import { HOLD_MS, isPlay, LINGER_MS, LOW_NOTE, settingHolds, type PlayCheck, type Recipe, type RecipeStep } from "../../recipes/recipe";
+import { HIGH_NOTE, HOLD_MS, isPlay, LINGER_MS, LOW_NOTE, settingHolds, type PlayCheck, type Recipe, type RecipeStep } from "../../recipes/recipe";
 
-export class RecipeRun {
+export class RecipeRun<R extends { steps: RecipeStep[] } = Recipe> {
   index = $state(0);
   done = $state(false);
   hint = $state(false);
@@ -19,7 +20,7 @@ export class RecipeRun {
   private lingerTimer = 0;
 
   constructor(
-    readonly recipe: Recipe,
+    readonly recipe: R,
     /** The settings being built (the Keys part's). */
     private values: () => ParamValues,
     private onStep: () => void,
@@ -49,6 +50,7 @@ export class RecipeRun {
   notePlayed(note: number, held: number) {
     this.played.add("note");
     if (note < LOW_NOTE) this.played.add("low");
+    if (note >= HIGH_NOTE) this.played.add("high");
     if (held >= 3) this.played.add("chord");
     this.evaluate();
   }

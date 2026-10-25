@@ -16,6 +16,7 @@
   import SynthView from "./synth/SynthView.svelte";
   import WavetableView from "./wavetable/WavetableView.svelte";
   import AboutPage from "./about/AboutPage.svelte";
+  import CourseView from "./course/CourseView.svelte";
   import SequencerPanel from "./sequencer/SequencerPanel.svelte";
   import PresetBrowser from "./presets/PresetBrowser.svelte";
   import Marquee from "./components/Marquee.svelte";
@@ -124,6 +125,7 @@
       <button data-label="Play" class:active={pg.view === "playground"} onclick={() => pg.setView("playground")} title="Play: the MiniLab's knobs and faders, the pads, drums and step sequencer (Shift + encoder)">Play</button>
       <button data-label="Synth" class:active={pg.view === "synth"} onclick={() => pg.setView("synth")} title="The whole synth as blocks: see and change every part of the sound (Shift + encoder)">Synth</button>
       <button data-label="Wavetable" class:active={pg.view === "wavetable"} onclick={() => pg.setView("wavetable")} title="Pick, import and draw wavetables (Shift + encoder)">Wavetable</button>
+      <button data-label="Learn" class:active={pg.view === "course"} onclick={() => pg.setView("course")} title="The course: how sound and synths work, one idea per page, with only the controls each page needs">Learn</button>
     </nav>
     <button class="recipes-link" class:active={!!pg.recipe || pg.recipeList} onclick={() => pg.openRecipes()} title="Build a classic sound step by step">Recipes</button>
 
@@ -161,7 +163,8 @@
     <button class="about-link" class:active={pg.view === "about"} onclick={() => pg.setView("about")} title="What this is, the MiniLab and keyboard shortcuts, and this browser's limits">About & shortcuts</button>
   </header>
 
-  <!-- Row 2: the sound being edited, and time (shared by the drums and the sequencer). -->
+  <!-- Row 2: the sound being edited, and time (shared by the drums and the sequencer). The course has its own sound for each page. -->
+  {#if pg.view !== "course"}
   <section class="soundbar">
     <div class="group sound">
       <div class="parts" role="group" aria-label="Part" title="Which sound the knobs, faders and presets edit (Shift + any key on the MiniLab)">
@@ -232,6 +235,7 @@
       <button onclick={() => pg.tap()} title="Tap tempo (Shift + Tap)">Tap</button>
     </div>
   </section>
+  {/if}
 
   {#if pg.view === "playground"}
     <div class="play">
@@ -398,6 +402,8 @@
     <SynthView {pg} {accent} />
   {:else if pg.view === "wavetable"}
     <WavetableView {pg} {accent} />
+  {:else if pg.view === "course"}
+    <CourseView {pg} {accent} />
   {:else}
     <AboutPage {pg} />
   {/if}
@@ -405,8 +411,10 @@
   <section class="panel keys" class:folded={!keysOpen}>
     <div class="keys-head">
       <ChordDisplay {pg} />
-      <ArpBar {pg} />
-      <ScaleBar {pg} />
+      {#if pg.view !== "course"}
+        <ArpBar {pg} />
+        <ScaleBar {pg} />
+      {/if}
       <button class="fold" onclick={toggleKeys} aria-expanded={keysOpen} title="{keysOpen ? 'Hide' : 'Show'} the on-screen keyboard. The MiniLab and the computer keyboard (A–' row) play either way">
         Keyboard <span class="chev">{keysOpen ? "▾" : "▴"}</span>
       </button>
