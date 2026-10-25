@@ -1218,13 +1218,20 @@ export class Playground {
     this.view = view;
     this.patch = null;
     if (view !== "synth") this.listenTo(null);
+    this.syncTaps();
     this.realignKnobs();
+  }
+
+  /** The stage taps cost every voice extra work: only the Synth view draws them, and "Listen here" plays them. */
+  private syncTaps() {
+    this.engine.setTaps(this.view === "synth" || this.listening !== null);
   }
 
   /** Hear one stage on its own; the same stage again (or null) returns to the full sound. */
   listenTo(tap: ListenTap | null) {
     this.listening = tap === this.listening ? null : tap;
     this.engine.listen(this.listening);
+    this.syncTaps();
     this.showMessage("Listen", this.listening ? TAP_NAMES[this.listening] : "full sound");
   }
 

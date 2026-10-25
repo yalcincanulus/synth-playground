@@ -46,6 +46,7 @@ export class Part {
   private node: AudioWorkletNode | null = null;
   private pings = new Map<number, () => void>();
   private pingCount = 0;
+  private tapsOn = false;
   private bend = 0;
   private mod = 0;
 
@@ -86,6 +87,14 @@ export class Part {
     this.node = node;
     this.apply();
     this.sendControls();
+    node.port.postMessage({ type: "taps", on: this.tapsOn });
+  }
+
+  /** Render the stage taps (they cost every voice extra work, so only while something uses them). */
+  setTaps(on: boolean) {
+    if (on === this.tapsOn) return;
+    this.tapsOn = on;
+    this.node?.port.postMessage({ type: "taps", on });
   }
 
   get started() {

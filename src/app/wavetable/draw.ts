@@ -2,7 +2,7 @@
 
 import type { Engine } from "../../audio/engine";
 import { FRAME_SIZE, frameAt, tableFrames, tableHarmonics } from "../../audio/wavetables";
-import { grid, type Surface } from "../components/canvas";
+import { glowStroke, grid, type Surface } from "../components/canvas";
 
 type Draw = (s: Surface) => void;
 
@@ -72,12 +72,7 @@ export function stack(engine: Engine, color: () => string): Draw {
     }
     const [x0, y0] = at(live * (n - 1));
     wavePath(g, (p) => frameAt(frames, live, p), x0, y0, width, amp);
-    g.strokeStyle = color();
-    g.lineWidth = 2.5;
-    g.shadowColor = color();
-    g.shadowBlur = engine.part.activeVoices > 0 ? 16 : 6;
-    g.stroke();
-    g.shadowBlur = 0;
+    glowStroke(g, color(), 2.5, engine.part.activeVoices > 0 ? 1.4 : 0.6);
 
     // Position axis along the depth.
     g.font = "10px ui-monospace, monospace";

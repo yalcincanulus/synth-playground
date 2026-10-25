@@ -6,7 +6,8 @@
     "dev": "vite",
     "build": "svelte-check --tsgo && vite build",
     "typecheck": "svelte-check --tsgo",
-    "test": "bun test"
+    "test": "bun test",
+    "bench": "bun src/bench/voices.bench.ts"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.1",

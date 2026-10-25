@@ -5,7 +5,8 @@
 //   (an envelope's attack, then its decay toward sustain).
 // - `approach`: setTargetAtTime from the current value (decay, release, glide, parameter smoothing).
 //
-// Times are in samples. `tick()` returns the value for the current sample and moves one sample on.
+// Times are in samples. `tick()` returns the value for the current sample and moves one sample on;
+// `fill()` does the same for a run of samples at once (the same values, much less work per sample).
 
 const HOLD = 0;
 const LINEAR = 1;
@@ -70,6 +71,31 @@ export class Ramp {
       this.value = this.target + (this.value - this.target) * this.coef;
     }
     return v;
+  }
+
+  /** Write the values for samples `from` to `to` into `out`, as that many tick() calls would. */
+  fill(out: Float32Array, from: number, to: number) {
+    let i = from;
+    while (i < to) {
+      if (this.mode === HOLD) {
+        out.fill(this.value, i, to);
+        return;
+      }
+      if (this.mode === TARGET) {
+        const t = this.target;
+        const c = this.coef;
+        let v = this.value;
+        for (; i < to; i++) {
+          out[i] = v;
+          v = t + (v - t) * c;
+        }
+        this.value = v;
+        // Arrived exactly: from here on every tick would give the target again.
+        if (v === t) this.mode = HOLD;
+        return;
+      }
+      out[i++] = this.tick();
+    }
   }
 
   private afterLinear() {

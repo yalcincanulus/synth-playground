@@ -34,6 +34,11 @@ export class DriveAdaa {
   private k = 0;
   private tanhK = 1;
 
+  /** Drive `buf` from `lo` to `hi` in place (one call per block: the loop here inlines process()). */
+  processBlock(buf: Float64Array, drive: number, lo: number, hi: number) {
+    for (let o = lo; o < hi; o++) buf[o] = this.process(buf[o], drive);
+  }
+
   process(x: number, drive: number): number {
     const k = 1 + drive * 12;
     if (k !== this.k) {

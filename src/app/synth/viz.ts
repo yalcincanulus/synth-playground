@@ -19,7 +19,7 @@ function routed(p: ParamValues, source: ModSource) {
 import { filter2Base, filterBase } from "../../audio/dsp/voiceMath";
 import { lfoShape } from "../../audio/dsp/lfo";
 import { CHORUS_LINES, CHORUS_RATE, dampingGain } from "../../audio/fxShapes";
-import { freqX, FREQ_GRID, grid, xFreq, type Surface } from "../components/canvas";
+import { freqX, FREQ_GRID, glowDot, grid, xFreq, type Surface } from "../components/canvas";
 
 type Draw = (s: Surface) => void;
 type Values = () => ParamValues;
@@ -368,13 +368,7 @@ export function envelope(engine: Engine, kind: "amp" | "filter" | "mod", color: 
     for (const v of engine.voiceStates()) {
       const pt = envelopeAt(env, now, v.triggeredAt, v.releasedAt);
       if (pt.stage === "off") continue;
-      g.fillStyle = "#fff";
-      g.shadowColor = color();
-      g.shadowBlur = 10;
-      g.beginPath();
-      g.arc(X(xOf(pt)), Y(pt.level), 4, 0, Math.PI * 2);
-      g.fill();
-      g.shadowBlur = 0;
+      glowDot(g, X(xOf(pt)), Y(pt.level), 4, color());
     }
     if (kind === "filter" && Math.abs(p.filterEnvAmt) < 0.05) label(g, "Amount 0: no effect", w / 2, h / 2, "#ffffff70", "center");
     if (kind === "mod" && !routed(p, "mod env")) label(g, "Not patched yet", w / 2, h / 2, "#ffffff70", "center");
@@ -415,13 +409,7 @@ export function pitchEnvelope(engine: Engine, color: () => string): Draw {
     for (const v of engine.voiceStates()) {
       const t = now - v.triggeredAt;
       if (t > span || v.releasedAt !== null) continue;
-      g.fillStyle = "#fff";
-      g.shadowColor = color();
-      g.shadowBlur = 10;
-      g.beginPath();
-      g.arc(X(t), Y(at(t)), 4, 0, Math.PI * 2);
-      g.fill();
-      g.shadowBlur = 0;
+      glowDot(g, X(t), Y(at(t)), 4, color());
     }
   };
 }
@@ -471,13 +459,7 @@ export function lfo(engine: Engine, index: number, color: () => string): Draw {
       dotY = Y(unit.value());
     }
     g.stroke();
-    g.fillStyle = "#fff";
-    g.shadowColor = color();
-    g.shadowBlur = 10;
-    g.beginPath();
-    g.arc(dotX, dotY, 4.5, 0, Math.PI * 2);
-    g.fill();
-    g.shadowBlur = 0;
+    glowDot(g, dotX, dotY, 4.5, color());
     const p = engine.params;
     const sync = index === 0 ? p.lfoSync : p.lfo2Sync;
     const rate = unit.rate;

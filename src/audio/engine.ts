@@ -284,6 +284,11 @@ export class Engine {
     return this.listening;
   }
 
+  /** Whether the stage taps are drawn or listened to: the voice processors only render them then. */
+  setTaps(on: boolean) {
+    for (const part of this.allParts) part.setTaps(on);
+  }
+
   listen(tap: ListenTap | null) {
     this.listenNode?.disconnect(this.listenGain);
     this.listening = tap;

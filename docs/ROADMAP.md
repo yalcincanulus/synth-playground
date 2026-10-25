@@ -324,6 +324,20 @@ The synth must run well on weaker computers, and the app should be easier to fin
 - **Main thread:** the Synth view draws many live pictures at once. Draw only what is on screen, at a lower rate where it can't be seen, and skip frames when nothing changed. MIDI and the keys must stay instant while it draws.
 - Today, on a fast desktop (Ryzen 7 7800X3D), 8 notes of Scan Pad take 39% of the voice processor's time.
 - **Done when:** at a 4x CPU slowdown, 8 notes of the heaviest preset play without dropped notes, every view stays smooth, and the render check still matches.
+- Status: done 2026-10-25.
+  - **Measuring:** `bun run bench` holds 8 notes of several presets and prints each one's share of the audio thread's time per block (`src/bench/voices.bench.ts`). Run it under Node too (`bun build … --target=node`, then `node`): Node uses V8, the same engine as Chromium, and its numbers match the browser; bun's engine (JavaScriptCore) optimises differently. Found while measuring: Chromium's CPU slowdown does not reach the AudioWorklet thread, so for the audio side the test became a budget instead: about 20% on this desktop (Ryzen 7 7800X3D) for 8 notes of the heaviest preset leaves a laptop 3–4x slower under the limit. Chrome's worklets have no accurate clock (only Date.now), so the meter's average is right but its peak is not; that stays as it was.
+  - **Audio thread, 8 notes, in Helium:** Scan Pad 39% → 18%, First Saw 17% → 10%, PWM Strings ~20% → 11%, Reese Bass ~23% → 16–18%. Garbage collection on the audio thread went from 20 ms to 2 ms per 2 s.
+    - The phases wrapped with `% 1`, a slow library call in V8 (a fifth of a plain saw's time). Now `x - Math.floor(x)`, which gives exactly the same numbers.
+    - The wavetable reader works out the frames to blend once per sample for all unison copies (and only when the position moved), and wraps indexes with a bit mask.
+    - Envelopes and glides fill a whole block at once and stop computing once they arrive. The filter's coefficient (a tan() and an exp()) is only worked out again when its inputs change.
+    - The big one: calls that V8 couldn't inline allocated memory for every number they passed, about 1 MB per block, at every copy of every sample. The oscillators now run in short loops over the block, one unison copy at a time; the second pass (mixer, drive, filters, amp) runs stage by stage, each filter and drive with its own block method. The edge check for the polyBLEPs is a tiny function, with the rare crossing in a separate one.
+    - The stage taps (the Synth view's pictures) are only rendered while the Synth view is open or a stage is listened to.
+    - Nothing is allocated per block any more (closures, subarray views, event lists when there are no events).
+    - The sound: bit-identical for every change except the per-copy loops, which add the unison copies in a different order (differences up to 1.4e-6). The render check: 0 of 46 presets have issues, every measure 0.0 dB from the reference (not re-saved).
+  - **Main thread** (Chromium's 4x / 6x CPU slowdown, 8 notes of Scan Pad): Playground view 38 → 59 fps / 27 → 47 fps; Synth view 56 → 60 / 37 → 52; Wavetable view 60 / 54 → 60.
+    - Live pictures share one animation loop. It skips pictures that are off screen and pictures with nothing new (the scope during silence), and drops to every other frame while frames arrive late (trying 60 fps again after 5 s, then waiting longer each time it fails).
+    - Canvas shadowBlur (the scope's and the wavetable's glow, the envelope and LFO dots) is replaced by two faint wide strokes under the line (`glowStroke`, `glowDot`): it looks the same and costs almost nothing.
+    - Still slow under heavy slowdown: the main scope's canvas commit (about 5 ms per frame at 1x). That cost is from headless Chromium drawing canvases without a GPU; a laptop with any GPU (integrated is enough) composites canvases far more cheaply. Not measured on real weak hardware.
 
 ### 18. Layout and navigation
 

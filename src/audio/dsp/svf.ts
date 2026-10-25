@@ -42,6 +42,18 @@ export class Svf {
     return k * v1 + (hp - k * v1) * (2 * morph - 1);
   }
 
+  /**
+   * Filter `input` from `lo` to `hi` into `out` (which may be the same array), with the settings for
+   * sample o at index (o / step) | 0. One call per block: the voice engine runs at 2x the sample rate
+   * with settings per sample (step 2), and a loop here inlines process(), which allocates nothing.
+   */
+  processBlock(input: Float64Array, out: Float64Array, g: Float64Array, k: Float64Array, morph: Float64Array, lo: number, hi: number, step: number) {
+    for (let o = lo; o < hi; o++) {
+      const i = (o / step) | 0;
+      out[o] = this.process(input[o], g[i], k[i], morph[i]);
+    }
+  }
+
   reset() {
     this.ic1 = this.ic2 = 0;
   }

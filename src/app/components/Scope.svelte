@@ -1,10 +1,22 @@
 <script lang="ts">
-  import { grid, surface, type Surface } from "./canvas";
+  import { glowStroke, grid, surface, type Surface } from "./canvas";
 
   let { analyser, color }: { analyser: AnalyserNode; color: string } = $props();
 
   const buf = new Float32Array(4096);
   const WINDOW = 1024; // ~21 ms at 48 kHz: two cycles of a low note
+
+  /** The last frame drawn was silence: while it stays silent, there is nothing new to draw. */
+  let drewSilence = false;
+  function idle() {
+    analyser.getFloatTimeDomainData(buf);
+    let peak = 0;
+    for (let i = 0; i < buf.length; i += 4) peak = Math.max(peak, Math.abs(buf[i]));
+    const silent = peak < 1e-5;
+    const skip = silent && drewSilence;
+    drewSilence = silent;
+    return skip;
+  }
 
   function draw({ g, w, h }: Surface) {
     grid(g, w, h, [w / 4, w / 2, (3 * w) / 4], [h / 4, h / 2, (3 * h) / 4]);
@@ -23,10 +35,6 @@
     // Gentle auto-gain so quiet sounds are still visible, capped so noise isn't blown up.
     const gain = peak > 0.001 ? Math.min(4, 0.9 / peak) : 1;
 
-    g.lineWidth = 2;
-    g.strokeStyle = color;
-    g.shadowColor = color;
-    g.shadowBlur = 12;
     g.beginPath();
     for (let i = 0; i < WINDOW; i++) {
       const x = (i / (WINDOW - 1)) * w;
@@ -34,12 +42,11 @@
       if (i === 0) g.moveTo(x, y);
       else g.lineTo(x, y);
     }
-    g.stroke();
-    g.shadowBlur = 0;
+    glowStroke(g, color, 2);
   }
 </script>
 
-<canvas use:surface={{ draw, animate: true }}></canvas>
+<canvas use:surface={{ draw, animate: true, idle }}></canvas>
 
 <style>
   /* Absolute, so the canvas pixel size never feeds back into the layout. */

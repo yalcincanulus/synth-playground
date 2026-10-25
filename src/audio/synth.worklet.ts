@@ -2,7 +2,8 @@
 //
 // "synth-voices": one processor runs every voice of a part, with its LFOs (dsp/voiceBank.ts).
 // Output 0 is all voices in stereo; outputs 1.. are the stages (mono) in TAPS order, for the
-// Synth view; the last output is the effect amounts (chorus, delay, reverb; 3 channels), which set
+// Synth view (only rendered while something uses them: they cost every voice extra work; see the
+// "taps" message); the last output is the effect amounts (chorus, delay, reverb; 3 channels), which set
 // the part's effect levels (see PartFx). Its port also reports what the LFOs are doing, for the drawings.
 //
 // Wavetables are prepared on the main thread (wavetables.ts) and sent once to a
@@ -93,24 +94,29 @@ class SynthVoices extends AudioWorkletProcessor {
   private bank: VoiceBank;
   private lfoReportFrame = 0;
   private taps: Float32Array[] = [];
+  /** Whether the stage outputs are wanted (the Synth view is open, or a stage is being listened to). */
+  private tapsOn = false;
 
   constructor(options: AudioWorkletNodeOptions) {
     super();
     const { values, seed } = options.processorOptions;
     this.bank = new VoiceBank(sampleRate, values, TABLES, seed);
-    this.port.onmessage = (e: MessageEvent<BankMessage | { type: "ping"; n: number }>) => {
+    this.port.onmessage = (e: MessageEvent<BankMessage | { type: "ping"; n: number } | { type: "taps"; on: boolean }>) => {
       // A ping is answered once every message sent before it has arrived (the render check waits for this).
       if (e.data.type === "ping") this.port.postMessage({ type: "pong", n: e.data.n });
+      else if (e.data.type === "taps") this.tapsOn = e.data.on;
       else this.bank.post(e.data);
     };
   }
 
   process(_inputs: Float32Array[][], outputs: Float32Array[][]) {
     const start = now();
-    const [left, right] = outputs[0];
+    const left = outputs[0][0];
+    const right = outputs[0][1];
     const last = outputs.length - 1;
     for (let i = 1; i < last; i++) this.taps[i - 1] = outputs[i][0];
-    this.bank.render(left, right, currentFrame, this.taps, outputs[last]);
+    if (!this.tapsOn) for (const tap of this.taps) tap.fill(0);
+    this.bank.render(left, right, currentFrame, this.tapsOn ? this.taps : null, outputs[last]);
     if (this.bank.voiceCount) account(now() - start, this.bank.voiceCount, this.bank.units);
     if (currentFrame >= this.lfoReportFrame) {
       this.lfoReportFrame = currentFrame + LFO_REPORT_S * sampleRate;
