@@ -19,6 +19,9 @@ function routed(p: ParamValues, source: ModSource) {
 import { filter2Base, filterBase } from "../../audio/dsp/voiceMath";
 import { lfoShape } from "../../audio/dsp/lfo";
 import { CHORUS_LINES, CHORUS_RATE, dampingGain } from "../../audio/fxShapes";
+import { crushSettings, distortCurve, flangerDelay, flangerMagnitude, phaserHz, phaserMagnitude } from "../../audio/dsp/effects";
+import { COMP_KNEE_DB } from "../../audio/fx";
+import { DIST_TYPES } from "../../audio/params";
 import { freqX, FREQ_GRID, glowDot, grid, xFreq, type Surface } from "../components/canvas";
 
 type Draw = (s: Surface) => void;
@@ -562,6 +565,151 @@ export function reverb(values: Values, color: () => string): Draw {
       g.setLineDash([]);
     }
     label(g, `tail ≈ ${v.reverbSize.toFixed(1)} s${v.reverbDamping > 0 ? " · - - highs" : ""}`, 4, h - 2);
+  };
+}
+
+/** The distortion's curve: input level across, output level up (the dashed line is no change). */
+export function distortion(values: Values, color: () => string): Draw {
+  return ({ g, w, h }) => {
+    grid(g, w, h, [w / 2], [h / 2]);
+    const v = values();
+    const type = Math.round(v.distType);
+    g.setLineDash([3, 3]);
+    g.strokeStyle = DIM;
+    g.beginPath();
+    g.moveTo(0, h);
+    g.lineTo(w, 0);
+    g.stroke();
+    g.setLineDash([]);
+    g.strokeStyle = color();
+    g.lineWidth = 2;
+    g.beginPath();
+    // Out to 3x the reference level the volume is kept at, so the bend shows at any Drive.
+    const steps = Math.max(120, Math.round(w));
+    for (let i = 0; i <= steps; i++) {
+      const x = (i / steps) * 2 - 1;
+      const y = Math.max(-1, Math.min(1, distortCurve(type, v.distDrive, x)));
+      const px = ((x + 1) / 2) * w;
+      const py = h - ((y + 1) / 2) * h;
+      if (i === 0) g.moveTo(px, py);
+      else g.lineTo(px, py);
+    }
+    g.stroke();
+    const crush = crushSettings(v.distDrive);
+    label(g, type === 3 ? `${crush.bits.toFixed(1)} bits · 1/${crush.hold} rate` : DIST_TYPES[type], 4, 11, "#ffffff90");
+    label(g, "in →", w - 4, h - 4, "#ffffff60", "right");
+  };
+}
+
+/** The compressor's curve (level in across, out up, in dB, before its make-up gain) and how far it is turning down now. */
+export function compressor(engine: Engine, color: () => string): Draw {
+  return ({ g, w, h }) => {
+    const p = engine.params;
+    const MIN = -60;
+    const barW = 10;
+    const cw = w - barW - 6;
+    const X = (db: number) => ((db - MIN) / -MIN) * cw;
+    const Y = (db: number) => h - ((db - MIN) / -MIN) * h;
+    grid(g, cw, h, [X(p.compThreshold)], []);
+    const out = (x: number) => {
+      const over = x - p.compThreshold;
+      const k = COMP_KNEE_DB;
+      if (over <= -k / 2) return x;
+      if (over >= k / 2) return p.compThreshold + over / p.compRatio;
+      // The knee: a smooth bend from no change to the ratio.
+      return x + ((1 / p.compRatio - 1) * (over + k / 2) ** 2) / (2 * k);
+    };
+    g.setLineDash([3, 3]);
+    g.strokeStyle = DIM;
+    g.beginPath();
+    g.moveTo(X(MIN), Y(MIN));
+    g.lineTo(X(0), Y(0));
+    g.stroke();
+    g.setLineDash([]);
+    g.strokeStyle = color();
+    g.lineWidth = 2;
+    g.beginPath();
+    for (let i = 0; i <= 60; i++) {
+      const x = MIN + (i / 60) * -MIN;
+      if (i === 0) g.moveTo(X(x), Y(out(x)));
+      else g.lineTo(X(x), Y(out(x)));
+    }
+    g.stroke();
+    // Gain reduction right now: an orange bar down from the top.
+    const r = Math.min(0, engine.part.fx.compressor.reduction);
+    g.fillStyle = "#ffffff10";
+    g.fillRect(w - barW, 0, barW, h);
+    g.fillStyle = "#ff9f43";
+    g.fillRect(w - barW, 0, barW, Math.min(1, -r / 24) * h);
+    label(g, `${p.compRatio.toFixed(p.compRatio < 10 ? 1 : 0)}:1`, 4, 11, "#ffffff90");
+    label(g, `${r.toFixed(1)} dB`, w - barW - 3, h - 4, "#ffffff90", "right");
+  };
+}
+
+/** A response curve over the frequency grid, in dB between `minDb` and `maxDb`, filled down to 0 dB. */
+function responseCurve(g: CanvasRenderingContext2D, w: number, h: number, minDb: number, maxDb: number, n: number, x: (i: number) => number, level: (i: number) => number, color: string) {
+  const Y = (db: number) => h - ((Math.max(minDb, Math.min(maxDb, db)) - minDb) / (maxDb - minDb)) * h;
+  grid(g, w, h, FREQ_GRID.map((f) => freqX(f, w)), [Y(0)]);
+  g.beginPath();
+  for (let i = 0; i < n; i++) {
+    const y = Y(20 * Math.log10(Math.max(level(i), 1e-6)));
+    if (i === 0) g.moveTo(x(i), y);
+    else g.lineTo(x(i), y);
+  }
+  g.strokeStyle = color;
+  g.lineWidth = 2;
+  g.stroke();
+  g.lineTo(x(n - 1), Y(0));
+  g.lineTo(x(0), Y(0));
+  g.globalAlpha = 0.15;
+  g.fillStyle = color;
+  g.fill();
+  g.globalAlpha = 1;
+}
+
+/** The EQ's response: the three bands together. */
+export function eq(engine: Engine, color: () => string): Draw {
+  return ({ g, w, h }) => {
+    for (let i = 0; i < POINTS; i++) freqs[i] = xFreq((i / (POINTS - 1)) * w, w);
+    engine.part.fx.eq.response(freqs, mag);
+    responseCurve(g, w, h, -18, 18, POINTS, (i) => (i / (POINTS - 1)) * w, (i) => mag[i], color());
+    const p = engine.params;
+    label(g, `mid ${p.eqMidFreq >= 1000 ? `${(p.eqMidFreq / 1000).toFixed(1)}k` : Math.round(p.eqMidFreq)}`, freqX(p.eqMidFreq, w), h - 3, "#ffffff70", "center");
+  };
+}
+
+/** Where an LFO is now (-1..1, the left side's); a still picture before it has run. */
+function slotLfo(engine: Engine, fx: "phaser" | "flanger") {
+  const phase = engine.part.fx.lfoPhase(fx);
+  return phase === null ? 0 : Math.sin(2 * Math.PI * phase);
+}
+
+/** The phaser's notches where the sweep is right now. */
+export function phaser(engine: Engine, color: () => string): Draw {
+  return ({ g, w, h }) => {
+    const p = engine.params;
+    const lfo = slotLfo(engine, "phaser");
+    const sr = engine.ctx.sampleRate;
+    const n = Math.max(2, Math.round(w));
+    responseCurve(g, w, h, -30, 12, n, (i) => (i / (n - 1)) * w, (i) => phaserMagnitude(p, lfo, xFreq((i / (n - 1)) * w, w), sr), color());
+    // Where the sweep is: the stages' turning point.
+    const x = freqX(phaserHz(p.phaserDepth, lfo), w);
+    g.strokeStyle = "#ffffff40";
+    g.beginPath();
+    g.moveTo(x, 0);
+    g.lineTo(x, h);
+    g.stroke();
+  };
+}
+
+/** The flanger's comb of notches where the sweep is right now. */
+export function flanger(engine: Engine, color: () => string): Draw {
+  return ({ g, w, h }) => {
+    const p = engine.params;
+    const lfo = slotLfo(engine, "flanger");
+    const n = Math.max(2, Math.round(w * 2));
+    responseCurve(g, w, h, -30, 12, n, (i) => (i / (n - 1)) * w, (i) => flangerMagnitude(p, lfo, xFreq((i / (n - 1)) * w, w)), color());
+    label(g, `${(flangerDelay(p.flangerDepth, lfo) * 1000).toFixed(1)} ms`, 4, 11, "#ffffff90");
   };
 }
 

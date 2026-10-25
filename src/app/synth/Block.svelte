@@ -1,7 +1,8 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import type { Playground } from "../playground.svelte";
-  import { BLOCK_TAPS, blockDest, blockSource, BLOCKS, KNOB_PAGES, SHOWN_WHEN, type BlockId } from "./blocks";
+  import { EFFECT_ON, effectOrder } from "../../audio/params";
+  import { BLOCK_TAPS, blockDest, blockSource, BLOCKS, isEffect, KNOB_PAGES, SHOWN_WHEN, type BlockId } from "./blocks";
   import ParamControl from "./ParamControl.svelte";
 
   interface Props {
@@ -23,7 +24,17 @@
   let params = $derived(def.params.filter((p) => SHOWN_WHEN[id]?.[p]?.(pg.values) ?? true));
   let focused = $derived(pg.focusBlock === id);
   let onPage = $derived(KNOB_PAGES[pg.focusPage].blocks.includes(id));
-  let tap = $derived(BLOCK_TAPS[id]);
+  /** An effect: it can be switched off and moved along the chain. */
+  let effect = $derived(isEffect(id) ? id : null);
+  let effectOn = $derived(effect ? pg.values[EFFECT_ON[effect]] === 1 : true);
+  let tap = $derived(effectOn ? BLOCK_TAPS[id] : undefined);
+
+  function moveKey(e: KeyboardEvent) {
+    if (!effect || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+    e.preventDefault();
+    const at = effectOrder(pg.values).indexOf(effect);
+    pg.moveEffect(effect, at + (e.key === "ArrowLeft" ? -1 : 1));
+  }
   let listening = $derived(!!tap && pg.listening === tap);
   /** While patching: this block can be clicked as the source (or destination) being picked. */
   let pickable = $derived(pg.patch === "source" ? blockSource(id) > 0 : pg.patch !== null && blockDest(id, pg.values) >= 0);
@@ -34,8 +45,35 @@
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
 <section role="group" aria-label={def.title} class="block" class:listening class:focused class:on-page={onPage} class:inactive={!!inactive} class:compact class:pickable class:patching={pg.patch !== null} class:target={pg.recipeBlock === id} data-block={id} onclick={() => pg.blockClick(id)}>
   <header title={def.short}>
+    {#if effect}
+      <button
+        class="grip"
+        draggable="true"
+        title="Drag to move {def.title} along the chain (or focus and press ← →)"
+        aria-label="Move {def.title}"
+        onclick={(e) => e.stopPropagation()}
+        onkeydown={moveKey}
+        ondragstart={(e) => {
+          e.dataTransfer?.setData("application/x-effect", id);
+          if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+        }}>⠿</button
+      >
+    {/if}
     <h3>{def.title}</h3>
-    {#if inactive}<span class="note">{inactive}</span>{/if}
+    {#if effect}
+      <button
+        class="switch"
+        class:on={effectOn}
+        aria-pressed={effectOn}
+        title={effectOn ? `Switch ${def.title} off (it is taken out of the chain)` : `Switch ${def.title} on`}
+        onclick={(e) => {
+          e.stopPropagation();
+          pg.toggleEffect(effect!);
+        }}>{effectOn ? "On" : "Off"}</button
+      >
+    {/if}
+    <!-- An effect's header is full (handle, switch, 🎧): its amount knob at 0% says it already. -->
+    {#if inactive && !effect}<span class="note">{inactive}</span>{/if}
     {#if tap}
       <button
         class="listen"
@@ -84,6 +122,10 @@
   h3 { margin: 0; font-size: 12.5px; font-weight: 600; }
   .block.compact { padding: 5px 8px; }
   .note { font-size: 10px; color: var(--dim); }
+  .grip { padding: 0 2px; margin: 0 -2px 0 -3px; font-size: 12px; line-height: 16px; background: none; border: none; color: var(--dim); cursor: grab; }
+  .grip:hover, .grip:focus-visible { color: var(--text); }
+  .switch { padding: 0 6px; font-size: 10px; line-height: 15px; border-radius: 8px; color: var(--dim); }
+  .switch.on { background: var(--accent); border-color: var(--accent); color: #0b1314; }
   .params.inline { grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 6px 4px; justify-items: start; }
   .params { display: grid; grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: 4px 2px; align-items: start; justify-items: center; }
 </style>

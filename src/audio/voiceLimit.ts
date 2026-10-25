@@ -26,12 +26,15 @@ export function pickVictim<V extends LimitedVoice>(voices: readonly V[], level: 
  * weight fits under `target` (a share of the time available). Notes beyond that are cut before they
  * can make the sound crackle.
  *
- * The meter covers the voice processor only; the effects (the browser's own nodes) run on the same
- * thread, so the target leaves room for them.
+ * The meter covers our own audio code: the voice processors, and the effects written in our code (whose
+ * time is kept out of the voices' cost, and off their budget). The browser's own effect nodes run on the
+ * same thread too, so the target leaves room for them.
  */
 export class CpuGuard {
   /** Load per unit of voice weight, smoothed; null until measured. */
   private perUnit: number | null = null;
+  /** The load of our own effects, which is there whatever the notes do. */
+  private fx = 0;
 
   constructor(
     readonly target = 0.6,
@@ -39,8 +42,9 @@ export class CpuGuard {
     readonly high = 0.8,
   ) {}
 
-  /** A meter report: the load over a time in which `units` of voice weight sounded on average. */
-  report(load: number, units: number) {
+  /** A meter report: the voices' load over a time in which `units` of voice weight sounded on average, and the effects' load. */
+  report(load: number, units: number, fx = 0) {
+    this.fx = fx;
     if (units < 1 || !(load > 0)) return;
     const k = load / units;
     // Rise quickly (a heavier preset), fall slowly (one quiet report shouldn't let too many notes in).
@@ -50,7 +54,7 @@ export class CpuGuard {
 
   /** How much voice weight fits under the target (unlimited until measured). */
   get budget(): number {
-    return this.perUnit ? this.target / this.perUnit : Infinity;
+    return this.perUnit ? Math.max(0, this.target - this.fx) / this.perUnit : Infinity;
   }
 
   overloaded(load: number) {

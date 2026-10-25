@@ -1,7 +1,7 @@
 import { Drums } from "./drums";
 import { Fx } from "./fx";
 import type { Lfo } from "./lfo";
-import { DELAY_DIV_BEATS, DELAY_MODES, type ModSource, type ParamId, type ParamValues } from "./params";
+import type { ModSource, ParamId, ParamValues } from "./params";
 import { Part, type PartTapId, type VoiceState } from "./part";
 import workletUrl from "./synth.worklet.ts?worker&url";
 import type { NoteOwner } from "./voice";
@@ -13,17 +13,19 @@ export type { VoiceState } from "./part";
 
 export const BEND_RANGE_CENTS = 200;
 
-/** Points in the sound you can see and hear on their own: the selected part's stages, then the shared effects. */
-export type TapId = PartTapId | "delay" | "reverb" | "out";
+/** Points in the sound you can see and hear on their own: the selected part's stages and effects, and the final sound. */
+export type TapId = PartTapId | "out";
 
 /** Taps you can listen to on their own ("out" is the normal full sound). */
 export type ListenTap = Exclude<TapId, "out">;
 const LISTEN_GAIN = 0.3;
 
-/** CPU meter, from the audio thread: the voice processors (every note, the LFOs). The effects are the browser's own nodes. */
+/** CPU meter, from the audio thread: the voice processors (every note, the LFOs) and our own effects. The other effects are the browser's own nodes. */
 export interface CpuLoad {
   /** Share of the available time spent in our audio code, averaged over the last report (0..1+). */
   load: number;
+  /** The part of `load` spent in the effects written in our code (distortion, phaser, flanger). */
+  fx: number;
   /**
    * The busiest single block in that time, as a share of one block's time (above 1 means a dropout).
    * Only meaningful with the "performance" clock: Chrome's worklets only have Date.now(), whole milliseconds.
@@ -57,7 +59,7 @@ export class Engine {
   /** The part being edited and shown (the knobs, the Synth view, the presets). */
   selected: NoteOwner = "keys";
 
-  private cpuReport: CpuLoad = { load: 0, peak: 0, voices: 0, units: 0, cuts: 0, clock: "" };
+  private cpuReport: CpuLoad = { load: 0, fx: 0, peak: 0, voices: 0, units: 0, cuts: 0, clock: "" };
   private cpuGuard = new CpuGuard();
   private cpuCuts = 0;
   private cpuAt = 0;
@@ -72,7 +74,6 @@ export class Engine {
   private listenNode: AudioNode | null = null;
   private bend = 0;
   private mod = 0;
-  private sharedTaps: Record<"delay" | "reverb" | "out", AnalyserNode>;
 
   /**
    * `ctx` is normally a live AudioContext. The render check passes an OfflineAudioContext (cast):
@@ -110,11 +111,6 @@ export class Engine {
     const noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
     const data = noise.getChannelData(0);
     for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-
-    const tap = () => new AnalyserNode(ctx, { fftSize: 2048, smoothingTimeConstant: 0.6 });
-    this.sharedTaps = { delay: tap(), reverb: tap(), out: this.fx.analyser };
-    this.fx.delayOut.connect(this.sharedTaps.delay);
-    this.fx.reverbOut.connect(this.sharedTaps.reverb);
 
     // "Listen here": a tap is routed to its own quiet, limited output while the main output is muted.
     this.listenGain = new GainNode(ctx, { gain: LISTEN_GAIN });
@@ -154,7 +150,7 @@ export class Engine {
   }
 
   get cpu(): CpuLoad {
-    if (performance.now() - this.cpuAt > CPU_STALE_MS) return { ...this.cpuReport, load: 0, peak: 0, voices: 0, units: 0, cuts: this.cpuCuts };
+    if (performance.now() - this.cpuAt > CPU_STALE_MS) return { ...this.cpuReport, load: 0, fx: 0, peak: 0, voices: 0, units: 0, cuts: this.cpuCuts };
     return { ...this.cpuReport, cuts: this.cpuCuts };
   }
 
@@ -163,7 +159,7 @@ export class Engine {
     const load = fresh ? this.cpuReport.load * 0.6 + cpu.load * 0.4 : cpu.load;
     this.cpuReport = { ...cpu, load, cuts: this.cpuCuts };
     this.cpuAt = performance.now();
-    this.cpuGuard.report(cpu.load, cpu.units);
+    this.cpuGuard.report(cpu.load - cpu.fx, cpu.units, cpu.fx);
     // Over the limit despite the budget (say a route was added to held notes): cut a note now.
     if (this.cpuGuard.overloaded(cpu.load)) this.cutForCpu(this.ctx.currentTime);
   }
@@ -203,8 +199,10 @@ export class Engine {
 
   setBpm(bpm: number) {
     this.bpm = bpm;
-    for (const part of this.allParts) part.applyLfo();
-    this.partChanged(this.parts.keys);
+    for (const part of [...this.allParts, ...(this.previewPart ? [this.previewPart] : [])]) {
+      part.applyLfo();
+      part.applyFx();
+    }
   }
 
   /** Pitch bend, -1..1. Your playing controls (bend, mod strip) move the Keys part. */
@@ -219,19 +217,12 @@ export class Engine {
     this.parts.keys.setControls(this.bend, this.mod);
   }
 
-  /** A part's settings changed. The shared effects (delay time and feedback, room size) follow the Keys part. */
+  /** A part's settings changed. The drums get a little of the Keys part's reverb. */
   private partChanged(part: Part) {
     this.loadTable(part.params.wtTable);
     if (part !== this.parts.keys) return;
     const p = part.params;
-    this.fx.setShared({
-      delaySeconds: (60 / this.bpm) * DELAY_DIV_BEATS[p.delayDiv],
-      delayFeedback: p.delayFeedback,
-      pingPong: DELAY_MODES[p.delayMode] === "ping-pong",
-      reverbMix: p.reverbMix,
-      reverbSize: p.reverbSize,
-      reverbDamping: p.reverbDamping,
-    });
+    this.fx.setDrumReverb(part.fx, p.reverbOn ? p.reverbMix * 0.4 : 0);
   }
 
   /** A table's frames changed (a drawing being edited): send the new version to the audio thread. */
@@ -255,9 +246,9 @@ export class Engine {
     return this.part.lfos;
   }
 
-  /** The selected part's stages and the shared effects. */
+  /** The selected part's stages and effects, and the final sound. */
   get taps(): Record<TapId, AnalyserNode> {
-    return { ...this.part.taps, ...this.sharedTaps };
+    return { ...this.part.taps, out: this.fx.analyser };
   }
 
   lfoRate(i: number) {

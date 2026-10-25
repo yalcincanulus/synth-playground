@@ -48,6 +48,17 @@ export const DELAY_DIV_BEATS = [0.25, 0.5, 0.75, 1, 1.5, 2];
 /** Stereo: each side echoes on its own side. Ping-pong: the echoes bounce from left to right. */
 export const DELAY_MODES = ["stereo", "ping-pong"] as const;
 
+/** The effects, in their default order. Each part runs the ones that are on, in its own order (see effectOrder). */
+export const EFFECTS = ["distortion", "compressor", "eq", "phaser", "flanger", "chorus", "delay", "reverb"] as const;
+export type Effect = (typeof EFFECTS)[number];
+/** Soft (tanh, warm), hard (clipped flat, buzzy), fold (folds back over, metallic), crush (fewer bits and a lower sample rate). */
+export const DIST_TYPES = ["soft", "hard", "fold", "crush"] as const;
+/** Each effect's on/off setting. */
+export const EFFECT_ON = {
+  distortion: "distortionOn", compressor: "compressorOn", eq: "eqOn", phaser: "phaserOn",
+  flanger: "flangerOn", chorus: "chorusOn", delay: "delayOn", reverb: "reverbOn",
+} as const satisfies Record<Effect, string>;
+
 const hz = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 1 : 2)} kHz` : `${v.toFixed(v < 10 ? 2 : 0)} Hz`);
 const sec = (v: number) => (v >= 1 ? `${v.toFixed(2)} s` : `${Math.round(v * 1000)} ms`);
 const pct = (v: number) => `${Math.round(v * 100)}%`;
@@ -64,6 +75,16 @@ const signed = (unit: string, digits = 0) => (v: number) => `${v > 0 ? "+" : ""}
 const enumParam = (label: string, options: readonly string[], def = 0): ParamDef => ({
   label, min: 0, max: options.length - 1, curve: "int", default: def, options,
 });
+
+type FxSlotIds = `fxSlot${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8}`;
+
+/** The effect order: slot n holds the effect that runs n-th. */
+function fxSlots(): Record<FxSlotIds, ParamDef> {
+  const out: Record<string, ParamDef> = {};
+  EFFECTS.forEach((_, i) => (out[`fxSlot${i + 1}`] = enumParam(`FX Slot ${i + 1}`, EFFECTS, i)));
+  return out as Record<FxSlotIds, ParamDef>;
+}
+export const fxSlotId = (n: number) => `fxSlot${n}` as ParamId;
 
 type SlotIds<N extends number> = `mod${N}Src` | `mod${N}Dst` | `mod${N}Amt`;
 type ModSlotIds = SlotIds<1 | 2 | 3 | 4 | 5 | 6 | 7 | 8>;
@@ -173,6 +194,39 @@ export const PARAMS = {
   reverbSize: { label: "Room Size", min: 0.3, max: 8, curve: "exp", default: 2, format: sec },
   /** How much faster the highs die away than the lows (soft furnishings, a big hall's air). */
   reverbDamping: { label: "Rev Damp", min: 0, max: 1, curve: "lin", default: 0.4, format: pct },
+  // The effect chain: which effects run, and in what order (see effectOrder).
+  ...fxSlots(),
+  distortionOn: enumParam("Dist On", ["off", "on"], 0),
+  compressorOn: enumParam("Comp On", ["off", "on"], 0),
+  eqOn: enumParam("EQ On", ["off", "on"], 0),
+  phaserOn: enumParam("Phaser On", ["off", "on"], 0),
+  flangerOn: enumParam("Flanger On", ["off", "on"], 0),
+  // On by default: their amounts (Chorus, Delay, Reverb) already say how much of them you hear.
+  chorusOn: enumParam("Chorus On", ["off", "on"], 1),
+  delayOn: enumParam("Delay On", ["off", "on"], 1),
+  reverbOn: enumParam("Reverb On", ["off", "on"], 1),
+  distType: enumParam("Dist Type", DIST_TYPES, 0),
+  distDrive: { label: "Dist Drive", min: 0, max: 1, curve: "lin", default: 0.5, format: pct },
+  /** A low-pass after the distortion, to take the fizz off. */
+  distTone: { label: "Dist Tone", min: 300, max: 18000, curve: "exp", default: 6000, format: hz },
+  distMix: { label: "Dist Mix", min: 0, max: 1, curve: "lin", default: 1, format: pct },
+  compThreshold: { label: "Threshold", min: -40, max: 0, curve: "lin", default: -20, format: (v) => `${v.toFixed(0)} dB` },
+  compRatio: { label: "Ratio", min: 1, max: 20, curve: "exp", default: 4, format: (v) => `${v.toFixed(v < 10 ? 1 : 0)}:1` },
+  compAttack: { label: "Comp Att", min: 0.001, max: 0.3, curve: "exp", default: 0.01, format: sec },
+  compRelease: { label: "Comp Rel", min: 0.03, max: 1, curve: "exp", default: 0.25, format: sec },
+  eqLow: { label: "EQ Low", min: -15, max: 15, curve: "lin", default: 0, format: signed(" dB", 1) },
+  eqMid: { label: "EQ Mid", min: -15, max: 15, curve: "lin", default: 0, format: signed(" dB", 1) },
+  eqMidFreq: { label: "Mid Freq", min: 150, max: 8000, curve: "exp", default: 1000, format: hz },
+  eqHigh: { label: "EQ High", min: -15, max: 15, curve: "lin", default: 0, format: signed(" dB", 1) },
+  phaserRate: { label: "Phase Rate", min: 0.03, max: 8, curve: "exp", default: 0.3, format: hz },
+  phaserDepth: { label: "Phase Dpth", min: 0, max: 1, curve: "lin", default: 0.7, format: pct },
+  phaserFeedback: { label: "Phase Fb", min: 0, max: 0.9, curve: "lin", default: 0.5, format: pct },
+  phaserMix: { label: "Phase Mix", min: 0, max: 1, curve: "lin", default: 0.5, format: pct },
+  flangerRate: { label: "Flng Rate", min: 0.03, max: 5, curve: "exp", default: 0.2, format: hz },
+  flangerDepth: { label: "Flng Depth", min: 0, max: 1, curve: "lin", default: 0.7, format: pct },
+  /** Negative feedback flips the echo, for a hollower sound. */
+  flangerFeedback: { label: "Flng Fb", min: -0.9, max: 0.9, curve: "lin", default: 0.6, format: (v) => `${v > 0 ? "+" : ""}${Math.round(v * 100)}%` },
+  flangerMix: { label: "Flng Mix", min: 0, max: 1, curve: "lin", default: 0.5, format: pct },
   volume: { label: "Volume", min: 0, max: 1, curve: "lin", default: 0.7, format: pct },
 } satisfies Record<string, ParamDef>;
 
@@ -183,6 +237,23 @@ export const PARAM_IDS = Object.keys(PARAMS) as ParamId[];
 export function defaultValues(): ParamValues {
   return Object.fromEntries(PARAM_IDS.map((id) => [id, PARAMS[id].default])) as ParamValues;
 }
+
+/**
+ * The effects in the order they run: the slots' order, repaired if the slots aren't a proper order (a hand-edited
+ * file): repeats are dropped and missing effects are added at the end, in the default order.
+ */
+export function effectOrder(p: ParamValues): Effect[] {
+  const order: Effect[] = [];
+  for (let n = 1; n <= EFFECTS.length; n++) {
+    const fx = EFFECTS[Math.round(p[fxSlotId(n)])];
+    if (fx && !order.includes(fx)) order.push(fx);
+  }
+  for (const fx of EFFECTS) if (!order.includes(fx)) order.push(fx);
+  return order;
+}
+
+/** The effects that are on, in the order they run. */
+export const effectChain = (p: ParamValues) => effectOrder(p).filter((fx) => p[EFFECT_ON[fx]] === 1);
 
 /** 0..1 control position -> parameter value. */
 export function fromControl(id: ParamId, t: number): number {

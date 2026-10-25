@@ -8,15 +8,15 @@ import { keySource, MOD_RANGE } from "./dsp/voiceMath";
 import { envelopeAt } from "./envelope";
 import type { PartFx } from "./fx";
 import { Lfo } from "./lfo";
-import { LFO_SYNC_BEATS, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, defaultValues, slotIds, type ModSource, type ParamId, type ParamValues } from "./params";
+import { LFO_SYNC_BEATS, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, defaultValues, slotIds, type Effect, type ModSource, type ParamId, type ParamValues } from "./params";
 import { Voice, type NoteOwner } from "./voice";
 import { voiceWeight } from "./voiceLimit";
 
 /** Shortest glide used for a sequencer slide on a mono preset, in Glide units (seconds). */
 const SLIDE_GLIDE = 0.12;
 
-/** A part's own stages, for the Synth view: the voice stages, all its voices together ("amp"), and after its chorus. */
-export type PartTapId = TapName | "amp" | "chorus";
+/** A part's own stages, for the Synth view: the voice stages, all its voices together ("amp"), and after each effect. */
+export type PartTapId = TapName | "amp" | Effect;
 
 export interface VoiceState {
   note: number;
@@ -62,8 +62,7 @@ export class Part {
     const ctx = host.ctx;
     this.lfos = [new Lfo(ctx, this.params.lfoRate), new Lfo(ctx, this.params.lfo2Rate)];
     const tap = () => new AnalyserNode(ctx, { fftSize: 2048, smoothingTimeConstant: 0.6 });
-    this.taps = { osc1: tap(), osc2: tap(), sub: tap(), noise: tap(), mix: tap(), drive: tap(), filter: tap(), filter2: tap(), amp: tap(), chorus: tap() };
-    fx.chorusOut.connect(this.taps.chorus);
+    this.taps = { osc1: tap(), osc2: tap(), sub: tap(), noise: tap(), mix: tap(), drive: tap(), filter: tap(), filter2: tap(), amp: tap(), ...fx.taps };
   }
 
   /** Create the voice processor (once the worklet module has loaded). `seed` seeds its random LFO. */
@@ -85,6 +84,7 @@ export class Part {
       this.pings.delete(e.data.n);
     };
     this.node = node;
+    this.fx.start();
     this.apply();
     this.sendControls();
     node.port.postMessage({ type: "taps", on: this.tapsOn });
@@ -141,10 +141,15 @@ export class Part {
   /** Send the settings to the processor and the effects. */
   apply() {
     const p = this.params;
-    this.fx.setVolume(p.volume);
+    this.applyFx();
     this.applyLfo();
     this.node?.port.postMessage({ type: "params", values: p });
     this.host.changed(this);
+  }
+
+  /** The effects' settings (the delay time follows the tempo). */
+  applyFx() {
+    this.fx.set(this.params, this.host.bpm);
   }
 
   /** The LFOs' speeds follow the tempo when synced (their depths and shapes come with the parameters). */

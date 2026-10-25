@@ -32,8 +32,7 @@ Pad lights and the screen need the device in **DAW mode** (Shift + Prog).
 Two sounds play at once, each with its own preset: **Keys** (what you play) and **Sequencer** (what the step
 sequencer plays), e.g. a pad over a bass line. The switch above the presets (or Shift + any key) picks which part the
 knobs, faders, encoder, favourite pads, Dice and the Synth view edit. The keys always play the Keys part. Each part has
-its own Volume, chorus and delay/reverb amounts; the delay time and feedback and the room size are shared and come
-from the Keys part. The pitch and mod strips move the Keys part.
+its own Volume and its own effects. The drums get a little of the Keys part's reverb. The pitch and mod strips move the Keys part.
 
 ### Synth view
 
@@ -43,6 +42,12 @@ envelopes). The oscillators also do pulse width (and PWM from an LFO), hard sync
 block shows its live signal and all its controls, and coloured cables show what modulates what. Short
 explanations are on each block; the selected block's full explanation and a "Try this" are in the strip
 at the top. The 🎧 button on a block (or an encoder click) lets you hear the sound at that point only.
+
+The **effects** sit in a row of their own, in the order the sound goes through them: distortion (soft, hard, fold,
+bit-crusher), compressor, EQ, phaser, flanger, chorus, delay and reverb. Each has an On switch (an effect
+that is off is taken out of the chain and folds to its title). Drag a block by its ⠿ handle to change the order, or
+focus the handle and press ← →. The order is part of the preset, and undo covers it. The "Test" presets (shown as
+"Feature demos") include one per effect, plus *Fuzzed Reverb*, where the reverb comes before the distortion.
 
 **Stereo:** unison copies spread left and right by **Stereo** (in the Playing block), and the mod matrix's
 **pan** destination moves whole notes (random → pan puts each note somewhere else). Both keep the sound in mono
@@ -68,7 +73,8 @@ newest note. Press
 **Patch**, click a source block, then a destination block; each route is drawn as a cable in its source's colour.
 
 In this view the MiniLab knobs follow the selected block: click a block, or turn the encoder to step
-through the knob pages (Sources, Filter, Filter 2, Osc Tricks, Envelopes, LFO 1, LFO 2, Playing, Mod Env, Matrix, Effects; on the Matrix page
+through the knob pages (Sources, Filter, Filter 2, Osc Tricks, Envelopes, LFO 1, LFO 2, Playing, Mod Env, Matrix, Effects,
+Dist+Comp, Phase+Flng, EQ; on the Matrix page
 knobs 1–8 are the amounts of routes 1–8, and the screen names the route, e.g. `MEnv>WTPos`). Shift + encoder
 switches between the playground's waveform, spectrum and the Synth view.
 
@@ -93,9 +99,10 @@ Without a MiniLab, the computer keyboard plays notes (A row; Z/X change octave),
   in one AudioWorklet processor (`synth.worklet.ts` runs `dsp/voiceBank.ts`): oscillators (anti-aliased with
   polyBLEP, with sync and FM), the clean and ladder filters, drive (with antiderivative anti-aliasing), envelopes, the LFOs and the mod matrix. `dsp/` is plain
   TypeScript, tested with `bun test`. The processor also outputs the effect amounts (with their routes) as a
-  signal that sets the part's chorus and send levels. Each voice's sound path runs at twice the sample rate; the part's sum
-  comes back down through a half-band filter (`dsp/halfband.ts`). The effects are Web Audio nodes; the
-  output ends in a limiter and a soft clipper (`softClip.ts`).
+  signal that sets the part's chorus, delay and reverb levels. Each voice's sound path runs at twice the sample rate; the part's sum
+  comes back down through a half-band filter (`dsp/halfband.ts`). Each part's effects run in its own order (`fx.ts`):
+  the distortion, phaser and flanger are our own code (`dsp/effects.ts`, an "fx-slot" processor each); the EQ,
+  compressor, chorus, delay and reverb are Web Audio nodes. The output ends in a limiter and a soft clipper (`softClip.ts`).
   `wavetables.ts` defines the built-in wavetables and prepares their per-octave versions; `wavImport.ts` reads
   WAV files and cuts sounds into frames, and `tableStore.ts` keeps imported tables in IndexedDB.
 - `src/presets/`: factory presets; user presets are stored in localStorage.

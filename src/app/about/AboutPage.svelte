@@ -111,8 +111,9 @@
       <h3>Sound engine</h3>
       <p class="note">
         Every note is made by one piece of our own code on the audio thread, sample by sample: oscillators, filter, drive,
-        envelopes, the LFOs and the mod matrix. Only the effects (chorus, delay, reverb) are the browser's own audio nodes.
-        The CPU meter at the top shows how much of the available time that code uses.
+        envelopes, the LFOs and the mod matrix. So are the distortion, phaser and flanger; the other effects (compressor, EQ,
+        chorus, delay, reverb) are the browser's own audio nodes. The CPU meter at the top shows how much of the available
+        time our code uses.
       </p>
     </section>
 
@@ -128,7 +129,7 @@
       <h4>Audio</h4>
       <ul>
         <li><strong>Delay:</strong> sound goes through the browser and the system's standard audio path, so there is more delay between key and sound than in a desktop synth with a dedicated audio driver. There is no buffer size setting and no choice of output device.</li>
-        <li><strong>One CPU core:</strong> all sound is made on one audio thread. With heavy patches (many notes, unison, wavetables, routes) the synth plays fewer notes at once rather than crackle; the CPU meter's tooltip counts the notes cut. The effects aren't measured, so very heavy reverb or delay use can still crackle.</li>
+        <li><strong>One CPU core:</strong> all sound is made on one audio thread. With heavy patches (many notes, unison, wavetables, routes) the synth plays fewer notes at once rather than crackle; the CPU meter's tooltip counts the notes cut. The browser's own effects aren't measured, so very heavy reverb or delay use can still crackle.</li>
         <li><strong>Background tabs:</strong> browsers slow down hidden tabs. The sequencer and drums keep time (their clock runs in a worker thread, which isn't slowed down), but the visuals pause.</li>
         <li><strong>A busy page:</strong> notes are planned 100 ms ahead. If the page freezes for longer, the steps it missed are skipped, so the loop stays on the beat instead of stumbling.</li>
         <li><strong>Not a plugin:</strong> it can't load in a DAW. To record it, capture the system audio.</li>

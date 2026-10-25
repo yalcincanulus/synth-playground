@@ -113,6 +113,14 @@ export function rollDice(): Preset {
       break;
   }
 
+  // Sometimes one of the extra effects, gently: a phaser or flanger (slow), or some soft or hard distortion.
+  if (chance(0.3)) {
+    const fx = pick(["phaser", "flanger", "distortion"] as const);
+    if (fx === "phaser") Object.assign(v, { phaserOn: 1, phaserRate: expRand(0.1, 1), phaserDepth: rand(0.5, 0.9), phaserFeedback: rand(0.2, 0.7), phaserMix: 0.5 });
+    if (fx === "flanger") Object.assign(v, { flangerOn: 1, flangerRate: expRand(0.05, 0.4), flangerDepth: rand(0.5, 1), flangerFeedback: rand(-0.7, 0.8), flangerMix: 0.5 });
+    if (fx === "distortion") Object.assign(v, { distortionOn: 1, distType: pick([0, 0, 1]), distDrive: rand(0.2, 0.6), distTone: expRand(2500, 9000), distMix: 1 });
+  }
+
   // Sometimes a wavetable on Osc 1, with LFO 2 scanning through it.
   if (chance(0.25)) {
     Object.assign(v, { osc1Wave: 4, wtTable: Math.floor(Math.random() * BUILTIN_TABLES), wtPos: rand(0, 1), lfo2Target: 4, lfo2Depth: rand(0.3, 0.9), lfo2Rate: expRand(0.08, 1.5) });

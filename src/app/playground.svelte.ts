@@ -2,7 +2,7 @@ import { SvelteSet } from "svelte/reactivity";
 import { DRUM_NAMES } from "../audio/drums";
 import { Engine, type CpuLoad, type ListenTap } from "../audio/engine";
 import type { NoteOwner } from "../audio/voice";
-import { formatValue, fromControl, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, PARAMS, slotIds, toControl, type ParamId, type ParamValues } from "../audio/params";
+import { EFFECT_ON, effectOrder, formatValue, fromControl, fxSlotId, EFFECTS, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, PARAMS, slotIds, toControl, type Effect, type ParamId, type ParamValues } from "../audio/params";
 import { WorkerClock } from "../audio/clock";
 import { Sequencer, type Pattern, type SequencerTiming, basicBeat, emptyPattern } from "../audio/sequencer";
 import {
@@ -62,7 +62,7 @@ import {
   type Program,
 } from "../minilab/protocol";
 import { rollDice } from "../presets/dice";
-import { BLOCK_TAPS, blockDest, blockSource, KNOB_PAGES, MOD_SHORT, pageOf, paramLabel, TAP_NAMES, usesTable, WAVETABLE_KNOBS, type BlockId } from "./synth/blocks";
+import { BLOCK_TAPS, BLOCKS, blockDest, blockSource, KNOB_PAGES, MOD_SHORT, pageOf, paramLabel, TAP_NAMES, usesTable, WAVETABLE_KNOBS, type BlockId } from "./synth/blocks";
 import { DEFAULT_FAVOURITES, FACTORY_PRESETS, factoryId, FADERS, loadUserPresets, presetValues, saveUserPresets, userId, type Preset, type Rgb } from "../presets/presets";
 import { emptyFilter, filterPresets, isUserPresetId, presetFile, readPresetFile, type PresetFilter } from "../presets/browser";
 
@@ -240,7 +240,7 @@ export class Playground {
 
   audioRunning = $state(false);
   /** CPU meter: the voice processor's share of the time available. */
-  cpu = $state<CpuLoad>({ load: 0, peak: 0, voices: 0, units: 0, cuts: 0, clock: "" });
+  cpu = $state<CpuLoad>({ load: 0, fx: 0, peak: 0, voices: 0, units: 0, cuts: 0, clock: "" });
   timing = $state<TimingReport>({ midiAverage: null, midiWorst: null, longestFreeze: 0, sequencer: null });
   midiStatus = $state<MidiStatus>("idle");
   deviceName = $state("");
@@ -1642,6 +1642,24 @@ export class Playground {
       this.setParam(ids.amt, 0);
     });
     this.realignKnobs();
+  }
+
+  /** Switch an effect on or off (and point the knobs at it). */
+  toggleEffect(fx: Effect) {
+    const on = this.values[EFFECT_ON[fx]] ? 0 : 1;
+    this.edit(`${BLOCKS[fx].title} ${on ? "on" : "off"}`, () => this.setParam(EFFECT_ON[fx], on));
+    this.focus(fx);
+    this.showMessage(BLOCKS[fx].title, on ? "on" : "off");
+  }
+
+  /** Move an effect to position `to` (0 = first) in the chain; the others keep their order. */
+  moveEffect(fx: Effect, to: number) {
+    const order = effectOrder(this.values).filter((f) => f !== fx);
+    to = Math.max(0, Math.min(order.length, to));
+    order.splice(to, 0, fx);
+    if (order.every((f, i) => this.values[fxSlotId(i + 1)] === EFFECTS.indexOf(f))) return;
+    this.edit(`Move ${BLOCKS[fx].title}`, () => order.forEach((f, i) => this.setParam(fxSlotId(i + 1), EFFECTS.indexOf(f))));
+    this.showMessage(BLOCKS[fx].title, `now ${to + 1} of ${order.length}`);
   }
 
   /** Slots with a route in them. */

@@ -9,10 +9,14 @@
 // Wavetables are prepared on the main thread (wavetables.ts) and sent once to a
 // "table-loader" processor, which stores them where every voice's processor can read them.
 //
-// CPU meter: the processor adds the time it spends to a shared total, and the table loader's
+// "fx-slot": one of the effects written in our own code (distortion, phaser, flanger; dsp/effects.ts),
+// stereo in and out. A part makes one when that effect is first turned on (see PartFx).
+//
+// CPU meter: the processors adds the time it spends to a shared total, and the table loader's
 // port reports it a few times a second as a share of the time available (see Engine.cpu).
 
 import type { Table } from "./dsp/oscillator";
+import { makeEffect, type SlotEffect, type SlotKind } from "./dsp/effects";
 import { VoiceBank, type BankMessage } from "./dsp/voiceBank";
 
 declare const sampleRate: number;
@@ -35,6 +39,8 @@ const clock = perf ? "performance" : "date";
 const now = perf ? () => perf.now() : () => Date.now();
 let reporter: MessagePort | null = null;
 let busyMs = 0;
+/** The part of busyMs spent in the effects (fx-slot). */
+let fxMs = 0;
 let blockFrame = -1;
 let blockMs = 0;
 let peakMs = 0;
@@ -44,7 +50,7 @@ let voices = 0;
 /** Voice weight summed over the blocks since the last report. */
 let unitsSum = 0;
 
-function account(ms: number, voiceCount: number, units: number) {
+function account(ms: number, voiceCount: number, units: number, fx = false) {
   if (currentFrame !== blockFrame) {
     peakMs = Math.max(peakMs, blockMs);
     voices = Math.max(voices, voicesInBlock);
@@ -54,6 +60,7 @@ function account(ms: number, voiceCount: number, units: number) {
   }
   blockMs += ms;
   busyMs += ms;
+  if (fx) fxMs += ms;
   voicesInBlock += voiceCount;
   unitsSum += units;
   const elapsedFrames = currentFrame - reportFrame;
@@ -62,6 +69,7 @@ function account(ms: number, voiceCount: number, units: number) {
   reporter?.postMessage({
     cpu: {
       load: busyMs / ((elapsedFrames / sampleRate) * 1000),
+      fx: fxMs / ((elapsedFrames / sampleRate) * 1000),
       peak: peakMs / budgetMs,
       voices,
       // Average voice weight over the same time (blocks without voices count as 0).
@@ -70,7 +78,7 @@ function account(ms: number, voiceCount: number, units: number) {
     },
   });
   reportFrame = currentFrame;
-  busyMs = peakMs = voices = unitsSum = 0;
+  busyMs = fxMs = peakMs = voices = unitsSum = 0;
 }
 
 class TableLoader extends AudioWorkletProcessor {
@@ -127,5 +135,50 @@ class SynthVoices extends AudioWorkletProcessor {
   }
 }
 
+type SlotMessage = { type: "params"; values: Parameters<SlotEffect["set"]>[0] } | { type: "on"; on: boolean } | { type: "ping"; n: number };
+
+class FxSlot extends AudioWorkletProcessor {
+  private fx: SlotEffect;
+  private kind: SlotKind;
+  /**
+   * Whether the effect is in the chain. Out of it, it does nothing; process() still returns true, because
+   * Chrome doesn't start a processor again once it has returned false, even when it is reconnected.
+   */
+  private on = true;
+  private reportFrame = 0;
+
+  constructor(options: AudioWorkletNodeOptions) {
+    super();
+    const { kind, values } = options.processorOptions;
+    this.kind = kind;
+    this.fx = makeEffect(kind, sampleRate, values);
+    this.port.onmessage = (e: MessageEvent<SlotMessage>) => {
+      if (e.data.type === "ping") this.port.postMessage({ type: "pong", n: e.data.n });
+      else if (e.data.type === "on") this.on = e.data.on;
+      else this.fx.set(e.data.values);
+    };
+  }
+
+  process(inputs: Float32Array[][], outputs: Float32Array[][]) {
+    if (!this.on) return true;
+    const start = now();
+    const [left, right] = outputs[0];
+    const input = inputs[0];
+    // Unconnected, the input has no channels: silence goes through (an LFO keeps going, feedback rings out).
+    if (input.length) {
+      left.set(input[0]);
+      right.set(input[1] ?? input[0]);
+    }
+    this.fx.process(left, right, left.length);
+    account(now() - start, 0, 0, true);
+    if (this.kind !== "distortion" && currentFrame >= this.reportFrame) {
+      this.reportFrame = currentFrame + LFO_REPORT_S * sampleRate;
+      this.port.postMessage({ type: "phase", time: (currentFrame + left.length) / sampleRate, phase: this.fx.phase });
+    }
+    return true;
+  }
+}
+
 registerProcessor("synth-voices", SynthVoices);
+registerProcessor("fx-slot", FxSlot);
 registerProcessor("table-loader", TableLoader);

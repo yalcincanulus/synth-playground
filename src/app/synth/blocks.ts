@@ -1,9 +1,9 @@
 import type { ListenTap } from "../../audio/engine";
-import { MOD_DESTS, MOD_SOURCES, slotIds, type ModDest, type ModSource, type ParamId, type ParamValues } from "../../audio/params";
+import { EFFECTS, MOD_DESTS, MOD_SOURCES, slotIds, type Effect, type ModDest, type ModSource, type ParamId, type ParamValues } from "../../audio/params";
 
 export type BlockId =
   | "osc1" | "osc2" | "subNoise" | "mixer" | "drive" | "filter" | "filter2" | "amp"
-  | "chorus" | "delay" | "reverb" | "output"
+  | "distortion" | "compressor" | "eq" | "phaser" | "flanger" | "chorus" | "delay" | "reverb" | "output"
   | "lfo" | "lfo2" | "filterEnv" | "ampEnv" | "pitchEnv" | "modEnv" | "perf" | "matrix";
 
 export interface BlockDef {
@@ -17,6 +17,8 @@ export interface BlockDef {
   /** Controls shown on the block. */
   params: ParamId[];
 }
+
+const ORDER = " Effects run one after another, in the order of the effect row: drag a block by its ⠿ handle (or use ◀ ▶) to change it, and switch each on or off.";
 
 export const BLOCKS: Record<BlockId, BlockDef> = {
   osc1: {
@@ -75,24 +77,59 @@ export const BLOCKS: Record<BlockId, BlockDef> = {
     tryThis: "Set Velocity to 100% and play soft and hard notes. At 0%, every note plays equally loud.",
     params: ["velocity"],
   },
+  distortion: {
+    title: "Distortion",
+    short: "Bends the wave's shape: warm, buzzy, metallic or crunchy.",
+    explain: "Turns the sound up into a curve that can't go past full level, so the wave's peaks are bent over and new harmonics appear. Soft rounds the peaks off (warm, like an overdriven amp), Hard cuts them flat (buzzy, fuzz pedal), Fold folds them back down (metallic, the harder you drive the more it sings), and Crush keeps fewer levels and fewer samples (the gritty sound of old samplers and games). Drive sets how hard; the volume stays about the same. Tone takes the fizz off the top, and Mix blends in the clean sound. Unlike the Drive block before the filter, this comes after it: the filter can't tame what it adds." + ORDER,
+    tryThis: "Turn Distortion on and play a chord with Hard at 70% Drive: every note mixes with every other into a rough wall. Then play single notes, and try Fold while turning Drive slowly.",
+    params: ["distType", "distDrive", "distTone", "distMix"],
+  },
+  compressor: {
+    title: "Compressor",
+    short: "Evens out loud and quiet: punchier, fuller.",
+    explain: "Turns the sound down when it gets louder than the Threshold: above it, the level only rises 1/Ratio as fast (at 4:1, 8 dB louder in comes out 2 dB louder). Attack is how quickly it reacts, Release how quickly it lets go. Afterwards it turns the whole sound back up by itself, so the quiet parts (a note's tail, a soft key) come up and everything sounds more even and fuller. A slow Attack lets each note's start through before it clamps down: punchier. The orange bar shows how far it is turning the sound down right now." + ORDER,
+    tryThis: "On a pluck, turn the Compressor on, Threshold to -35 dB and Ratio to 10:1: the notes' tails hang on much longer. Then raise Attack to 50 ms and the starts snap out again.",
+    params: ["compThreshold", "compRatio", "compAttack", "compRelease"],
+  },
+  eq: {
+    title: "EQ",
+    short: "Turns the lows, mids or highs up or down.",
+    explain: "An equaliser: three tone controls like a hi-fi's, but stronger. Low turns everything below about 150 Hz up or down (body and rumble), High everything above about 5 kHz (air and fizz), and Mid a band around Mid Freq (boxy at 400 Hz, nasal at 1 kHz, harsh or present at 3 kHz). Cutting usually sounds more natural than boosting: to make room for another sound, cut where it lives." + ORDER,
+    tryThis: "Turn the EQ on, set Low and High to -15 dB, Mid to +10 dB and sweep Mid Freq from 300 Hz to 3 kHz: an old telephone, then a radio.",
+    params: ["eqLow", "eqMid", "eqMidFreq", "eqHigh"],
+  },
+  phaser: {
+    title: "Phaser",
+    short: "Sweeping notches: a swirling, whooshing movement.",
+    explain: "Passes the sound through six all-pass filters: they keep every frequency's level but delay some more than others. Mixed with the dry sound, the frequencies that come out half a cycle late cancel, which cuts a few notches into the sound; an LFO sweeps them up and down, and you hear a swirl. Feedback makes the notches deeper and the peaks between them ring. The two sides sweep a quarter cycle apart, so it moves across the stereo field too. A classic on electric pianos, strings and guitars." + ORDER,
+    tryThis: "Turn the Phaser on with an E-piano or a string pad and hold a chord. Set Rate slow (0.2 Hz) and Feedback high, then fast (3 Hz) for a bubbling vibrato.",
+    params: ["phaserRate", "phaserDepth", "phaserFeedback", "phaserMix"],
+  },
+  flanger: {
+    title: "Flanger",
+    short: "A copy a few milliseconds late: the jet-plane swoosh.",
+    explain: "Mixes in a copy of the sound delayed by half a millisecond to 7.5 milliseconds, with the delay swept by an LFO. Frequencies whose half-cycle fits the delay cancel, cutting a comb of evenly spaced notches; as the delay changes, the comb slides up and down. That is the 'jet plane' swoosh (it was first done with two tape machines, pressing a thumb on one reel's flange). Feedback turns the gaps into ringing, metallic peaks; negative feedback sounds hollower." + ORDER,
+    tryThis: "Turn the Flanger on with a bright sound (a saw lead, or noise) and Feedback at +80%, then play long notes. Set Rate very slow (0.05 Hz) and listen to one sweep.",
+    params: ["flangerRate", "flangerDepth", "flangerFeedback", "flangerMix"],
+  },
   chorus: {
     title: "Chorus",
     short: "Wobbling copies that make the sound wider.",
-    explain: "Adds three slightly delayed copies of the sound, placed left, centre and right, each with its delay slowly swept up and down. The sweeps are a third of a cycle apart, so while one copy goes up in pitch another comes down: the sound gets wider and shimmery without going out of tune. Chorus is also a mod matrix destination.",
+    explain: "Adds three slightly delayed copies of the sound, placed left, centre and right, each with its delay slowly swept up and down. The sweeps are a third of a cycle apart, so while one copy goes up in pitch another comes down: the sound gets wider and shimmery without going out of tune. Chorus is also a mod matrix destination." + ORDER,
     tryThis: "On a pad, turn Chorus up and down while holding a chord. Then patch LFO 2 (slow) to Chorus for a chorus that comes and goes.",
     params: ["chorus"],
   },
   delay: {
     title: "Delay",
     short: "Echoes, in time with the tempo.",
-    explain: "Echoes, timed to the tempo. Feedback sets how many times each echo repeats. Stereo keeps each side's echoes on its own side; Ping-pong bounces them from left to right and back. Both parts share one delay: each sets how much of it it gets (Delay, also a mod matrix destination), but the Delay Time, Feedback and Mode are the Keys part's.",
+    explain: "Echoes, timed to the tempo. Feedback sets how many times each echo repeats. Stereo keeps each side's echoes on its own side; Ping-pong bounces them from left to right and back. Delay sets how loud the echoes are (it is also a mod matrix destination). Each part has its own delay." + ORDER,
     tryThis: "Raise Delay and Feedback, set Mode to Ping-pong, then play one short note and listen to the repeats bounce. Patch the Mod Envelope to Delay (Decay 300 ms) to echo only each note's start.",
     params: ["delayMix", "delayDiv", "delayFeedback", "delayMode"],
   },
   reverb: {
     title: "Reverb",
     short: "The reflections of a room or hall.",
-    explain: "Simulates the reflections of a room or hall. Room Size sets how long the tail lasts. Damping makes the highs die away sooner than the lows, as soft furnishings and air do: low Damping is a bright, hard room (a tiled bathroom), high Damping a warm, dark hall. Both parts share one reverb: each sets how much of it it gets (Reverb, also a mod matrix destination), but the Room Size and Damping are the Keys part's.",
+    explain: "Simulates the reflections of a room or hall. Room Size sets how long the tail lasts. Damping makes the highs die away sooner than the lows, as soft furnishings and air do: low Damping is a bright, hard room (a tiled bathroom), high Damping a warm, dark hall. Reverb sets how loud the tail is (it is also a mod matrix destination). Each part has its own reverb; the drums get a little of the Keys part's." + ORDER,
     tryThis: "Set a big Room Size and Reverb at 60%, then play short notes while turning Damping from 0 to 100%: the tail goes from hiss to a soft glow.",
     params: ["reverbMix", "reverbSize", "reverbDamping"],
   },
@@ -238,7 +275,25 @@ export const KNOB_PAGES: KnobPage[] = [
     knobs: ["chorus", "delayMix", "delayDiv", "delayFeedback", "reverbMix", "reverbSize", "reverbDamping", "volume"],
     blocks: ["chorus", "delay", "reverb", "output"],
   },
+  {
+    name: "Dist+Comp",
+    knobs: ["distType", "distDrive", "distTone", "distMix", "compThreshold", "compRatio", "compAttack", "compRelease"],
+    blocks: ["distortion", "compressor"],
+  },
+  {
+    name: "Phase+Flng",
+    knobs: ["phaserRate", "phaserDepth", "phaserFeedback", "phaserMix", "flangerRate", "flangerDepth", "flangerFeedback", "flangerMix"],
+    blocks: ["phaser", "flanger"],
+  },
+  {
+    name: "EQ",
+    knobs: ["eqLow", "eqMid", "eqMidFreq", "eqHigh", null, null, null, "volume"],
+    blocks: ["eq"],
+  },
 ];
+
+/** The effect blocks are the effects themselves. */
+export const isEffect = (block: BlockId): block is Effect => (EFFECTS as readonly string[]).includes(block);
 
 export const pageOf = (block: BlockId) => KNOB_PAGES.findIndex((p) => p.blocks.includes(block));
 
@@ -296,13 +351,12 @@ export const BLOCK_TAPS: Partial<Record<BlockId, ListenTap>> = {
   filter: "filter",
   filter2: "filter2",
   amp: "amp",
-  chorus: "chorus",
-  delay: "delay",
-  reverb: "reverb",
+  ...(Object.fromEntries(EFFECTS.map((fx) => [fx, fx])) as Record<Effect, Effect>),
 };
 
 /** Names for the OLED and the listening banner. */
 export const TAP_NAMES: Record<ListenTap, string> = {
   osc1: "Oscillator 1", osc2: "Oscillator 2", sub: "Sub", noise: "Noise", mix: "Mixer", drive: "Drive",
   filter: "Filter", filter2: "Filter 2", amp: "Amp", chorus: "Chorus", delay: "Delay (echoes)", reverb: "Reverb (tail)",
+  distortion: "Distortion", compressor: "Compressor", eq: "EQ", phaser: "Phaser", flanger: "Flanger",
 };

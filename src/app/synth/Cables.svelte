@@ -23,7 +23,7 @@
 </script>
 
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
 
   let { container, cables }: { container: HTMLElement; cables: Cable[] } = $props();
 
@@ -49,6 +49,12 @@
     for (const el of container.querySelectorAll("[data-block]")) ro.observe(el);
     measure();
     return () => ro.disconnect();
+  });
+
+  // Moving an effect along the chain moves blocks without resizing them: measure again when the cables change.
+  $effect(() => {
+    void cables;
+    untrack(measure);
   });
 
   const NORMAL: Record<Side, [number, number]> = { l: [-1, 0], r: [1, 0], t: [0, -1], b: [0, 1] };

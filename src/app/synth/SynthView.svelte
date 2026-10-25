@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { formatValue, LFO_SYNC_BEATS, MOD_DESTS, MOD_SOURCES, PARAMS, slotIds } from "../../audio/params";
+  import { EFFECT_ON, effectChain, effectOrder, formatValue, LFO_SYNC_BEATS, MOD_DESTS, MOD_SOURCES, PARAMS, slotIds, type Effect } from "../../audio/params";
   import type { Playground } from "../playground.svelte";
   import Block from "./Block.svelte";
   import { BLOCKS, DEST_BLOCK, KNOB_PAGES, paramLabel, SOURCE_BLOCK, TAP_NAMES } from "./blocks";
@@ -52,14 +52,14 @@
         : v.filter2Mode === 2
           ? [audio("filter", "amp", "r", "l"), audio("drive", "filter2", "r", "l"), audio("filter2", "amp", "r", "l")]
           : [audio("filter", "amp", "r", "l")]),
-      audio("amp", "chorus", "b", "t"),
-      // Delay and reverb are sends: copies go out to the right and come back into the output.
-      audio("chorus", "output", "b", "t", "Dry signal"),
-      audio("chorus", "delay", "r", "l", "Delay send"),
-      audio("chorus", "reverb", "r", "l", "Reverb send"),
-      audio("delay", "output", "l", "r", "Echoes"),
-      audio("reverb", "output", "l", "r", "Reverb tail"),
     ];
+    // The effects that are on, one after another along the effect row (the ones that are off are passed by).
+    const chain = ["amp", ...effectChain(v), "output"];
+    for (let i = 0; i + 1 < chain.length; i++) {
+      const [from, to] = [chain[i], chain[i + 1]];
+      const sides: [Cable["fromSide"], Cable["toSide"]] = from === "amp" ? ["b", "t"] : to === "output" ? ["t", "b"] : ["r", "l"];
+      list.push(audio(from, to, ...sides));
+    }
 
     // LFOs: depth per target (the mod strip adds to LFO 1's mod target); dash speed follows the LFO.
     const lfoTargets: [number, string, Cable["toSide"], string][] = [
@@ -123,6 +123,37 @@
     localStorage.setItem(MODS_OPEN_KEY, modsOpen ? "open" : "closed");
   }
   let focusDef = $derived(BLOCKS[pg.focusBlock]);
+
+  // The effect row, in the order they run. Drag a block's handle to move it: the drop point is before the
+  // block whose middle is right of the pointer.
+  let order = $derived(effectOrder(pg.values));
+  let fxRow = $state<HTMLElement>();
+  let dropAt = $state<number | null>(null);
+
+  function dropIndex(e: DragEvent): number {
+    const blocks = [...(fxRow?.querySelectorAll<HTMLElement>("[data-block]") ?? [])];
+    const i = blocks.findIndex((b) => {
+      const r = b.getBoundingClientRect();
+      return e.clientY < r.bottom && (e.clientX < r.left + r.width / 2 || e.clientY < r.top);
+    });
+    return i < 0 ? blocks.length : i;
+  }
+  function dragOver(e: DragEvent) {
+    if (!e.dataTransfer?.types.includes("application/x-effect")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    dropAt = dropIndex(e);
+  }
+  function drop(e: DragEvent) {
+    const fx = e.dataTransfer?.getData("application/x-effect") as Effect | undefined;
+    dropAt = null;
+    if (!fx || !order.includes(fx)) return;
+    e.preventDefault();
+    const at = dropIndex(e);
+    // Taken out first, so a later drop point is one place earlier.
+    pg.moveEffect(fx, at > order.indexOf(fx) ? at - 1 : at);
+  }
+  const amountOff = (amount: number) => (amount < 0.01 ? "at 0" : null);
 </script>
 
 <section class="synth">
@@ -214,16 +245,32 @@
 
     <div class="col">
       <Block {pg} id="amp"><LiveCanvas height={40} draw={viz.scope(() => taps.amp, color)} /></Block>
-      <Block {pg} id="chorus" inactive={pg.values.chorus < 0.01 ? "off" : null}><LiveCanvas height={28} draw={viz.chorus(engine, color)} /></Block>
+    </div>
+
+    <div class="col">
       <Block {pg} id="output">
         <LiveCanvas height={26} draw={viz.stereoMeter(() => engine.fx.meters.left, () => engine.fx.meters.right, color)} />
         <LiveCanvas height={48} draw={viz.stereoPicture(() => engine.fx.meters.left, () => engine.fx.meters.right, color)} />
       </Block>
     </div>
 
-    <div class="col">
-      <Block {pg} id="delay" inactive={pg.values.delayMix < 0.01 ? "off" : null}><LiveCanvas height={34} draw={viz.delay(values, () => pg.bpm, color)} /></Block>
-      <Block {pg} id="reverb" inactive={pg.values.reverbMix < 0.01 ? "off" : null}><LiveCanvas height={30} draw={viz.reverb(values, color)} /></Block>
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="fxrow" bind:this={fxRow} ondragover={dragOver} ondragleave={(e) => !fxRow?.contains(e.relatedTarget as Node) && (dropAt = null)} ondrop={drop}>
+      {#each order as fx, i (fx)}
+        {@const on = pg.values[EFFECT_ON[fx]] === 1}
+        <div class="slot" class:off={!on} class:drop-before={dropAt === i} class:drop-after={dropAt === order.length && i === order.length - 1}>
+          <Block {pg} id={fx} compact={!on} inactive={fx === "chorus" ? amountOff(pg.values.chorus) : fx === "delay" ? amountOff(pg.values.delayMix) : fx === "reverb" ? amountOff(pg.values.reverbMix) : null}>
+            {#if fx === "distortion"}<LiveCanvas height={40} draw={viz.distortion(values, color)} />
+            {:else if fx === "compressor"}<LiveCanvas height={40} draw={viz.compressor(engine, color)} />
+            {:else if fx === "eq"}<LiveCanvas height={40} draw={viz.eq(engine, color)} />
+            {:else if fx === "phaser"}<LiveCanvas height={40} draw={viz.phaser(engine, color)} />
+            {:else if fx === "flanger"}<LiveCanvas height={40} draw={viz.flanger(engine, color)} />
+            {:else if fx === "chorus"}<LiveCanvas height={40} draw={viz.chorus(engine, color)} />
+            {:else if fx === "delay"}<LiveCanvas height={40} draw={viz.delay(values, () => pg.bpm, color)} />
+            {:else}<LiveCanvas height={40} draw={viz.reverb(values, color)} />{/if}
+          </Block>
+        </div>
+      {/each}
     </div>
 
     <div class="modrow" class:folded={!modsOpen}>
@@ -295,6 +342,15 @@
   .pair > div { position: relative; }
   .listen-mini { position: absolute; top: -2px; right: 0; padding: 0 3px; font-size: 10px; line-height: 14px; background: none; opacity: 0.55; }
   .listen-mini.on { opacity: 1; background: #ffcc33; border-color: #ffcc33; }
+  /* The effects: one row, in the order they run; the ones that are off fold to their title. */
+  .fxrow { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 10px 22px; padding-top: 22px; align-items: start; }
+  .slot { flex: 1 1 150px; min-width: 0; position: relative; }
+  .slot.off { flex: 0 1 auto; }
+  .slot.drop-before::before, .slot.drop-after::after {
+    content: ""; position: absolute; top: 0; bottom: 0; width: 3px; border-radius: 2px; background: #ffcc33; z-index: 2;
+  }
+  .slot.drop-before::before { left: -13px; }
+  .slot.drop-after::after { right: -13px; }
   /* The modulators: one row of seven under the signal path, with the cable colours. */
   .modrow { grid-column: 1 / -1; display: grid; }
   .modrow.folded { display: flex; align-items: center; gap: 16px; padding-top: 14px; }

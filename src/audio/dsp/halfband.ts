@@ -77,3 +77,42 @@ export class Decimator2 {
     this.early.fill(0);
   }
 }
+
+// Going up to twice the sample rate (the distortion effect, dsp/effects.ts): a zero between every two
+// samples, then the same half-band low-pass removes the mirror image that the zeros make above the old
+// Nyquist frequency. Again every other tap is zero: the samples in line with the input need only the
+// centre tap, the ones between need the 32 even taps. The input samples go in on the odd 2x samples, so
+// that the way up and Decimator2's way down add up to a whole number of samples.
+const EVEN: number[] = [];
+for (let k = 0; k < TAPS; k += 2) EVEN.push(2 * ALL[k]);
+const N_UP = EVEN.length;
+/** The even samples are an input sample from this many samples back, times twice the centre tap. */
+const UP_CENTRE = (CENTRE + 1) / 2;
+
+/** Up with Interpolator2 and back down with Decimator2: the sound comes out this many samples late. */
+export const ROUND_TRIP_LATENCY = CENTRE;
+
+/** Doubles the sample rate of one signal: one sample in, two out. Keeps its history between blocks. */
+export class Interpolator2 {
+  private hist = new Float64Array(2 * N_UP);
+  private p = 0;
+
+  /** `input` holds n samples; fills `out[0..2n)` at the 2x rate. */
+  process(input: Float32Array, out: Float32Array, n: number) {
+    const hist = this.hist;
+    const centre = 2 * W_CENTRE;
+    for (let i = 0; i < n; i++) {
+      this.p = this.p === 0 ? N_UP - 1 : this.p - 1;
+      hist[this.p] = hist[this.p + N_UP] = input[i];
+      const p = this.p;
+      let sum = 0;
+      for (let j = 0; j < N_UP; j++) sum += EVEN[j] * hist[p + j];
+      out[2 * i] = centre * hist[p + UP_CENTRE];
+      out[2 * i + 1] = sum;
+    }
+  }
+
+  reset() {
+    this.hist.fill(0);
+  }
+}

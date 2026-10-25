@@ -1,79 +1,33 @@
+import type { SlotKind } from "./dsp/effects";
 import { CHORUS_DELAY, CHORUS_DEPTH, CHORUS_LINES, CHORUS_RATE, reverbImpulse, triangleWave } from "./fxShapes";
+import { DELAY_DIV_BEATS, DELAY_MODES, effectChain, EFFECTS, type Effect, type ParamValues } from "./params";
 import { CLIP_RANGE, softClipCurve } from "./softClip";
 
 /**
- * Effects and master chain. Each part (see part.ts) has its own way in, with its own volume, chorus
- * and sends; the delay, reverb and master are shared:
+ * Effects and master chain. Each part (see part.ts) has its own effects, in its own order (PartFx):
  *
- *   part -> volume -> chorus -> post --+--> master -> limiter -> soft clipper -> analyser -> destination
- *                                      +--> delay send --> delay -^
- *                                      +--> reverb send -> reverb -^
- *   drumIn ----------------------------+--> master (and a smaller reverb send)
- *
- * The parts' chorus amount and delay and reverb sends follow a signal from their voice processor (the
- * settings plus any mod matrix routes, sample by sample), so an LFO can sweep them.
+ *   part -> volume -> effect -> effect -> ... --+--> master -> limiter -> soft clipper -> analyser -> destination
+ *   drumIn -------------------------------------+   (and a little of the Keys part's reverb)
  */
 export class Fx {
   readonly drumIn: GainNode;
   readonly analyser: AnalyserNode;
   /** The final sound's left and right channels, for the stereo meter. */
   readonly meters: { left: AnalyserNode; right: AnalyserNode };
-  /** The shared effects' wet outputs, for visualisation. */
-  readonly delayOut: AudioNode;
-  readonly reverbOut: AudioNode;
 
-  private delays: [DelayNode, DelayNode];
-  private delayIn: GainNode;
-  /** The delay's routing: input to each side, each side's feedback to itself and across (see setShared). */
-  private delayRoutes: Record<"inL" | "inR" | "inRtoL" | "fbL" | "fbR" | "fbLtoR" | "fbRtoL", GainNode>;
-  private reverb: ConvolverNode;
-  private reverbIn: GainNode;
-  private drumReverbSend: GainNode;
   private master: GainNode;
-  private reverbSeconds = 0;
-  private reverbDamping = -1;
+  private mute: GainNode;
+  private drumReverbSend: GainNode;
+  private drumReverbPart: PartFx | null = null;
+  private parts: PartFx[] = [];
 
   constructor(private ctx: AudioContext) {
     this.master = new GainNode(ctx);
     // The drums play at the level the old shared master gave them at the default volume (0.7, squared).
     this.drumIn = new GainNode(ctx, { gain: 0.49 });
-
-    // Delay: one line per side, each with a darkening filter in its feedback loop. Stereo: each side
-    // feeds back into itself. Ping-pong: both sides go into the left line and the feedback crosses
-    // over, so the echoes bounce left, right, left...
-    this.delayIn = new GainNode(ctx);
-    const sides = new ChannelSplitterNode(ctx, { numberOfOutputs: 2 });
-    const merge = new ChannelMergerNode(ctx, { numberOfInputs: 2 });
-    this.delayIn.connect(sides);
-    const line = () => new DelayNode(ctx, { maxDelayTime: 4 });
-    const tone = () => new BiquadFilterNode(ctx, { type: "lowpass", frequency: 3500 });
-    this.delays = [line(), line()];
-    const [toneL, toneR] = [tone(), tone()];
-    const gain = (g: number) => new GainNode(ctx, { gain: g });
-    const r = (this.delayRoutes = { inL: gain(1), inR: gain(1), inRtoL: gain(0), fbL: gain(0.35), fbR: gain(0.35), fbLtoR: gain(0), fbRtoL: gain(0) });
-    const [dL, dR] = this.delays;
-    sides.connect(r.inL, 0).connect(dL);
-    sides.connect(r.inR, 1).connect(dR);
-    sides.connect(r.inRtoL, 1).connect(dL);
-    dL.connect(toneL);
-    dR.connect(toneR);
-    toneL.connect(r.fbL).connect(dL);
-    toneR.connect(r.fbR).connect(dR);
-    toneL.connect(r.fbLtoR).connect(dR);
-    toneR.connect(r.fbRtoL).connect(dL);
-    toneL.connect(merge, 0, 0);
-    toneR.connect(merge, 0, 1);
-    merge.connect(this.master);
-    this.delayOut = merge;
-
-    // Reverb: convolution with a generated noise-decay impulse.
-    this.reverb = new ConvolverNode(ctx);
-    this.reverbIn = new GainNode(ctx);
-    this.drumReverbSend = new GainNode(ctx, { gain: 0 });
-    this.reverbIn.connect(this.reverb).connect(this.master);
-    this.reverbOut = this.reverb;
-    this.drumIn.connect(this.drumReverbSend).connect(this.reverbIn);
     this.drumIn.connect(this.master);
+    this.drumReverbSend = new GainNode(ctx, { gain: 0 });
+    this.drumIn.connect(this.drumReverbSend);
 
     const limiter = new DynamicsCompressorNode(ctx, { threshold: -6, knee: 3, ratio: 20, attack: 0.002, release: 0.15 });
     this.analyser = new AnalyserNode(ctx, { fftSize: 4096, smoothingTimeConstant: 0.75 });
@@ -91,11 +45,11 @@ export class Fx {
     split.connect(this.meters.right, 1);
   }
 
-  private mute: GainNode;
-
-  /** A new way in for one part. */
+  /** A new part's effects. */
   addPart(): PartFx {
-    return new PartFx(this.ctx, this.master, this.delayIn, this.reverbIn);
+    const part = new PartFx(this.ctx, this.master);
+    this.parts.push(part);
+    return part;
   }
 
   /** Silence the main output (the output analyser still sees the signal). */
@@ -103,14 +57,242 @@ export class Fx {
     this.mute.gain.setTargetAtTime(muted ? 0 : 1, this.ctx.currentTime, 0.01);
   }
 
-  /** The shared settings (the Keys part's): delay time, feedback and mode, the reverb's room, the drums' reverb. */
-  setShared(opts: { delaySeconds: number; delayFeedback: number; pingPong: boolean; reverbMix: number; reverbSize: number; reverbDamping: number }) {
+  /** The drums' reverb: `level` of `part`'s reverb (the Keys part's; 0 when its reverb is off). */
+  setDrumReverb(part: PartFx, level: number) {
+    if (this.drumReverbPart !== part) {
+      if (this.drumReverbPart) this.drumReverbSend.disconnect(this.drumReverbPart.reverbIn);
+      this.drumReverbSend.connect(part.reverbIn);
+      this.drumReverbPart = part;
+    }
+    this.drumReverbSend.gain.setTargetAtTime(level, this.ctx.currentTime, 0.02);
+  }
+
+  /** Apply debounced reverb changes now (the render check needs the preset's reverb from the first sample). */
+  settle() {
+    for (const part of this.parts) part.settle();
+  }
+}
+
+/** One effect in a part's chain. */
+interface Unit {
+  readonly input: AudioNode;
+  readonly output: AudioNode;
+  /** What "Listen here" hears: the effect's output, or for the delay and reverb only what they add. */
+  readonly tapFrom: AudioNode;
+  set(p: ParamValues, bpm: number): void;
+}
+
+const gain = (ctx: BaseAudioContext, g: number) => new GainNode(ctx, { gain: g });
+
+/**
+ * One part's effects, run in the order and on/off the part's settings say (effectChain). Effects that are
+ * off are taken out of the chain, so they cost nothing. The distortion, phaser and flanger are our own
+ * code (an "fx-slot" processor each, made the first time they are turned on); the others are the
+ * browser's own nodes.
+ *
+ * The chorus amount and the delay and reverb levels follow `amounts`, a signal from the part's voice
+ * processor (the settings plus any mod matrix routes, sample by sample), so an LFO can sweep them.
+ */
+export class PartFx {
+  /** The part's voices go in here (its Volume). */
+  readonly input: GainNode;
+  /** The voice processor's effect amounts go in here: chorus, delay, reverb (0..1, one channel each). */
+  readonly amounts: ChannelSplitterNode;
+  /** After each effect (the delay and reverb: what they add), for the Synth view. */
+  readonly taps: Record<Effect, AnalyserNode>;
+  /** Into the reverb itself (the drums send here). */
+  readonly reverbIn: AudioNode;
+  readonly eq: EqUnit;
+  readonly compressor: CompressorUnit;
+  private units: Partial<Record<Effect, Unit>>;
+  private slots: Partial<Record<SlotKind, SlotUnit>> = {};
+  private reverb: ReverbUnit;
+  private out: GainNode;
+  private chainKey: string | null = null;
+  /** Effects whose tap is connected (only those in the chain, so the others aren't pulled along). */
+  private tapped = new Set<Effect>();
+  private started = false;
+  private values: ParamValues | null = null;
+  private bpm = 120;
+
+  constructor(
+    private ctx: AudioContext,
+    master: AudioNode,
+  ) {
+    this.input = new GainNode(ctx);
+    this.out = new GainNode(ctx);
+    this.out.connect(master);
+    this.amounts = new ChannelSplitterNode(ctx, { numberOfOutputs: 3 });
+    const tap = () => new AnalyserNode(ctx, { fftSize: 2048, smoothingTimeConstant: 0.6 });
+    this.taps = Object.fromEntries(EFFECTS.map((fx) => [fx, tap()])) as Record<Effect, AnalyserNode>;
+    this.eq = new EqUnit(ctx);
+    this.compressor = new CompressorUnit(ctx);
+    this.reverb = new ReverbUnit(ctx, this.amounts);
+    this.reverbIn = this.reverb.reverbIn;
+    this.units = {
+      chorus: new ChorusUnit(ctx, this.amounts),
+      delay: new DelayUnit(ctx, this.amounts),
+      reverb: this.reverb,
+      eq: this.eq,
+      compressor: this.compressor,
+    };
+    this.input.connect(this.out);
+  }
+
+  /** The audio worklet module has loaded: our own effects can be made. */
+  start() {
+    this.started = true;
+    if (this.values) this.set(this.values, this.bpm);
+  }
+
+  /** The part's settings: its Volume, each effect's settings, and which effects run in what order. */
+  set(p: ParamValues, bpm: number) {
+    this.values = p;
+    this.bpm = bpm;
+    this.input.gain.setTargetAtTime(p.volume * p.volume, this.ctx.currentTime, 0.02);
+    const chain = effectChain(p).filter((fx) => this.unit(fx, p));
+    for (const fx of chain) this.units[fx]!.set(p, bpm);
+    this.wire(chain);
+  }
+
+  /** The effect's unit; our own are made when first needed (once the worklet module has loaded). */
+  private unit(fx: Effect, p: ParamValues): Unit | undefined {
+    if (this.units[fx]) return this.units[fx];
+    if (!this.started || (fx !== "distortion" && fx !== "phaser" && fx !== "flanger")) return undefined;
+    const unit = new SlotUnit(this.ctx, fx, p);
+    this.slots[fx] = unit;
+    this.units[fx] = unit;
+    return unit;
+  }
+
+  /** Connect the effects in this order (when it changed). */
+  private wire(chain: Effect[]) {
+    const key = chain.join(" ");
+    if (key === this.chainKey) return;
+    this.chainKey = key;
+    this.input.disconnect();
+    for (const [fx, unit] of Object.entries(this.units) as [Effect, Unit][]) {
+      unit.output.disconnect();
+      if (unit.tapFrom !== unit.output && this.tapped.has(fx)) unit.tapFrom.disconnect(this.taps[fx]);
+    }
+    this.tapped.clear();
+    let prev: AudioNode = this.input;
+    for (const fx of chain) {
+      const unit = this.units[fx]!;
+      prev.connect(unit.input);
+      prev = unit.output;
+      unit.tapFrom.connect(this.taps[fx]);
+      this.tapped.add(fx);
+    }
+    prev.connect(this.out);
+    for (const [fx, slot] of Object.entries(this.slots)) slot.setOn(chain.includes(fx as Effect));
+  }
+
+  /** Build a changed reverb now rather than after the debounce. */
+  settle() {
+    this.reverb.settle();
+  }
+
+  /** The phaser's or flanger's LFO phase (cycles) right now, for the drawings; null until it has run. */
+  lfoPhase(fx: "phaser" | "flanger"): number | null {
+    return this.slots[fx]?.phaseAt(this.ctx.currentTime) ?? null;
+  }
+}
+
+// ---------------------------------------------------------------- the browser's own nodes
+
+/**
+ * Chorus: three delay lines, each swept by a triangle LFO a third of a cycle apart, placed left, centre
+ * and right. When one line's pitch rises, another's falls, so the wobble mostly cancels out: a wide,
+ * steady shimmer rather than a seasick one. They take the sound in mono, so the chorus sounds the same
+ * at any Stereo Width. Wet = chorus x 0.8, dry = 1 - chorus x 0.3.
+ */
+class ChorusUnit implements Unit {
+  readonly input: GainNode;
+  readonly output: GainNode;
+  readonly tapFrom: GainNode;
+
+  constructor(ctx: AudioContext, amounts: AudioNode) {
+    this.input = new GainNode(ctx);
+    this.output = this.tapFrom = new GainNode(ctx);
+    const dry = gain(ctx, 1);
+    const wet = gain(ctx, 0);
+    this.input.connect(dry).connect(this.output);
+    const mono = new GainNode(ctx, { channelCount: 1, channelCountMode: "explicit" });
+    this.input.connect(mono);
+    for (const { pan, phase } of CHORUS_LINES) {
+      const d = new DelayNode(ctx, { delayTime: CHORUS_DELAY, maxDelayTime: 0.05 });
+      const { real, imag } = triangleWave(phase);
+      const lfo = new OscillatorNode(ctx, { frequency: CHORUS_RATE, periodicWave: new PeriodicWave(ctx, { real, imag, disableNormalization: true }) });
+      lfo.connect(gain(ctx, CHORUS_DEPTH)).connect(d.delayTime);
+      lfo.start();
+      // Three lines at 2/3 each: about the level of the old two-line chorus.
+      mono.connect(d).connect(gain(ctx, 2 / 3)).connect(new StereoPannerNode(ctx, { pan })).connect(wet);
+    }
+    wet.connect(this.output);
+    // A signal into an AudioParam adds to its own value.
+    amounts.connect(gain(ctx, 0.8), 0).connect(wet.gain);
+    amounts.connect(gain(ctx, -0.3), 0).connect(dry.gain);
+  }
+
+  set() {}
+}
+
+/**
+ * Delay: one line per side, each with a darkening filter in its feedback loop. Stereo: each side feeds
+ * back into itself. Ping-pong: both sides go into the left line and the feedback crosses over, so the
+ * echoes bounce left, right, left... The echoes are added to the sound at Delay x 0.7.
+ */
+class DelayUnit implements Unit {
+  readonly input: GainNode;
+  readonly output: GainNode;
+  readonly tapFrom: AudioNode;
+  private lines: [DelayNode, DelayNode];
+  /** The routing: input to each side, each side's feedback to itself and across (see set). */
+  private routes: Record<"inL" | "inR" | "inRtoL" | "fbL" | "fbR" | "fbLtoR" | "fbRtoL", GainNode>;
+
+  constructor(
+    private ctx: AudioContext,
+    amounts: AudioNode,
+  ) {
+    this.input = new GainNode(ctx);
+    this.output = new GainNode(ctx);
+    this.input.connect(this.output);
+    const send = gain(ctx, 0);
+    this.input.connect(send);
+    amounts.connect(gain(ctx, 0.7), 1).connect(send.gain);
+    const sides = new ChannelSplitterNode(ctx, { numberOfOutputs: 2 });
+    const merge = new ChannelMergerNode(ctx, { numberOfInputs: 2 });
+    send.connect(sides);
+    const line = () => new DelayNode(ctx, { maxDelayTime: 4 });
+    const tone = () => new BiquadFilterNode(ctx, { type: "lowpass", frequency: 3500 });
+    this.lines = [line(), line()];
+    const [toneL, toneR] = [tone(), tone()];
+    const r = (this.routes = { inL: gain(ctx, 1), inR: gain(ctx, 1), inRtoL: gain(ctx, 0), fbL: gain(ctx, 0.35), fbR: gain(ctx, 0.35), fbLtoR: gain(ctx, 0), fbRtoL: gain(ctx, 0) });
+    const [dL, dR] = this.lines;
+    sides.connect(r.inL, 0).connect(dL);
+    sides.connect(r.inR, 1).connect(dR);
+    sides.connect(r.inRtoL, 1).connect(dL);
+    dL.connect(toneL);
+    dR.connect(toneR);
+    toneL.connect(r.fbL).connect(dL);
+    toneR.connect(r.fbR).connect(dR);
+    toneL.connect(r.fbLtoR).connect(dR);
+    toneR.connect(r.fbRtoL).connect(dL);
+    toneL.connect(merge, 0, 0);
+    toneR.connect(merge, 0, 1);
+    merge.connect(this.output);
+    this.tapFrom = merge;
+  }
+
+  set(p: ParamValues, bpm: number) {
     const t = this.ctx.currentTime;
-    for (const d of this.delays) d.delayTime.setTargetAtTime(opts.delaySeconds, t, 0.05);
-    const fb = opts.delayFeedback;
-    const pp = opts.pingPong;
+    const seconds = (60 / bpm) * DELAY_DIV_BEATS[p.delayDiv];
+    for (const d of this.lines) d.delayTime.setTargetAtTime(seconds, t, 0.05);
+    const fb = p.delayFeedback;
+    const pp = DELAY_MODES[p.delayMode] === "ping-pong";
     const set = (g: GainNode, v: number) => g.gain.setTargetAtTime(v, t, 0.02);
-    const r = this.delayRoutes;
+    const r = this.routes;
     set(r.inL, pp ? 0.5 : 1);
     set(r.inRtoL, pp ? 0.5 : 0);
     set(r.inR, pp ? 0 : 1);
@@ -118,103 +300,198 @@ export class Fx {
     set(r.fbR, pp ? 0 : fb);
     set(r.fbLtoR, pp ? fb : 0);
     set(r.fbRtoL, pp ? fb : 0);
-    set(this.drumReverbSend, opts.reverbMix * 0.4);
-    this.setReverb(opts.reverbSize, opts.reverbDamping);
-  }
-
-  private reverbTimer = 0;
-  private pendingReverb: (() => void) | null = null;
-
-  /** Apply a debounced reverb change now (the render check needs the preset's reverb from the first sample). */
-  settle() {
-    clearTimeout(this.reverbTimer);
-    this.pendingReverb?.();
-  }
-
-  private setReverb(seconds: number, damping: number) {
-    if (Math.abs(seconds - this.reverbSeconds) < 0.05 && Math.abs(damping - this.reverbDamping) < 0.01) return;
-    // Building an impulse is expensive: debounce while a knob is turning.
-    clearTimeout(this.reverbTimer);
-    const build = () => {
-      this.pendingReverb = null;
-      this.reverbSeconds = seconds;
-      this.reverbDamping = damping;
-      this.reverb.buffer = makeImpulse(this.ctx, seconds, damping);
-    };
-    this.pendingReverb = build;
-    if (this.reverbSeconds === 0) build();
-    else this.reverbTimer = window.setTimeout(build, 120);
   }
 }
 
 /**
- * One part's way into the effects: its volume, its own chorus, and its sends to the shared delay and
- * reverb. The chorus amount and the sends follow `amounts` (see Fx).
+ * Reverb: convolution with a generated noise-decay impulse (fxShapes.ts), added to the sound at Reverb.
+ * It takes the sound in mono (it reverberates each side on its own, so a wide input would change how it
+ * sounds in mono); its output is stereo.
  */
-export class PartFx {
-  /** The part's voices go in here. */
+class ReverbUnit implements Unit {
   readonly input: GainNode;
-  /** The voice processor's effect amounts go in here: chorus, delay, reverb (0..1, one channel each). */
-  readonly amounts: ChannelSplitterNode;
-  /** After the chorus, for visualisation. */
-  readonly chorusOut: AudioNode;
-  private chorusWet: GainNode;
-  private chorusDry: GainNode;
-  private delaySend: GainNode;
-  private reverbSend: GainNode;
+  readonly output: GainNode;
+  readonly tapFrom: ConvolverNode;
+  readonly reverbIn: GainNode;
+  private seconds = 0;
+  private damping = -1;
+  private timer = 0;
+  private pending: (() => void) | null = null;
 
   constructor(
     private ctx: AudioContext,
-    master: AudioNode,
-    delayIn: AudioNode,
-    reverbIn: AudioNode,
+    amounts: AudioNode,
   ) {
     this.input = new GainNode(ctx);
-    const post = new GainNode(ctx);
-    this.chorusOut = post;
-
-    // Chorus: three delay lines, each swept by a triangle LFO a third of a cycle apart, placed left,
-    // centre and right. When one line's pitch rises, another's falls, so the wobble mostly cancels
-    // out: a wide, steady shimmer rather than a seasick one. They take the part in mono, so the chorus
-    // sounds the same at any Stereo Width.
-    this.chorusDry = new GainNode(ctx);
-    this.chorusWet = new GainNode(ctx, { gain: 0 });
-    this.input.connect(this.chorusDry).connect(post);
-    const mono = new GainNode(ctx, { channelCount: 1, channelCountMode: "explicit" });
-    this.input.connect(mono);
-    for (const { pan, phase } of CHORUS_LINES) {
-      const d = new DelayNode(ctx, { delayTime: CHORUS_DELAY, maxDelayTime: 0.05 });
-      const { real, imag } = triangleWave(phase);
-      const lfo = new OscillatorNode(ctx, { frequency: CHORUS_RATE, periodicWave: new PeriodicWave(ctx, { real, imag, disableNormalization: true }) });
-      const depth = new GainNode(ctx, { gain: CHORUS_DEPTH });
-      lfo.connect(depth).connect(d.delayTime);
-      lfo.start();
-      // Three lines at 2/3 each: about the level of the old two-line chorus.
-      mono.connect(d).connect(new GainNode(ctx, { gain: 2 / 3 })).connect(new StereoPannerNode(ctx, { pan })).connect(this.chorusWet);
-    }
-    this.chorusWet.connect(post);
-    post.connect(master);
-
-    this.delaySend = new GainNode(ctx, { gain: 0 });
-    // The reverb takes the part in mono (it reverberates each side on its own, so a wide input would change
-    // how it sounds in mono); its output is stereo as before.
-    this.reverbSend = new GainNode(ctx, { gain: 0, channelCount: 1, channelCountMode: "explicit" });
-    post.connect(this.delaySend).connect(delayIn);
-    post.connect(this.reverbSend).connect(reverbIn);
-
-    // The amounts drive the levels: wet = chorus x 0.8, dry = 1 - chorus x 0.3, delay send = delay x 0.7,
-    // reverb send = reverb. (A signal into an AudioParam adds to its own value.)
-    this.amounts = new ChannelSplitterNode(ctx, { numberOfOutputs: 3 });
-    const scaled = (channel: number, gain: number, param: AudioParam) => this.amounts.connect(new GainNode(ctx, { gain }), channel).connect(param);
-    scaled(0, 0.8, this.chorusWet.gain);
-    scaled(0, -0.3, this.chorusDry.gain);
-    scaled(1, 0.7, this.delaySend.gain);
-    scaled(2, 1, this.reverbSend.gain);
+    this.output = new GainNode(ctx);
+    this.input.connect(this.output);
+    const send = new GainNode(ctx, { gain: 0, channelCount: 1, channelCountMode: "explicit" });
+    amounts.connect(gain(ctx, 1), 2).connect(send.gain);
+    this.reverbIn = new GainNode(ctx);
+    this.tapFrom = new ConvolverNode(ctx);
+    this.input.connect(send).connect(this.reverbIn).connect(this.tapFrom).connect(this.output);
   }
 
-  /** The part's Volume (the effect amounts come from the voice processor). */
-  setVolume(volume: number) {
-    this.input.gain.setTargetAtTime(volume * volume, this.ctx.currentTime, 0.02);
+  set(p: ParamValues) {
+    const { reverbSize: seconds, reverbDamping: damping } = p;
+    if (Math.abs(seconds - this.seconds) < 0.05 && Math.abs(damping - this.damping) < 0.01) return;
+    // Building an impulse is expensive: debounce while a knob is turning.
+    clearTimeout(this.timer);
+    const build = () => {
+      this.pending = null;
+      this.seconds = seconds;
+      this.damping = damping;
+      this.tapFrom.buffer = makeImpulse(this.ctx, seconds, damping);
+    };
+    this.pending = build;
+    if (this.seconds === 0) build();
+    else this.timer = window.setTimeout(build, 120);
+  }
+
+  settle() {
+    clearTimeout(this.timer);
+    this.pending?.();
+  }
+}
+
+/** EQ: a low shelf, a peak you can move, and a high shelf (the browser's biquad filters). */
+export const EQ_LOW_HZ = 150;
+export const EQ_HIGH_HZ = 5000;
+export const EQ_MID_Q = 0.8;
+
+class EqUnit implements Unit {
+  readonly input: BiquadFilterNode;
+  readonly output: BiquadFilterNode;
+  readonly tapFrom: BiquadFilterNode;
+  private mid: BiquadFilterNode;
+  private bands: BiquadFilterNode[];
+  private scratch: { mag: Float32Array<ArrayBuffer>; phase: Float32Array<ArrayBuffer> } | null = null;
+
+  constructor(private ctx: AudioContext) {
+    this.input = new BiquadFilterNode(ctx, { type: "lowshelf", frequency: EQ_LOW_HZ, gain: 0 });
+    this.mid = new BiquadFilterNode(ctx, { type: "peaking", frequency: 1000, Q: EQ_MID_Q, gain: 0 });
+    this.output = this.tapFrom = new BiquadFilterNode(ctx, { type: "highshelf", frequency: EQ_HIGH_HZ, gain: 0 });
+    this.input.connect(this.mid).connect(this.output);
+    this.bands = [this.input, this.mid, this.output];
+  }
+
+  set(p: ParamValues) {
+    const t = this.ctx.currentTime;
+    this.input.gain.setTargetAtTime(p.eqLow, t, 0.02);
+    this.mid.gain.setTargetAtTime(p.eqMid, t, 0.02);
+    this.mid.frequency.setTargetAtTime(p.eqMidFreq, t, 0.02);
+    this.output.gain.setTargetAtTime(p.eqHigh, t, 0.02);
+  }
+
+  /** The EQ's level (x, not dB) at each frequency, for the drawing. */
+  response(hz: Float32Array<ArrayBuffer>, out: Float32Array<ArrayBuffer>) {
+    if (this.scratch?.mag.length !== hz.length) this.scratch = { mag: new Float32Array(hz.length), phase: new Float32Array(hz.length) };
+    out.fill(1);
+    for (const band of this.bands) {
+      band.getFrequencyResponse(hz, this.scratch.mag, this.scratch.phase);
+      for (let i = 0; i < hz.length; i++) out[i] *= this.scratch.mag[i];
+    }
+  }
+}
+
+/**
+ * Compressor: the browser's. Above Threshold, the level rises only 1/Ratio as fast; it turns the whole
+ * sound up again by itself afterwards (make-up gain), so the quiet parts come up.
+ */
+export const COMP_KNEE_DB = 6;
+
+class CompressorUnit implements Unit {
+  readonly input: DynamicsCompressorNode;
+  readonly output: DynamicsCompressorNode;
+  readonly tapFrom: DynamicsCompressorNode;
+
+  constructor(private ctx: AudioContext) {
+    this.input = this.output = this.tapFrom = new DynamicsCompressorNode(ctx, { knee: COMP_KNEE_DB });
+  }
+
+  set(p: ParamValues) {
+    const t = this.ctx.currentTime;
+    const c = this.input;
+    c.threshold.setTargetAtTime(p.compThreshold, t, 0.02);
+    c.ratio.setTargetAtTime(p.compRatio, t, 0.02);
+    c.attack.setTargetAtTime(p.compAttack, t, 0.02);
+    c.release.setTargetAtTime(p.compRelease, t, 0.02);
+  }
+
+  /** How far it is turning the sound down right now, in dB (0 or less). */
+  get reduction() {
+    return this.input.reduction;
+  }
+}
+
+// ---------------------------------------------------------------- our own effects
+
+/** The settings each of our own effects uses (only these are sent when they change). */
+const SLOT_PARAMS: Record<SlotKind, (keyof ParamValues)[]> = {
+  distortion: ["distType", "distDrive", "distTone", "distMix"],
+  phaser: ["phaserRate", "phaserDepth", "phaserFeedback", "phaserMix"],
+  flanger: ["flangerRate", "flangerDepth", "flangerFeedback", "flangerMix"],
+};
+
+/** The distortion, phaser or flanger, in an "fx-slot" processor (dsp/effects.ts). */
+class SlotUnit implements Unit {
+  readonly input: AudioWorkletNode;
+  readonly output: AudioWorkletNode;
+  readonly tapFrom: AudioWorkletNode;
+  private key: string;
+  private on = true;
+  /** The LFO's last reported phase, the time it was at, and its rate. */
+  private report: { time: number; phase: number } | null = null;
+  private rate = 0;
+
+  constructor(
+    ctx: AudioContext,
+    private kind: SlotKind,
+    p: ParamValues,
+  ) {
+    const node = new AudioWorkletNode(ctx, "fx-slot", {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [2],
+      channelCount: 2,
+      channelCountMode: "explicit",
+      processorOptions: { kind, values: p },
+    });
+    this.input = this.output = this.tapFrom = node;
+    this.key = this.keyOf(p);
+    this.rate = this.rateOf(p);
+    node.port.onmessage = (e) => {
+      if (e.data.type === "phase") this.report = { time: e.data.time, phase: e.data.phase };
+    };
+  }
+
+  private keyOf(p: ParamValues) {
+    return SLOT_PARAMS[this.kind].map((id) => p[id]).join(" ");
+  }
+
+  private rateOf(p: ParamValues) {
+    return this.kind === "phaser" ? p.phaserRate : this.kind === "flanger" ? p.flangerRate : 0;
+  }
+
+  set(p: ParamValues) {
+    const key = this.keyOf(p);
+    if (key === this.key) return;
+    this.key = key;
+    this.rate = this.rateOf(p);
+    this.input.port.postMessage({ type: "params", values: p });
+  }
+
+  /** In the chain or not: out of it, the processor does nothing. */
+  setOn(on: boolean) {
+    if (on === this.on) return;
+    this.on = on;
+    this.input.port.postMessage({ type: "on", on });
+  }
+
+  phaseAt(time: number): number | null {
+    if (!this.report) return null;
+    const phase = this.report.phase + this.rate * (time - this.report.time);
+    return phase - Math.floor(phase);
   }
 }
 

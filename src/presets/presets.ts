@@ -31,6 +31,8 @@ export const FADERS: [ParamId, ParamId, ParamId, ParamId] = ["attack", "decay", 
 // 11 pan, 12 morph, 13 cutoff 2, 14 chorus, 15 delay, 16 reverb, 17 LFO 1 rate, 18 LFO 1 depth, 19 LFO 2 rate, 20 LFO 2 depth.
 // LFO sync: 0 off, 1 2 bars, 2 1 bar, 3 1/2, 4 1/4, 5 1/8, 6 1/16. LFO shapes: 0 sine, 1 triangle, 2 saw, 3 square, 4 random.
 // Delay div: 0 1/16, 1 1/8, 2 3/16, 3 1/4, 4 3/8, 5 1/2.
+// Effects (fxSlot1-8 hold them in the order they run): 0 distortion, 1 compressor, 2 EQ, 3 phaser, 4 flanger, 5 chorus, 6 delay, 7 reverb.
+// Distortion type: 0 soft, 1 hard, 2 fold, 3 crush.
 
 /** Presets in the order they were added; FACTORY_PRESETS below groups them by category. */
 const ALL_PRESETS: Omit<Preset, "id">[] = [
@@ -366,6 +368,72 @@ const ALL_PRESETS: Omit<Preset, "id">[] = [
     knobs: ["mod1Amt", "lfoRate", "lfoDepth", "cutoff", "attack", "release", "reverbMix", "chorus"],
     values: { osc1Wave: 3, osc2Wave: 1, osc2Semi: 12, oscMix: 0.25, osc2Detune: 2, pulseWidth: 0.35, cutoff: 2800, resonance: 1, filterEnvAmt: 0.5, attack: 0.05, decay: 0.5, sustain: 0.8, release: 0.5, lfoTarget: 0, lfoRate: 5.5, lfoDepth: 0, modTarget: 4, mod1Src: 7, mod1Dst: 18, mod1Amt: 0.7, velocity: 0, reverbMix: 0.25 },
   },
+  // The effects of slice 22: knob 1 switches the effect on and off, to compare; the next knobs are its settings.
+  {
+    // Hold a chord: the phaser's notches swirl slowly through it.
+    name: "Phaser Keys",
+    category: "Test",
+    color: [0, 127, 90],
+    knobs: ["phaserOn", "phaserRate", "phaserDepth", "phaserFeedback", "phaserMix", "cutoff", "decay", "reverbMix"],
+    values: { osc1Wave: 1, osc2Wave: 0, osc2Semi: 12, oscMix: 0.3, osc2Detune: 2, cutoff: 3000, resonance: 0.8, filterEnvAmt: 1, filterDecay: 0.6, attack: 0.002, decay: 1.2, sustain: 0.5, release: 0.6, velocity: 0.5, phaserOn: 1, phaserRate: 0.35, phaserDepth: 0.8, phaserFeedback: 0.6, phaserMix: 0.5, reverbMix: 0.2 },
+  },
+  {
+    // Long notes on a bright, slightly noisy sound: the jet-plane swoosh.
+    name: "Jet Flanger",
+    category: "Test",
+    color: [127, 0, 90],
+    knobs: ["flangerOn", "flangerRate", "flangerDepth", "flangerFeedback", "flangerMix", "noiseLevel", "cutoff", "reverbMix"],
+    values: { osc1Wave: 2, osc2Wave: 2, osc2Detune: 5, noiseLevel: 0.15, cutoff: 9000, resonance: 0.7, filterEnvAmt: 0, attack: 0.01, decay: 1, sustain: 0.9, release: 0.8, flangerOn: 1, flangerRate: 0.12, flangerDepth: 0.9, flangerFeedback: 0.8, flangerMix: 0.5, reverbMix: 0.15 },
+  },
+  {
+    // A hard-clipped mono lead: single notes sing, chords turn into a rough wall.
+    name: "Fuzz Lead",
+    category: "Test",
+    color: [127, 30, 30],
+    knobs: ["distortionOn", "distDrive", "distType", "distTone", "distMix", "cutoff", "glide", "delayMix"],
+    values: { mono: 1, glide: 0.05, osc1Wave: 2, osc2Wave: 3, oscMix: 0.4, osc2Detune: 6, cutoff: 2500, resonance: 1.5, filterEnvAmt: 1, filterDecay: 0.4, attack: 0.005, decay: 0.5, sustain: 0.8, release: 0.25, lfoTarget: 0, lfoDepth: 0, distortionOn: 1, distType: 1, distDrive: 0.7, distTone: 4000, distMix: 1, delayMix: 0.2, delayDiv: 4, reverbMix: 0.15, volume: 0.6 },
+  },
+  {
+    // A sine pluck, folded: turn Drive up and it rings brighter and more metallic; velocity matters.
+    name: "Fold Pluck",
+    category: "Test",
+    color: [127, 80, 0],
+    knobs: ["distortionOn", "distDrive", "distType", "distTone", "distMix", "decay", "velocity", "reverbMix"],
+    values: { osc1Wave: 0, osc2Wave: 0, oscMix: 0, cutoff: 18000, resonance: 0.5, filterEnvAmt: 0, attack: 0.002, decay: 0.6, sustain: 0, release: 0.4, velocity: 0.8, distortionOn: 1, distType: 2, distDrive: 0.55, distTone: 9000, distMix: 1, reverbMix: 0.25 },
+  },
+  {
+    // Square keys through the bit-crusher: fewer levels and a lower sample rate, like an old sampler or game.
+    name: "Crushed Keys",
+    category: "Test",
+    color: [60, 127, 0],
+    knobs: ["distortionOn", "distDrive", "distMix", "distTone", "cutoff", "decay", "release", "reverbMix"],
+    values: { osc1Wave: 3, osc2Wave: 3, osc2Semi: 12, oscMix: 0.3, osc2Detune: 3, cutoff: 6000, resonance: 0.7, filterEnvAmt: 0.5, attack: 0.002, decay: 0.8, sustain: 0.4, release: 0.3, distortionOn: 1, distType: 3, distDrive: 0.75, distTone: 18000, distMix: 1, reverbMix: 0.1 },
+  },
+  {
+    // Plucks with long, quiet tails: the compressor brings the tails up. Turn Attack up for snappier starts.
+    name: "Squash Pluck",
+    category: "Test",
+    color: [127, 90, 60],
+    knobs: ["compressorOn", "compThreshold", "compRatio", "compAttack", "compRelease", "decay", "cutoff", "reverbMix"],
+    values: { osc1Wave: 2, osc2Wave: 3, oscMix: 0.4, osc2Detune: 5, cutoff: 900, resonance: 2, filterEnvAmt: 3.5, filterDecay: 0.3, filterSustain: 0, attack: 0.001, decay: 1.5, sustain: 0, release: 0.4, compressorOn: 1, compThreshold: -35, compRatio: 10, compAttack: 0.005, compRelease: 0.3, reverbMix: 0.1, volume: 0.6 },
+  },
+  {
+    // The lows and highs cut, a narrow band boosted: an old telephone. Sweep knob 2 (Mid Freq) for a radio.
+    name: "Telephone EQ",
+    category: "Test",
+    color: [90, 90, 127],
+    knobs: ["eqOn", "eqMidFreq", "eqMid", "eqLow", "eqHigh", "cutoff", "osc2Detune", "reverbMix"],
+    values: { osc1Wave: 2, osc2Wave: 2, osc2Detune: 8, cutoff: 6000, resonance: 0.7, filterEnvAmt: 0, attack: 0.01, decay: 0.5, sustain: 0.8, release: 0.3, eqOn: 1, eqLow: -15, eqMid: 10, eqMidFreq: 1200, eqHigh: -15, reverbMix: 0.1 },
+  },
+  {
+    // The order matters: here the reverb comes first and the distortion after it, so the whole tail is
+    // distorted and swells up. Drag Distortion after Reverb in the Synth view to hear the usual order.
+    name: "Fuzzed Reverb",
+    category: "Test",
+    color: [127, 0, 30],
+    knobs: ["distortionOn", "distDrive", "reverbMix", "reverbSize", "distType", "distTone", "decay", "volume"],
+    values: { osc1Wave: 2, osc2Wave: 3, oscMix: 0.4, osc2Detune: 6, cutoff: 2200, resonance: 1, filterEnvAmt: 2, filterDecay: 0.2, filterSustain: 0, attack: 0.002, decay: 0.3, sustain: 0, release: 0.2, reverbMix: 0.6, reverbSize: 4, reverbDamping: 0.5, distortionOn: 1, distType: 0, distDrive: 0.6, distTone: 3500, fxSlot1: 7, fxSlot2: 0, fxSlot3: 1, fxSlot4: 2, fxSlot5: 3, fxSlot6: 4, fxSlot7: 5, fxSlot8: 6, volume: 0.6 },
+  },
 ];
 
 /** Category order in the preset browser. */
@@ -422,6 +490,14 @@ const TAGS: Record<string, string[]> = {
   "Echo Starts": ["echo", "demo"],
   "Strip Vibrato": ["vibrato", "mod strip", "demo", "mono"],
   "Velocity Vibrato": ["vibrato", "dynamic", "demo"],
+  "Phaser Keys": ["phaser", "moving", "soft", "chords", "demo"],
+  "Jet Flanger": ["flanger", "metallic", "moving", "bright", "demo"],
+  "Fuzz Lead": ["distortion", "fuzz", "dirty", "mono", "demo"],
+  "Fold Pluck": ["distortion", "metallic", "plucky", "demo"],
+  "Crushed Keys": ["bitcrusher", "lo-fi", "retro", "dirty", "demo"],
+  "Squash Pluck": ["compressor", "plucky", "punchy", "demo"],
+  "Telephone EQ": ["eq", "lo-fi", "retro", "demo"],
+  "Fuzzed Reverb": ["distortion", "reverb", "dirty", "spacey", "effect order", "demo"],
 };
 
 /** The describing words the browser offers as buttons. */
