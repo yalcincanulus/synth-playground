@@ -94,6 +94,7 @@
       <button class:active={pg.view === "wavetable"} onclick={() => pg.setView("wavetable")} title="Shift + encoder">Wavetable</button>
     </nav>
     <button class="about-link" class:active={pg.view === "about"} onclick={() => pg.setView("about")}>About</button>
+    <button class="recipes-link" class:active={!!pg.recipe || pg.recipeList} onclick={() => pg.openRecipes()} title="Build a classic sound step by step">Recipes</button>
 
     <div class="midi">
       {#if pg.midiStatus === "connected"}
@@ -148,7 +149,7 @@
     <button onclick={() => pg.loadPreset(pg.presetIndex - 1)} aria-label="Previous preset">◀</button>
     <!-- `selected` per option rather than select.value: the Dice option appears in the same update that selects it. -->
     <select onchange={(e) => pg.loadPreset(+e.currentTarget.value)}>
-      {#if pg.dicePreset}<option value={-1} disabled selected>🎲 {pg.dicePreset.name} · {pg.dicePreset.category}</option>{/if}
+      {#if pg.dicePreset}<option value={-1} disabled selected>{pg.dicePreset.from === "recipe" ? "Recipe:" : "🎲"} {pg.dicePreset.name} · {pg.dicePreset.category}</option>{/if}
       {#each presetGroups as [category, entries] (category)}
         <optgroup label={category}>
           {#each entries as { p, i } (i)}
@@ -349,6 +350,8 @@
   .views .active { background: var(--accent); color: #0b1314; font-weight: 600; }
   .about-link { background: none; border: none; color: var(--dim); font-size: 13px; padding: 4px 6px; margin-left: -12px; }
   .about-link:hover { color: var(--text); }
+  .recipes-link { border-color: color-mix(in srgb, var(--accent) 50%, transparent); color: var(--accent); font-size: 13px; padding: 4px 12px; }
+  .recipes-link.active { background: color-mix(in srgb, var(--accent) 18%, transparent); }
   .about-link.active { color: var(--accent); text-decoration: underline; text-underline-offset: 4px; }
   .midi { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
   .pill { border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: 12px; white-space: nowrap; }

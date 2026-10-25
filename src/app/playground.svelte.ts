@@ -26,6 +26,9 @@ import { deleteImportedTable, saveImportedTable, storeTable, updateStoredTable }
 import { blendKeyframes, shapeWave } from "../audio/tableDraw";
 import { TableEditor } from "./wavetable/tableEditor.svelte";
 import { detectChord, type DetectedChord } from "../audio/chordDetect";
+import { RecipeRun } from "./recipes/recipeRun.svelte";
+import { RECIPES } from "../recipes/library";
+import { blockOf, hardwareFor, initPreset, isPlay, stepParam } from "../recipes/recipe";
 import { CHORD_MODE_NAMES, chordName, defaultScale, keyNotes, noteNameIn, ROOT_NAMES, scaleLabel, scaleNotes, SCALES, snapToScale, type ScaleSettings } from "../audio/scale";
 import { cutIntoFrames, decodeSoundFile, type CutMode } from "../audio/wavImport";
 import { findPorts, isMainPort, MiniLab, requestMidi } from "../minilab/device";
@@ -189,6 +192,9 @@ export class Playground {
   /** A WAV import in progress, and how the last one went. */
   importing = $state(false);
   importResult = $state<{ ok: boolean; text: string } | null>(null);
+  /** The recipe being followed, if any, and whether the recipe list is open. */
+  recipe = $state.raw<RecipeRun | null>(null);
+  recipeList = $state(false);
   /** The "Draw a table" editor, while it is open. */
   tableEditor = $state.raw<TableEditor | null>(null);
   private draftTimer = 0;
@@ -335,6 +341,8 @@ export class Playground {
     this.values = presetValues(this.preset);
     this.dirty = false;
     this.engine.setParams(this.values);
+    // Another sound on the Keys part: the recipe building it is over.
+    if (this.part === "keys") this.stopRecipe();
     this.syncHardware();
   }
 
@@ -344,6 +352,7 @@ export class Playground {
       name: name.slice(0, 18),
       values: $state.snapshot(this.values),
     };
+    delete preset.from;
     const user = [...loadUserPresets(), preset];
     saveUserPresets(user);
     this.presets = [...FACTORY_PRESETS, ...user];
@@ -368,6 +377,7 @@ export class Playground {
     this.values = presetValues(this.dicePreset);
     this.dirty = false;
     this.engine.setParams(this.values);
+    if (this.part === "keys") this.stopRecipe();
     this.syncHardware();
   }
 
@@ -392,6 +402,7 @@ export class Playground {
     this.engine.setParam(id, value);
     this.dirty = true;
     this.touched = { param: id, at: performance.now() };
+    this.recipe?.changed();
   }
 
   /** Knob i to control position t (0..1). `cc` is set when it came from the hardware. */
@@ -442,6 +453,7 @@ export class Playground {
       if (name) this.showMessage("Chord", name);
     }
     this.notesChanged(true);
+    this.recipe?.notePlayed(note, this.notes.size);
   }
 
   noteOff(note: number) {
@@ -1084,6 +1096,95 @@ export class Playground {
     return tableFrames(editor ? Math.max(0, WAVETABLES.indexOf(editor.previous)) : 0);
   }
 
+  // ------------------------------------------------------------------ recipes
+
+  /**
+   * Follow a recipe: the Keys part gets the blank Init sound (not in the preset list until you save
+   * it), and the Synth view opens with the recipe on top of it.
+   */
+  startRecipe(id: string) {
+    const recipe = RECIPES.find((r) => r.id === id);
+    if (!recipe) return;
+    this.recipe?.stop();
+    this.selectPart("keys");
+    this.dicePreset = initPreset(recipe);
+    this.browseIndex = null;
+    this.values = presetValues(this.dicePreset);
+    this.dirty = false;
+    this.engine.setParams(this.values);
+    this.patch = null;
+    if (this.listening) this.listenTo(null);
+    this.recipeList = false;
+    this.setView("synth");
+    this.recipe = new RecipeRun(recipe, () => this.parts.keys.values, () => this.recipeStepChanged());
+    this.recipeStepChanged();
+    this.syncHardware();
+  }
+
+  /** Show the recipe list (in the Synth view, where recipes run). */
+  openRecipes() {
+    this.setView("synth");
+    this.recipeList = true;
+  }
+
+  /** Start the recipe again from Init. */
+  restartRecipe() {
+    if (this.recipe) this.startRecipe(this.recipe.recipe.id);
+  }
+
+  /** Leave the recipe; the sound you built stays. */
+  stopRecipe() {
+    if (!this.recipe) return;
+    this.recipe.stop();
+    this.recipe = null;
+    this.showHome();
+  }
+
+  /** The controls the current step asks for (highlighted in the Synth view). */
+  get recipeParams(): ParamId[] {
+    return (this.recipe?.step?.checks ?? []).flatMap((c) => (isPlay(c) ? [] : [c.param]));
+  }
+
+  /** The block the current step's control is on. */
+  get recipeBlock(): BlockId | null {
+    const param = this.recipeParams[0];
+    return param ? blockOf(param) : null;
+  }
+
+  /** Where the current step's control is on the MiniLab, or null (a step about playing, or none). */
+  get recipeHardware() {
+    const step = this.recipe?.step;
+    const param = step && stepParam(step);
+    return param ? hardwareFor(param) : null;
+  }
+
+  /** A new step: put the MiniLab knobs on the page with its control, and show the step on the OLED. */
+  private recipeStepChanged() {
+    // Finished: the sound is named after the recipe (still unsaved).
+    const run = this.recipe;
+    if (run?.done && this.parts.keys.dicePreset?.from === "recipe") this.parts.keys.dicePreset = { ...this.parts.keys.dicePreset, name: run.recipe.name };
+    const hw = this.recipeHardware;
+    if (hw && this.view === "synth") this.focus(hw.focus);
+    this.showHome();
+  }
+
+  /** The OLED's two lines for the current step: "Step 3/11" and what to touch. */
+  private recipeScreen(): [string, string] {
+    const run = this.recipe!;
+    if (run.done) return ["Recipe", `${run.recipe.name} done!`];
+    const step = run.step!;
+    const param = stepParam(step);
+    const hw = this.recipeHardware;
+    let what: string;
+    if (param && hw) what = `${hw.kind === "fader" ? "Fader" : "Knob"} ${hw.index + 1}: ${PARAMS[param].label}`;
+    else if (param) what = `Set ${PARAMS[param].label}`;
+    else {
+      const play = step.checks.find(isPlay)!.play;
+      what = { note: "Play a note", low: "Play a low note", chord: "Play a chord" }[play];
+    }
+    return [`Step ${run.index + 1}/${run.total}`, what];
+  }
+
   setView(view: View) {
     if (this.view === view) return;
     this.view = view;
@@ -1445,8 +1546,9 @@ export class Playground {
   }
 
   showHome() {
+    if (this.recipe) return this.sendDisplay(...this.recipeScreen());
     const n = this.presets.length;
-    const where = this.dicePreset ? "Dice" : `${this.presetIndex + 1}/${n}`;
+    const where = this.dicePreset ? (this.dicePreset.from === "recipe" ? "Recipe" : "Dice") : `${this.presetIndex + 1}/${n}`;
     this.sendDisplay(`${this.part === "keys" ? "Keys" : "Seq"} ${where}`, this.preset.name);
   }
 

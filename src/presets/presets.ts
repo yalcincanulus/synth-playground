@@ -11,6 +11,8 @@ export interface Preset {
   /** What knobs 1-8 control. Faders are always the amp envelope. */
   knobs: [ParamId, ParamId, ParamId, ParamId, ParamId, ParamId, ParamId, ParamId];
   values: Partial<ParamValues>;
+  /** A sound that isn't in the list (until saved): a rolled Dice patch, or the one a recipe builds. */
+  from?: "dice" | "recipe";
 }
 
 /** Faders 1-4 are the same for every preset, so the envelope is always under your fingers. */

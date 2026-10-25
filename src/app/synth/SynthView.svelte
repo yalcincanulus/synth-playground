@@ -4,6 +4,8 @@
   import Block from "./Block.svelte";
   import { BLOCKS, DEST_BLOCK, KNOB_PAGES, paramLabel, SOURCE_BLOCK, TAP_NAMES } from "./blocks";
   import MatrixPanel from "./MatrixPanel.svelte";
+  import RecipeList from "../recipes/RecipeList.svelte";
+  import RecipePanel from "../recipes/RecipePanel.svelte";
   import Cables, { type Cable } from "./Cables.svelte";
   import LiveCanvas from "./LiveCanvas.svelte";
   import * as viz from "./viz";
@@ -114,6 +116,7 @@
 </script>
 
 <section class="synth">
+  {#if pg.recipeList}<RecipeList {pg} />{/if}
   <div class="bar">
     <div class="legend">
       <span><i style:background={accent}></i>sound</span>
@@ -136,6 +139,9 @@
     <label class="explain-toggle"><input type="checkbox" checked={pg.explain} onchange={(e) => pg.setExplain(e.currentTarget.checked)} /> Explanations</label>
   </div>
 
+  {#if pg.recipe}
+    <RecipePanel {pg} />
+  {:else}
   <aside class="detail">
     <div class="about">
       <h3>{focusDef.title}</h3>
@@ -154,6 +160,7 @@
       </ol>
     </div>
   </aside>
+  {/if}
 
   <MatrixPanel {pg} colors={COLORS} />
 

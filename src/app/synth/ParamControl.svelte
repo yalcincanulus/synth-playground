@@ -20,11 +20,13 @@
   let options = $derived(id === "wtTable" ? pg.tables.map((t) => t.short) : def.options);
   /** Which hardware knob (1-8) controls this right now, if any. */
   let knob = $derived(pg.knobParams.indexOf(id) + 1);
+  /** A recipe step asks for this control. */
+  let target = $derived(pg.recipeParams.includes(id));
 </script>
 
 {#if options && options.length > 4 && !BUTTONS.has(id)}
   <!-- Long choice lists as a compact dropdown, so blocks stay short. -->
-  <label class="select" class:hot={pg.touched?.param === id}>
+  <label class="select" class:hot={pg.touched?.param === id} class:target>
     <span class="label">{#if knob}<span class="k" title="MiniLab knob {knob}">{knob}</span>{/if}{def.label}</span>
     <select value={Math.round(pg.values[id])} onchange={(e) => pg.setParam(id, +e.currentTarget.value)} onclick={(e) => e.stopPropagation()}>
       {#each options as option, i}<option value={i}>{SHORT[option] ?? option}</option>{/each}
@@ -32,7 +34,7 @@
   </label>
 {:else if options}
   <!-- Two-way switches fit in one cell, next to a knob; longer lists take the whole row. -->
-  <div class="enum" class:short={options.length <= 2} class:hot={pg.touched?.param === id}>
+  <div class="enum" class:short={options.length <= 2} class:hot={pg.touched?.param === id} class:target>
     <div class="label">{#if knob}<span class="k" title="MiniLab knob {knob}">{knob}</span>{/if}{def.label}</div>
     <div class="options">
       {#each options as option, i}
@@ -41,7 +43,7 @@
     </div>
   </div>
 {:else}
-  <div class="knob-wrap">
+  <div class="knob-wrap" class:target>
     {#if knob}<span class="k knob-k" title="MiniLab knob {knob}">{knob}</span>{/if}
     <Knob
       size={44}
@@ -66,6 +68,9 @@
   .options .active { background: var(--accent); color: #0b1314; border-color: var(--accent); }
   .hot .label { color: var(--accent); }
   .knob-wrap { position: relative; }
+  /* The control a recipe step asks for. */
+  .target { outline: 2px solid #ffcc33; outline-offset: 2px; border-radius: 6px; }
+  .target .label { color: #ffe08a; }
   .k {
     display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; margin-right: 4px;
     border-radius: 50%; background: var(--accent); color: #0b1314; font: 600 9px var(--mono); vertical-align: 1px;

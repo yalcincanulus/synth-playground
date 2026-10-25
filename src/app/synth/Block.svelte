@@ -26,7 +26,7 @@
 <!-- Clicking anywhere on a block points the MiniLab knobs at its page. -->
 <!-- Keyboard users reach the block's own controls; the click is a shortcut for focusing the knobs. -->
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-<section role="group" aria-label={def.title} class="block" class:listening class:focused class:on-page={onPage} class:inactive={!!inactive} class:pickable class:patching={pg.patch !== null} data-block={id} onclick={() => pg.blockClick(id)}>
+<section role="group" aria-label={def.title} class="block" class:listening class:focused class:on-page={onPage} class:inactive={!!inactive} class:pickable class:patching={pg.patch !== null} class:target={pg.recipeBlock === id} data-block={id} onclick={() => pg.blockClick(id)}>
   <header>
     <h3>{def.title}</h3>
     {#if inactive}<span class="note">{inactive}</span>{/if}
@@ -70,6 +70,9 @@
   .listen.on { opacity: 1; background: #ffcc33; border-color: #ffcc33; }
   .block.patching:not(.pickable) > * { opacity: 0.4; }
   .block.pickable { border-color: #ffcc33; box-shadow: 0 0 0 1px #ffcc33, 0 0 16px #ffcc3344; cursor: crosshair; }
+  /* The block a recipe step asks you to use. */
+  .block.target { border-color: #ffcc33; animation: target 1.6s ease-in-out infinite; }
+  @keyframes target { 0%, 100% { box-shadow: 0 0 0 1px #ffcc33, 0 0 6px #ffcc3333; } 50% { box-shadow: 0 0 0 2px #ffcc33, 0 0 22px #ffcc3388; } }
   .block.listening { border-color: #ffcc33; box-shadow: 0 0 0 1px #ffcc33, 0 0 22px #ffcc3355; }
   h3 { margin: 0; font-size: 13px; font-weight: 600; }
   .note { font-size: 10px; color: var(--dim); }
