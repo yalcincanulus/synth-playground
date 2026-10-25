@@ -1,20 +1,15 @@
 // Small formulas shared by the voice engine (voiceBank.ts), the engine (engine.ts) and the Synth view.
 
-import { FILTER_TYPES, PARAMS, toControl, type ModDest, type ParamValues } from "../params";
+import { PARAMS, toControl, type ModDest, type ParamValues } from "../params";
 import { LADDER_MAX_K } from "./ladder";
 
 export const midiToHz = (note: number) => 440 * Math.pow(2, (note - 69) / 12);
 
-/** Biquad lowpass/highpass Q is in dB; bandpass Q is a plain quality factor. */
-export function filterQ(type: number, resonance: number) {
-  return FILTER_TYPES[type] === "bandpass" ? resonance : Math.min(24, 20 * Math.log10(resonance));
-}
+/** The clean filter's resonance in dB (Q = Resonance), capped at 24 dB like the old Web Audio low-pass. */
+export const filterQ = (resonance: number) => Math.min(24, 20 * Math.log10(resonance));
 
-/** The filter's 1/Q for the state-variable filter, matching the Web Audio biquad's Q (the old engine's filter). */
-export function filterK(type: number, resonance: number) {
-  const q = filterQ(type, resonance);
-  return FILTER_TYPES[type] === "bandpass" ? 1 / Math.max(q, 0.0001) : Math.pow(10, -q / 20);
-}
+/** The clean filter's 1/Q for a resonance in dB. */
+export const filterK = (qDb: number) => Math.pow(10, -qDb / 20);
 
 /**
  * The ladder filter's feedback for a Resonance setting: the knob's travel maps evenly onto 0..LADDER_MAX_K,
@@ -27,6 +22,11 @@ export const LADDER_K_PER_DB = (LADDER_MAX_K * Math.LN10) / (20 * Math.log(PARAM
 
 export function filterBase(p: ParamValues, note: number) {
   return Math.min(20000, p.cutoff * Math.pow(2, ((note - 60) / 12) * p.keyTrack));
+}
+
+/** Filter 2's cutoff for a note: its own Cutoff, with the same Key Track as Filter 1. */
+export function filter2Base(p: ParamValues, note: number) {
+  return Math.min(20000, p.filter2Cutoff * Math.pow(2, ((note - 60) / 12) * p.keyTrack));
 }
 
 /** Unison copies are spread this many cents either side (at least), so they never sound like one. */
@@ -49,7 +49,7 @@ export const MOD_RANGE: Record<ModDest, number> = {
   pitch: 2400, // cents: ±2 octaves
   "osc 2 pitch": 2400,
   cutoff: 4800, // cents: ±4 octaves
-  resonance: 12, // dB (a plain Q for the band-pass)
+  resonance: 12, // dB
   volume: 1,
   "wt pos": 1,
   width: 0.45,
@@ -58,4 +58,6 @@ export const MOD_RANGE: Record<ModDest, number> = {
   sub: 0.8,
   noise: 1,
   pan: 1, // -1 hard left .. +1 hard right
+  morph: 1, // the whole way from low-pass to high-pass
+  "cutoff 2": 4800,
 };

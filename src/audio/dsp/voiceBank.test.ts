@@ -114,9 +114,9 @@ describe("VoiceBank", () => {
     expect(peak(x)).toBeLessThan(2 * 16);
   });
 
-  test("the ladder filter stays finite at the extremes, in every type and with a resonance route", () => {
-    for (const filterType of [0, 1, 2]) {
-      const b = bank({ filterModel: 1, filterType, drive: 1, resonance: 20, cutoff: 30, filterEnvAmt: 6, noiseLevel: 1, unison: 3, ...route(1, "lfo 1", "resonance", 1) });
+  test("the ladder filter stays finite at the extremes, at any morph and with a resonance route", () => {
+    for (const filterMorph of [0, 0.3, 0.5, 1]) {
+      const b = bank({ filterModel: 1, filterMorph, drive: 1, resonance: 20, cutoff: 30, filterEnvAmt: 6, noiseLevel: 1, unison: 3, ...route(1, "lfo 1", "resonance", 1) });
       const x = render(b, [{ ...on(1, 0), unison: 3, phases: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6] }, on(2, 0.05, 96)], 0.5);
       expect(x.every(Number.isFinite)).toBe(true);
       expect(peak(x)).toBeGreaterThan(0.01);
@@ -260,6 +260,71 @@ describe("VoiceBank taps", () => {
     // No drive: the drive stage passes the mix through.
     expect(tap.drive).toEqual(tap.mix);
     expect(peak(x)).toBeGreaterThan(0.05);
+  });
+});
+
+describe("VoiceBank filter morph and Filter 2", () => {
+  const SAW: Partial<ParamValues> = { osc1Wave: 2, oscMix: 0, filterEnvAmt: 0, keyTrack: 0, sustain: 1, velocity: 0, cutoff: 18000 };
+  /** The level of a band of frequencies, with a Hann window (see "the ladder cuts harder"). */
+  const band = (x: Float32Array, lo: number, hi: number) => {
+    const re = Float64Array.from(x.subarray(frame(0.1), frame(0.1) + 8192), (v, i) => v * (0.5 - 0.5 * Math.cos((2 * Math.PI * i) / 8192)));
+    const im = new Float64Array(8192);
+    fft(re, im);
+    let e = 0;
+    for (let i = 1; i < 4096; i++) if ((i * SR) / 8192 >= lo && (i * SR) / 8192 < hi) e += re[i] * re[i] + im[i] * im[i];
+    return e;
+  };
+
+  test("with Filter 2 off, its settings change nothing", () => {
+    const a = render(bank(SAW), [on(1, 0, 45)], 0.2);
+    const b = render(bank({ ...SAW, filter2Cutoff: 50, filter2Resonance: 20, filter2Morph: 0 }), [on(1, 0, 45)], 0.2);
+    expect(b).toEqual(a);
+  });
+
+  test("series: a high-pass after the low-pass removes the lows", () => {
+    const p = { ...SAW, cutoff: 3000, filter2Mode: 1, filter2Morph: 1, filter2Cutoff: 1500 };
+    const one = render(bank(SAW), [on(1, 0, 45)], 0.3);
+    const both = render(bank(p), [on(1, 0, 45)], 0.3);
+    expect(band(both, 0, 400)).toBeLessThan(band(one, 0, 400) / 100);
+    expect(band(both, 8000, 20000)).toBeLessThan(band(one, 8000, 20000) / 10);
+  });
+
+  test("parallel: both filters' bands are in the sound, and each stage has its own tap", () => {
+    const p = { ...SAW, cutoff: 300, filter2Mode: 2, filter2Morph: 1, filter2Cutoff: 4000 };
+    const n = Math.ceil((0.3 * SR) / BLOCK) * BLOCK;
+    const taps = TAPS.map(() => new Float32Array(n));
+    const x = render(bank(p), [on(1, 0, 45)], 0.3, taps);
+    const tap = Object.fromEntries(TAPS.map((name, i) => [name, taps[i]]));
+    const lowOnly = render(bank({ ...SAW, cutoff: 300 }), [on(1, 0, 45)], 0.3);
+    expect(band(x, 0, 250)).toBeGreaterThan(band(lowOnly, 0, 250) * 0.5);
+    expect(band(x, 6000, 20000)).toBeGreaterThan(band(lowOnly, 6000, 20000) * 100);
+    // The Filter tap is Filter 1 on its own (lows); the Filter 2 tap is Filter 2 on its own (highs).
+    expect(band(tap.filter, 6000, 20000)).toBeLessThan(band(tap.filter2, 6000, 20000) / 100);
+    expect(band(tap.filter2, 0, 250)).toBeLessThan(band(tap.filter, 0, 250) / 100);
+  });
+
+  test("an LFO on morph sweeps smoothly, in both models", () => {
+    for (const filterModel of [0, 1]) {
+      const base = { ...SAW, cutoff: 1500, resonance: 4, filterModel };
+      const maxStep = (x: Float32Array) => {
+        let m = 0;
+        for (let i = frame(0.05) + 1; i < x.length; i++) m = Math.max(m, Math.abs(x[i] - x[i - 1]));
+        return m;
+      };
+      const x = render(bank({ ...base, ...route(1, "lfo 1", "morph", 1), lfoRate: 6, filterMorph: 0.5 }), [on(1, 0, 45)], 0.6);
+      expect(x.every(Number.isFinite)).toBe(true);
+      expect(findCuts(x, SR)).toEqual([]);
+      // The saw's own reset is a jump the high-pass lets through; the sweep adds no bigger ones.
+      const still = Math.max(...[0, 0.25, 0.5, 0.75, 1].map((filterMorph) => maxStep(render(bank({ ...base, filterMorph }), [on(1, 0, 45)], 0.6))));
+      expect(maxStep(x)).toBeLessThan(still * 1.1);
+    }
+  });
+
+  test("cutoff 2 and morph routes stay finite at the extremes", () => {
+    const p = { ...SAW, filter2Mode: 1, filter2Resonance: 20, ...route(1, "random", "cutoff 2", 1), ...route(2, "lfo 1", "morph", -1), ...route(3, "mod env", "resonance", 1) };
+    const x = render(bank(p), [{ ...on(1, 0), random: -1 }, { ...on(2, 0.05, 96), random: 1 }], 0.4);
+    expect(x.every(Number.isFinite)).toBe(true);
+    expect(peak(x)).toBeGreaterThan(0.01);
   });
 });
 

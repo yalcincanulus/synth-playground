@@ -5,7 +5,8 @@
 // Signal path per voice:
 //   oscillators + sub + noise -> mixer -> drive -> filter -> amp envelope -> volume route -> pan
 // The filter is the clean state-variable filter or the ladder (Filter Model). With the ladder, Drive
-// pushes the filter's own saturator instead of the drive stage.
+// pushes the filter's own saturator instead of the drive stage. Filter 2 (clean) is optional, after
+// the filter (series) or beside it on the same input (parallel).
 // then all voices together -> LFO tremolo -> out (stereo).
 //
 // Stereo: a voice's unison copies spread left and right by Stereo Width, and the pan route moves the
@@ -21,7 +22,7 @@
 // The main thread (engine.ts, voice.ts) sends messages. Note events carry a time and happen on their
 // exact sample; settings and controls apply from the next block.
 
-import { FILTER_MODELS, FILTER_TYPES, LFO_WAVES, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, slotIds, type ParamValues } from "../params";
+import { FILTER2_MODES, FILTER_MODELS, LFO_WAVES, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, slotIds, type ParamValues } from "../params";
 import { DRIVE_MIN, driveShape, Oversampled2x } from "./drive";
 import { Ladder, LADDER_MAX_K, ladderGain, ladderOutGain } from "./ladder";
 import { LFO_AMP, LFO_AMP_TARGET, LFO_SCALE, LfoCore, lfoDepths } from "./lfo";
@@ -29,7 +30,7 @@ import { Oscillator, type OscParams, type SideOutputs, type Table } from "./osci
 import { coefFor, Ramp } from "./ramp";
 import { Svf, svfG } from "./svf";
 import { voiceWeight } from "../voiceLimit";
-import { filterBase, filterK, filterQ, keySource, LADDER_K_PER_DB, ladderK, midiToHz, MOD_RANGE, unisonSpread, velocityFilterScale, velocityPeak } from "./voiceMath";
+import { filter2Base, filterBase, filterK, filterQ, keySource, LADDER_K_PER_DB, ladderK, midiToHz, MOD_RANGE, unisonSpread, velocityFilterScale, velocityPeak } from "./voiceMath";
 
 export type BankMessage =
   | { type: "params"; values: ParamValues }
@@ -51,9 +52,9 @@ export type BankMessage =
 type TimedMessage = Extract<BankMessage, { t: number }>;
 
 /** The per-stage outputs, in output order after the main one. Raw sources are before their mixer level. */
-export const TAPS = ["osc1", "osc2", "sub", "noise", "mix", "drive", "filter"] as const;
+export const TAPS = ["osc1", "osc2", "sub", "noise", "mix", "drive", "filter", "filter2"] as const;
 export type TapName = (typeof TAPS)[number];
-const T_OSC1 = 0, T_OSC2 = 1, T_SUB = 2, T_NOISE = 3, T_MIX = 4, T_DRIVE = 5, T_FILTER = 6;
+const T_OSC1 = 0, T_OSC2 = 1, T_SUB = 2, T_NOISE = 3, T_MIX = 4, T_DRIVE = 5, T_FILTER = 6, T_FILTER2 = 7;
 
 /** What the LFOs are doing, for the Synth view's drawings. */
 export interface LfoState {
@@ -71,16 +72,16 @@ const CONTROL_SMOOTH_S = 0.005;
 const LFO_SMOOTH_S = 0.02;
 const KILL_TC_S = 0.005;
 const KILL_STOP_S = 0.05;
-/** Resonance modulated by a route stays within these (dB for low/high-pass, a plain Q for band-pass). */
+/** Resonance modulated by a route stays below this (dB). */
 const MAX_Q_DB = 40;
-const MIN_BANDPASS_Q = 0.05;
 
 // Smoothed per-voice values, by index.
-// K and Q are the clean filter's resonance, LK the ladder's feedback.
+// K (1/Q) and Q (dB) are the clean filter's resonance, LK the ladder's feedback; K2 and MORPH2 are Filter 2's.
 const G1 = 0, G2 = 1, SUB = 2, NOISE = 3, OSC2 = 4, SPREAD = 5, WIDTH = 6, FM = 7, POS = 8, K = 9, Q = 10, FENV = 11, PENV = 12, STEREO = 13, LK = 14;
-const SMOOTHED = 15;
+const MORPH = 15, K2 = 16, MORPH2 = 17;
+const SMOOTHED = 18;
 const PASS1 = [OSC2, SPREAD, WIDTH, FM, POS, PENV];
-const PASS2 = [G1, G2, SUB, NOISE, K, Q, FENV, STEREO, LK];
+const PASS2 = [G1, G2, SUB, NOISE, K, Q, FENV, STEREO, LK, MORPH, K2, MORPH2];
 
 // Mod matrix sources and destinations, by their index in MOD_SOURCES / MOD_DESTS.
 const S = (name: (typeof MOD_SOURCES)[number]) => MOD_SOURCES.indexOf(name);
@@ -89,10 +90,12 @@ const S_MENV = S("mod env"), S_VEL = S("velocity"), S_KEY = S("key"), S_STRIP = 
 const D = (name: (typeof MOD_DESTS)[number]) => MOD_DESTS.indexOf(name);
 const D_PITCH = D("pitch"), D_OSC2 = D("osc 2 pitch"), D_CUTOFF = D("cutoff"), D_RES = D("resonance"), D_VOLUME = D("volume");
 const D_POS = D("wt pos"), D_WIDTH = D("width"), D_FM = D("fm"), D_MIX = D("osc mix"), D_SUB = D("sub"), D_NOISE = D("noise"), D_PAN = D("pan");
+const D_MORPH = D("morph"), D_CUTOFF2 = D("cutoff 2");
 
 const CENTS_TO_LN = Math.LN2 / 1200;
-const BANDPASS = FILTER_TYPES.indexOf("bandpass");
 const LADDER = FILTER_MODELS.indexOf("ladder");
+const SERIES = FILTER2_MODES.indexOf("series");
+const PARALLEL = FILTER2_MODES.indexOf("parallel");
 const RANDOM_WAVE = LFO_WAVES.indexOf("random");
 
 /** One active mod matrix route. `amount` is in the destination's units (see MOD_RANGE). */
@@ -125,6 +128,7 @@ class Voice {
   readonly freq: Ramp;
   readonly key: Ramp;
   readonly cutoff: Ramp;
+  readonly cutoff2: Ramp;
   readonly svf = new Svf();
   readonly ladder = new Ladder();
   readonly driver = new Oversampled2x();
@@ -132,6 +136,8 @@ class Voice {
   readonly stereo: boolean;
   private svfR = new Svf();
   private ladderR = new Ladder();
+  private svf2 = new Svf();
+  private svf2R = new Svf();
   private driverR = new Oversampled2x();
   private side: SideOutputs | null;
   readonly smooth: Float64Array;
@@ -171,6 +177,7 @@ class Voice {
     this.freq = new Ramp(midiToHz(msg.note));
     this.key = new Ramp(keySource(msg.note));
     this.cutoff = new Ramp(filterBase(bank.values, msg.note));
+    this.cutoff2 = new Ramp(filter2Base(bank.values, msg.note));
     this.note = msg.note;
     this.velocity = msg.velocity;
     this.random = msg.random;
@@ -246,11 +253,14 @@ class Voice {
     // Pass 2: mixer, drive, filter, amp.
     const g = this.gainScale;
     const drive = v.drive;
-    const mode = v.filterType;
     const sr = bank.sampleRate;
     const velScale = velocityFilterScale(v, this.velocity);
     const filterLfo = bank.globals.filter;
     const mMix = mod(D_MIX), mSub = mod(D_SUB), mNoise = mod(D_NOISE), mCutoff = mod(D_CUTOFF), mRes = mod(D_RES), mVol = mod(D_VOLUME), mPan = mod(D_PAN);
+    const mMorph = mod(D_MORPH), mCutoff2 = mod(D_CUTOFF2);
+    const f2 = v.filter2Mode;
+    const series = f2 === SERIES;
+    const parallel = f2 === PARALLEL;
     const driveOn = drive >= DRIVE_MIN;
     const ladder = v.filterModel === LADDER;
     // The ladder takes the drive into its own saturator, so the drive stage only runs before the clean filter.
@@ -269,20 +279,26 @@ class Voice {
       const x = 0.5 * (this.o1[i] * g1 + this.o2[i] * g2 + sub + nz);
       const cents = this.fenvB[i] * s[FENV] * velScale + filterLfo[i] + (mCutoff ? mCutoff[i] : 0);
       const fg = svfG(this.cutoff.tick() * Math.exp(cents * CENTS_TO_LN), sr);
-      let left: number, right: number, driven: number;
+      const morph = s[MORPH] + (mMorph ? mMorph[i] : 0);
+      const cutoff2 = this.cutoff2.tick();
+      // The signal into the filter(s), per side; Filter 2 in parallel takes the same.
+      let inL: number, inR: number;      let left: number, right: number, driven: number;
       if (ladder) {
         const k = mRes ? Math.max(0, Math.min(LADDER_MAX_K, s[LK] + mRes[i] * LADDER_K_PER_DB)) : s[LK];
         if (side) {
           const d = 0.5 * (side.osc1[i] * g1 + side.osc2[i] * g2) * s[STEREO];
-          left = this.ladder.process(x - d, fg, k, mode, inGain) * outGain;
-          right = this.ladderR.process(x + d, fg, k, mode, inGain) * outGain;
+          inL = x - d;
+          inR = x + d;
+          left = this.ladder.process(inL, fg, k, morph, inGain) * outGain;
+          right = this.ladderR.process(inR, fg, k, morph, inGain) * outGain;
         } else {
-          left = right = this.ladder.process(x, fg, k, mode, inGain) * outGain;
+          inL = inR = x;
+          left = right = this.ladder.process(x, fg, k, morph, inGain) * outGain;
         }
         // The drive happens inside the filter; the Drive tap shows its curve on the mixer's signal.
         driven = taps && driveOn ? driveShape(x, drive) : x;
       } else {
-        const k = mRes ? resonanceK(mode, s[Q] + mRes[i]) : s[K];
+        const k = mRes ? resonanceK(s[Q] + mRes[i]) : s[K];
         if (side) {
           // The copies' spread: half the mixer's sum of the side signals, times the width.
           const d = 0.5 * (side.osc1[i] * g1 + side.osc2[i] * g2) * s[STEREO];
@@ -293,11 +309,31 @@ class Voice {
             xr = this.driverR.process(xr, drive);
           }
           driven = 0.5 * (xl + xr);
-          left = this.svf.process(xl, fg, k, mode);
-          right = this.svfR.process(xr, fg, k, mode);
+          inL = xl;
+          inR = xr;
+          left = this.svf.process(xl, fg, k, morph);
+          right = this.svfR.process(xr, fg, k, morph);
         } else {
           driven = shapeOn ? this.driver.process(x, drive) : x;
-          left = right = this.svf.process(driven, fg, k, mode);
+          inL = inR = driven;
+          left = right = this.svf.process(driven, fg, k, morph);
+        }
+      }
+      const filtered1 = 0.5 * (left + right);
+      let filtered2 = 0;
+      if (series || parallel) {
+        const fg2 = svfG(mCutoff2 ? cutoff2 * Math.exp(mCutoff2[i] * CENTS_TO_LN) : cutoff2, sr);
+        const a = series ? left : inL;
+        const b = series ? right : inR;
+        const yl = this.svf2.process(a, fg2, s[K2], s[MORPH2]);
+        const yr = side ? this.svf2R.process(b, fg2, s[K2], s[MORPH2]) : yl;
+        filtered2 = 0.5 * (yl + yr);
+        if (series) {
+          left = yl;
+          right = yr;
+        } else {
+          left += yl;
+          right += yr;
         }
       }
       const level = this.ampB[i] * (mVol ? 1 + mVol[i] : 1);
@@ -312,7 +348,8 @@ class Voice {
         taps[T_NOISE][i] += noise;
         taps[T_MIX][i] += x;
         taps[T_DRIVE][i] += driven;
-        taps[T_FILTER][i] += 0.5 * (left + right);
+        taps[T_FILTER][i] += filtered1;
+        taps[T_FILTER2][i] += filtered2;
       }
     }
   }
@@ -364,10 +401,8 @@ class Voice {
   }
 }
 
-/** The filter's 1/Q for a resonance moved by a route (in filterQ's units). */
-function resonanceK(mode: number, q: number) {
-  return mode === BANDPASS ? 1 / Math.max(q, MIN_BANDPASS_Q) : Math.pow(10, -Math.min(q, MAX_Q_DB) / 20);
-}
+/** The clean filter's 1/Q for a resonance in dB moved by a route. */
+const resonanceK = (q: number) => filterK(Math.min(q, MAX_Q_DB));
 
 /** What is shared by all voices: the LFOs, pitch bend and the mod strip, per sample. */
 class Globals {
@@ -555,8 +590,11 @@ export class VoiceBank {
     t[WIDTH] = p.pulseWidth;
     t[FM] = p.fmAmount;
     t[POS] = p.wtPos;
-    t[K] = filterK(p.filterType, p.resonance);
-    t[Q] = filterQ(p.filterType, p.resonance);
+    t[Q] = filterQ(p.resonance);
+    t[K] = filterK(t[Q]);
+    t[MORPH] = p.filterMorph;
+    t[K2] = filterK(filterQ(p.filter2Resonance));
+    t[MORPH2] = p.filter2Morph;
     t[FENV] = p.filterEnvAmt * 1200;
     t[PENV] = p.pitchEnvAmt * 100;
     t[STEREO] = p.stereoWidth;
@@ -566,7 +604,10 @@ export class VoiceBank {
     for (const r of this.routes) this.routeBySlot[r.slot] = r;
     this.globals.aim(this.values);
     // Any change re-aims each voice's cutoff (key tracking follows its note).
-    for (const v of this.voices) v.cutoff.approach(filterBase(p, v.note), SMOOTH_S * this.sampleRate);
+    for (const v of this.voices) {
+      v.cutoff.approach(filterBase(p, v.note), SMOOTH_S * this.sampleRate);
+      v.cutoff2.approach(filter2Base(p, v.note), SMOOTH_S * this.sampleRate);
+    }
   }
 
   private apply(msg: TimedMessage, frame: number) {
@@ -586,6 +627,7 @@ export class VoiceBank {
         v.note = msg.note;
         v.freq.approach(midiToHz(msg.note), tc);
         v.cutoff.approach(filterBase(p, msg.note), tc);
+        v.cutoff2.approach(filter2Base(p, msg.note), tc);
         v.key.approach(keySource(msg.note), tc);
         return;
       }
@@ -593,6 +635,7 @@ export class VoiceBank {
         v.velocity = msg.velocity;
         v.random = msg.random;
         v.cutoff.approach(filterBase(p, v.note), SMOOTH_S * sr);
+        v.cutoff2.approach(filter2Base(p, v.note), SMOOTH_S * sr);
         this.startEnvelopes(v, true);
         return;
       case "release":

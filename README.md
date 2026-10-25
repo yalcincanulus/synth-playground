@@ -54,13 +54,19 @@ left and right levels and a stereo picture: a vertical line is mono, a wide clou
 sings on its own at the cutoff). With the ladder, Drive overdrives the filter from inside instead of the drive
 stage before it. The filter drawings follow the model. Factory presets use Clean; try Acid Line on Ladder.
 
+**Filter morph and Filter 2:** **Morph** blends the filter smoothly from low-pass (left) through band-pass
+(middle) to high-pass (right); it is also a mod matrix destination, so an LFO can sweep it. **Filter 2** is a
+second, clean filter with its own Cutoff, Resonance and Morph, placed after Filter 1 (**series**) or beside it
+on the same input (**parallel**, the two are added). It follows Key Track; the mod matrix moves it with *cutoff 2*.
+
 The **Mod Matrix** strip adds up to 8 extra routes: any source (LFOs, the four envelopes including a spare
 Mod Envelope, velocity, key, the mod strip, a random value per note) to any destination (pitch, cutoff,
-resonance, volume, wavetable position, pulse width, FM, osc mix, sub, noise, pan), each with an amount. Press
+resonance, volume, wavetable position, pulse width, FM, osc mix, sub, noise, pan, filter morph, Filter 2's
+cutoff), each with an amount. Press
 **Patch**, click a source block, then a destination block; each route is drawn as a cable in its source's colour.
 
 In this view the MiniLab knobs follow the selected block: click a block, or turn the encoder to step
-through the knob pages (Sources, Filter, Osc Tricks, Envelopes, LFO 1, LFO 2, Playing, Mod Env, Matrix, Effects; on the Matrix page
+through the knob pages (Sources, Filter, Filter 2, Osc Tricks, Envelopes, LFO 1, LFO 2, Playing, Mod Env, Matrix, Effects; on the Matrix page
 knobs 1–8 are the amounts of routes 1–8, and the screen names the route, e.g. `MEnv>WTPos`). Shift + encoder
 switches between the playground's waveform, spectrum and the Synth view.
 

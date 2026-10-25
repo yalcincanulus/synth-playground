@@ -3,7 +3,7 @@
 
 import { envelopeAt, type Adsr, type EnvPoint } from "../../audio/envelope";
 import { Engine, LFO_FILTER_CENTS } from "../../audio/engine";
-import { filterMagnitude } from "../../audio/filterResponse";
+import { filter2Magnitude, filterMagnitude } from "../../audio/filterResponse";
 import { naive, shapeAt as oscShapeAt } from "../../audio/oscCore";
 import { frameAt, tableFrames } from "../../audio/wavetables";
 import { DELAY_DIV_BEATS, DELAY_DIVS, LFO_SYNCS, MOD_SLOTS, MOD_SOURCES, slotIds, toControl, type ModSource, type ParamId, type ParamValues } from "../../audio/params";
@@ -16,7 +16,7 @@ function routed(p: ParamValues, source: ModSource) {
   }
   return false;
 }
-import { filterBase } from "../../audio/dsp/voiceMath";
+import { filter2Base, filterBase } from "../../audio/dsp/voiceMath";
 import { freqX, FREQ_GRID, grid, xFreq, type Surface } from "../components/canvas";
 
 type Draw = (s: Surface) => void;
@@ -251,6 +251,52 @@ export function filter(engine: Engine, color: () => string): Draw {
     const hz = live >= 1000 ? `${(live / 1000).toFixed(1)}k` : `${Math.round(live)}`;
     label(g, `now ${hz} Hz`, Math.min(x + 4, w - 70), 12, TEXT);
     label(g, "- - knob", 4, h - 4, "#ffffff60");
+  };
+}
+
+/** Filter 2's response at its cutoff for the latest note, with Filter 1's (live) dimmed behind it. */
+export function filter2(engine: Engine, color: () => string): Draw {
+  return ({ g, w, h }) => {
+    const p = engine.params;
+    const MIN_DB = -36;
+    const MAX_DB = 30;
+    for (let i = 0; i < POINTS; i++) freqs[i] = xFreq((i / (POINTS - 1)) * w, w);
+    const zeroY = h - ((0 - MIN_DB) / (MAX_DB - MIN_DB)) * h;
+    grid(g, w, h, FREQ_GRID.map((f) => freqX(f, w)), [zeroY]);
+    const path = () => {
+      g.beginPath();
+      for (let i = 0; i < POINTS; i++) {
+        const db = 20 * Math.log10(Math.max(mag[i], 1e-6));
+        const y = h - ((Math.max(MIN_DB, Math.min(MAX_DB, db)) - MIN_DB) / (MAX_DB - MIN_DB)) * h;
+        const x = (i / (POINTS - 1)) * w;
+        if (i === 0) g.moveTo(x, y);
+        else g.lineTo(x, y);
+      }
+    };
+
+    filterMagnitude(p, liveCutoff(engine), engine.ctx.sampleRate, freqs, mag);
+    path();
+    g.setLineDash([4, 4]);
+    g.strokeStyle = "#ffffff40";
+    g.lineWidth = 1;
+    g.stroke();
+    g.setLineDash([]);
+
+    const cutoff = filter2Base(p, latestVoice(engine)?.voice.note ?? 60);
+    filter2Magnitude(p, cutoff, engine.ctx.sampleRate, freqs, mag);
+    path();
+    g.strokeStyle = color();
+    g.lineWidth = 2;
+    g.stroke();
+    g.lineTo(w, h);
+    g.lineTo(0, h);
+    g.globalAlpha = 0.15;
+    g.fillStyle = color();
+    g.fill();
+    g.globalAlpha = 1;
+    const hz = cutoff >= 1000 ? `${(cutoff / 1000).toFixed(1)}k` : `${Math.round(cutoff)}`;
+    label(g, `${hz} Hz`, Math.min(freqX(cutoff, w) + 4, w - 50), 12, TEXT);
+    label(g, "- - filter 1", 4, h - 4, "#ffffff60");
   };
 }
 

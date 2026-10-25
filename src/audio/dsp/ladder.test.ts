@@ -30,7 +30,7 @@ describe("Ladder", () => {
   test("matches its drawn response for every type", () => {
     const db = (x: number) => 20 * Math.log10(Math.max(x, 1e-9));
     const at = [50, 200, 500, 1000, 2000, 4000, 8000, 15000].map((hz) => (Math.round((hz / SR) * N) * SR) / N);
-    for (const mode of [LOWPASS, HIGHPASS, BANDPASS]) {
+    for (const mode of [LOWPASS, 0.25, BANDPASS, 0.75, HIGHPASS]) {
       for (const cutoff of [100, 1000, 6000]) {
         for (const k of [0, 2, 3.5]) {
           const ours = measured(mode, cutoff, k, at);

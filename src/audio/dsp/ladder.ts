@@ -13,7 +13,7 @@
 // High-pass and band-pass mix the stages' outputs (as in the Oberheim Xpander): each stage is a
 // low-pass L, so (1 - L) is a high-pass, and the four stages' outputs give L^4 down to L^1.
 
-import { HIGHPASS, LOWPASS } from "./svf";
+import { morphWeights } from "./svf";
 
 /** Feedback at the Resonance knob's top end: just past self-oscillation (4). */
 export const LADDER_MAX_K = 4.2;
@@ -32,9 +32,10 @@ export class Ladder {
 
   /**
    * Filter one sample. `g` comes from svfG(cutoff) (the same pre-warped frequency); `k` is the
-   * feedback (0..LADDER_MAX_K); `gain` scales the input into the saturator (Drive).
+   * feedback (0..LADDER_MAX_K); `morph` 0..1 blends low-pass, band-pass and high-pass (as in svf.ts);
+   * `gain` scales the input into the saturator (Drive).
    */
-  process(x: number, g: number, k: number, mode: number, gain: number): number {
+  process(x: number, g: number, k: number, morph: number, gain: number): number {
     const G = g / (1 + g);
     const a = 1 - G;
     const G2 = G * G;
@@ -53,10 +54,14 @@ export class Ladder {
     v = (y3 - this.s4) * G;
     const y4 = v + this.s4;
     this.s4 = y4 + v;
-    if (mode === LOWPASS) return y4 * (1 + LOWPASS_MAKEUP * k);
-    if (mode === HIGHPASS) return u - 4 * y1 + 6 * y2 - 4 * y3 + y4;
+    const lp = y4 * (1 + LOWPASS_MAKEUP * k);
+    if (morph <= 0) return lp;
+    const hp = u - 4 * y1 + 6 * y2 - 4 * y3 + y4;
+    if (morph >= 1) return hp;
     // L^2 (1 - L)^2, times 4 so it peaks at 0 dB without resonance.
-    return 4 * (y2 - 2 * y3 + y4);
+    const bp = 4 * (y2 - 2 * y3 + y4);
+    if (morph === 0.5) return bp;
+    return morph < 0.5 ? lp + (bp - lp) * 2 * morph : bp + (hp - bp) * (2 * morph - 1);
   }
 
   reset() {
@@ -77,9 +82,10 @@ export const ladderOutGain = (drive: number) => 1 / Math.tanh(ladderGain(drive))
  * The linear response (small signals) at the frequencies `freqs`, for the filter drawings. Each TPT
  * stage is exactly the bilinear transform of an analog one-pole, so the response is too.
  */
-export function ladderMagnitude(mode: number, cutoff: number, k: number, sampleRate: number, freqs: Float32Array, out: Float32Array) {
+export function ladderMagnitude(morph: number, cutoff: number, k: number, sampleRate: number, freqs: Float32Array, out: Float32Array) {
   const fc = Math.min(Math.max(cutoff, 5), sampleRate * 0.49);
   const g = Math.tan((Math.PI * fc) / sampleRate);
+  const [wl, wb, wh] = morphWeights(morph);
   for (let i = 0; i < freqs.length; i++) {
     // One stage: L = 1 / (1 + j t / g), with t the pre-warped frequency.
     const t = Math.tan((Math.PI * Math.min(freqs[i], sampleRate * 0.4999)) / sampleRate) / g;
@@ -88,15 +94,12 @@ export function ladderMagnitude(mode: number, cutoff: number, k: number, sampleR
     const [hr, hi] = [1 - lr, -li];
     const [l2r, l2i] = mul(lr, li, lr, li);
     const [l4r, l4i] = mul(l2r, l2i, l2r, l2i);
-    let nr: number, ni: number;
-    if (mode === LOWPASS) [nr, ni] = [l4r * (1 + LOWPASS_MAKEUP * k), l4i * (1 + LOWPASS_MAKEUP * k)];
-    else if (mode === HIGHPASS) {
-      const [h2r, h2i] = mul(hr, hi, hr, hi);
-      [nr, ni] = mul(h2r, h2i, h2r, h2i);
-    } else {
-      const [h2r, h2i] = mul(hr, hi, hr, hi);
-      [nr, ni] = mul(4 * l2r, 4 * l2i, h2r, h2i);
-    }
+    const [h2r, h2i] = mul(hr, hi, hr, hi);
+    const [h4r, h4i] = mul(h2r, h2i, h2r, h2i);
+    const [br, bi] = mul(4 * l2r, 4 * l2i, h2r, h2i);
+    const m = 1 + LOWPASS_MAKEUP * k;
+    const nr = wl * l4r * m + wb * br + wh * h4r;
+    const ni = wl * l4i * m + wb * bi + wh * h4i;
     // Divided by the feedback loop, 1 + k L^4.
     const dr = 1 + k * l4r;
     const di = k * l4i;

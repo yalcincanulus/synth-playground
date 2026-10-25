@@ -61,7 +61,7 @@ export class Part {
     const ctx = host.ctx;
     this.lfos = [new Lfo(ctx, this.params.lfoRate), new Lfo(ctx, this.params.lfo2Rate)];
     const tap = () => new AnalyserNode(ctx, { fftSize: 2048, smoothingTimeConstant: 0.6 });
-    this.taps = { osc1: tap(), osc2: tap(), sub: tap(), noise: tap(), mix: tap(), drive: tap(), filter: tap(), amp: tap(), chorus: tap() };
+    this.taps = { osc1: tap(), osc2: tap(), sub: tap(), noise: tap(), mix: tap(), drive: tap(), filter: tap(), filter2: tap(), amp: tap(), chorus: tap() };
     fx.chorusOut.connect(this.taps.chorus);
   }
 

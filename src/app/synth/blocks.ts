@@ -2,7 +2,7 @@ import type { ListenTap } from "../../audio/engine";
 import { MOD_DESTS, MOD_SOURCES, slotIds, type ModDest, type ModSource, type ParamId, type ParamValues } from "../../audio/params";
 
 export type BlockId =
-  | "osc1" | "osc2" | "subNoise" | "mixer" | "drive" | "filter" | "amp"
+  | "osc1" | "osc2" | "subNoise" | "mixer" | "drive" | "filter" | "filter2" | "amp"
   | "chorus" | "delay" | "reverb" | "output"
   | "lfo" | "lfo2" | "filterEnv" | "ampEnv" | "pitchEnv" | "modEnv" | "perf" | "matrix";
 
@@ -57,9 +57,16 @@ export const BLOCKS: Record<BlockId, BlockDef> = {
   filter: {
     title: "Filter",
     short: "Removes frequencies. Cutoff sets where.",
-    explain: "Removes part of the frequency range. Lowpass keeps lows and cuts highs; Cutoff sets where; Resonance boosts the frequencies right at the cutoff. The model sets the filter's character. Clean is smooth and polite. Ladder is modelled on Moog's 'ladder' filter: it cuts twice as steeply, loses some bass as Resonance rises, and near the top of Resonance it sings a tone of its own at the cutoff (self-oscillation). Drive then overdrives the filter from inside.",
-    tryThis: "Load Acid Line, set Model to Ladder, and play a few notes while turning Cutoff and Resonance. Then turn Resonance all the way up and sweep Cutoff: the filter whistles by itself.",
-    params: ["filterModel", "filterType", "cutoff", "resonance", "keyTrack"],
+    explain: "Removes part of the frequency range. Cutoff sets where; Resonance boosts the frequencies right at the cutoff. Morph sets which part goes: at the left it is a low-pass (keeps the lows, cuts the highs), in the middle a band-pass (keeps only a band around the cutoff), at the right a high-pass (cuts the lows). In between it blends smoothly, so an LFO or envelope on Morph changes the sound's colour over time. The model sets the filter's character. Clean is smooth and polite. Ladder is modelled on Moog's 'ladder' filter: it cuts twice as steeply, loses some bass as Resonance rises, and near the top of Resonance it sings a tone of its own at the cutoff (self-oscillation). Drive then overdrives the filter from inside.",
+    tryThis: "Hold a chord and turn Morph slowly from left to right: the sound thins from full to nasal to airy. Then load Acid Line, set Model to Ladder, turn Resonance all the way up and sweep Cutoff: the filter whistles by itself.",
+    params: ["filterModel", "filterMorph", "cutoff", "resonance", "keyTrack"],
+  },
+  filter2: {
+    title: "Filter 2",
+    short: "A second filter, after the first or beside it.",
+    explain: "A second, clean filter with its own Cutoff, Resonance and Morph. Series puts it after Filter 1: both filters shape the sound, e.g. a low-pass then a high-pass keep only the band between them. Parallel feeds it the same signal as Filter 1 and adds the two: two band-passes at different cutoffs make two resonant peaks, like the formants of a voice. It follows Key Track, but not the filter envelope or the LFOs; move it with the mod matrix (Cutoff 2).",
+    tryThis: "Set Filter 2 to Series with Morph at high-pass and raise its Cutoff: the bass thins out while Filter 1 still shapes the top. Then try Parallel with both filters' Morph in the middle and the cutoffs far apart: a vowel-like sound.",
+    params: ["filter2Mode", "filter2Morph", "filter2Cutoff", "filter2Resonance"],
   },
   amp: {
     title: "Amp",
@@ -158,6 +165,7 @@ export const usesTable = (v: ParamValues) => v.osc1Wave === 4 || v.osc2Wave === 
 
 /** Controls only shown on a block while they do something, so blocks stay short. */
 export const SHOWN_WHEN: Partial<Record<BlockId, Partial<Record<ParamId, (v: ParamValues) => boolean>>>> = {
+  filter2: { filter2Morph: (v) => v.filter2Mode > 0, filter2Cutoff: (v) => v.filter2Mode > 0, filter2Resonance: (v) => v.filter2Mode > 0 },
   osc1: { pulseWidth: (v) => v.osc1Wave === 3 || v.osc2Wave === 3, wtTable: (v) => v.osc1Wave === 4, wtPos: (v) => v.osc1Wave === 4 },
   osc2: { wtTable: (v) => v.osc2Wave === 4 && v.osc1Wave !== 4, wtPos: (v) => v.osc2Wave === 4 && v.osc1Wave !== 4 },
   perf: { stereoWidth: (v) => v.unison > 1 },
@@ -182,8 +190,13 @@ export const KNOB_PAGES: KnobPage[] = [
   },
   {
     name: "Filter",
-    knobs: ["cutoff", "resonance", "filterType", "filterModel", "drive", "filterEnvAmt", "filterAttack", "filterDecay"],
+    knobs: ["cutoff", "resonance", "filterMorph", "filterModel", "drive", "filterEnvAmt", "filterAttack", "filterDecay"],
     blocks: ["drive", "filter"],
+  },
+  {
+    name: "Filter 2",
+    knobs: ["filter2Cutoff", "filter2Resonance", "filter2Morph", "filter2Mode", "cutoff", "resonance", "filterMorph", "keyTrack"],
+    blocks: ["filter2"],
   },
   {
     name: "Osc Tricks",
@@ -241,6 +254,7 @@ export const SOURCE_BLOCK: Record<Exclude<ModSource, "off">, BlockId> = {
 export const DEST_BLOCK: Record<ModDest, BlockId> = {
   pitch: "osc1", "osc 2 pitch": "osc2", cutoff: "filter", resonance: "filter", volume: "amp",
   "wt pos": "osc1", width: "osc1", fm: "osc2", "osc mix": "mixer", sub: "mixer", noise: "mixer", pan: "output",
+  morph: "filter", "cutoff 2": "filter2",
 };
 
 /** Patching: the source a block gives (its first one; change it in the route afterwards). */
@@ -258,7 +272,7 @@ export const MOD_SHORT: Record<string, string> = {
   off: "off", "lfo 1": "LFO1", "lfo 2": "LFO2", "filter env": "FEnv", "amp env": "AEnv", "pitch env": "PEnv", "mod env": "MEnv",
   velocity: "Vel", key: "Key", "mod strip": "Strip", random: "Rand",
   pitch: "Pitch", "osc 2 pitch": "O2Pit", cutoff: "Cut", resonance: "Res", volume: "Vol", "wt pos": "WTPos", width: "Width",
-  fm: "FM", "osc mix": "Mix", sub: "Sub", noise: "Noise", pan: "Pan",
+  fm: "FM", "osc mix": "Mix", sub: "Sub", noise: "Noise", pan: "Pan", morph: "Morph", "cutoff 2": "Cut2",
 };
 
 /** A param's label; route amounts are named by their route ("LFO1>WTPos"). */
@@ -278,6 +292,7 @@ export const BLOCK_TAPS: Partial<Record<BlockId, ListenTap>> = {
   mixer: "mix",
   drive: "drive",
   filter: "filter",
+  filter2: "filter2",
   amp: "amp",
   chorus: "chorus",
   delay: "delay",
@@ -287,5 +302,5 @@ export const BLOCK_TAPS: Partial<Record<BlockId, ListenTap>> = {
 /** Names for the OLED and the listening banner. */
 export const TAP_NAMES: Record<ListenTap, string> = {
   osc1: "Oscillator 1", osc2: "Oscillator 2", sub: "Sub", noise: "Noise", mix: "Mixer", drive: "Drive",
-  filter: "Filter", amp: "Amp", chorus: "Chorus", delay: "Delay (echoes)", reverb: "Reverb (tail)",
+  filter: "Filter", filter2: "Filter 2", amp: "Amp", chorus: "Chorus", delay: "Delay (echoes)", reverb: "Reverb (tail)",
 };

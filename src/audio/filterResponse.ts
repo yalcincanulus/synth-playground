@@ -1,20 +1,30 @@
-import { FILTER_MODELS, FILTER_TYPES, type ParamValues } from "./params";
+import { FILTER_MODELS, type ParamValues } from "./params";
 import { ladderMagnitude } from "./dsp/ladder";
-import { filterQ, ladderK } from "./dsp/voiceMath";
+import { svfMagnitude } from "./dsp/svf";
+import { filterK, filterQ, ladderK } from "./dsp/voiceMath";
 
-/** The magnitude response of the filter a sound uses (Filter Model, type and resonance) at `cutoff`. */
+/** Filter 1's magnitude response (its model, morph and resonance) with the cutoff at `cutoff`. */
 export function filterMagnitude(p: ParamValues, cutoff: number, sampleRate: number, freqs: Float32Array, out: Float32Array) {
-  if (FILTER_MODELS[p.filterModel] === "ladder") return ladderMagnitude(p.filterType, cutoff, ladderK(p.resonance), sampleRate, freqs, out);
-  return biquadMagnitude(p.filterType, cutoff, p.resonance, sampleRate, freqs, out);
+  if (FILTER_MODELS[p.filterModel] === "ladder") return ladderMagnitude(p.filterMorph, cutoff, ladderK(p.resonance), sampleRate, freqs, out);
+  return svfMagnitude(p.filterMorph, cutoff, filterK(filterQ(p.resonance)), sampleRate, freqs, out);
 }
 
+/** Filter 2's magnitude response (always the clean model). */
+export function filter2Magnitude(p: ParamValues, cutoff: number, sampleRate: number, freqs: Float32Array, out: Float32Array) {
+  return svfMagnitude(p.filter2Morph, cutoff, filterK(filterQ(p.filter2Resonance)), sampleRate, freqs, out);
+}
+
+const BIQUAD_TYPES = ["lowpass", "highpass", "bandpass"] as const;
+
 /**
+ * The reference the clean filter is tested against (svf.test.ts): the old engine's filter.
  * Magnitude response of a Web Audio BiquadFilterNode, computed with the same
  * Audio EQ Cookbook formulas the spec uses. Computed directly because a
  * disconnected BiquadFilterNode doesn't reliably apply parameter changes
  * before getFrequencyResponse().
  */
 export function biquadMagnitude(
+  /** 0 lowpass, 1 highpass, 2 bandpass. */
   type: number,
   cutoff: number,
   resonance: number,
@@ -22,11 +32,11 @@ export function biquadMagnitude(
   freqs: Float32Array,
   out: Float32Array,
 ) {
-  const q = filterQ(type, resonance);
+  const kind = BIQUAD_TYPES[type];
+  const q = kind === "bandpass" ? resonance : filterQ(resonance);
   const w0 = (2 * Math.PI * Math.min(cutoff, sampleRate / 2 - 1)) / sampleRate;
   const cos = Math.cos(w0);
   const sin = Math.sin(w0);
-  const kind = FILTER_TYPES[type];
   // lowpass/highpass take Q in dB; bandpass takes it as a plain factor.
   const alpha = kind === "bandpass" ? sin / (2 * Math.max(q, 0.0001)) : sin / (2 * Math.pow(10, q / 20));
 

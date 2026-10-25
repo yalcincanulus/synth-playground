@@ -168,6 +168,14 @@ What the browser still limits, whatever we do:
 - Low-pass, band-pass and high-pass become one smooth **morph** knob, also a mod matrix destination.
 - An optional **Filter 2**, in series or parallel, with its own cutoff and resonance.
 - **Done when:** sweeping the morph knob with an LFO is smooth, and the Synth view shows both filters.
+- Status: done 2026-10-25 (checked on the MiniLab).
+  - **Morph** (`filterMorph`, 0–1) replaces the filter type: 0 low-pass, 0.5 band-pass, 1 high-pass. In between, the two neighbouring outputs of the same filter are crossfaded (going straight from low-pass to high-pass would leave a notch). Both models morph; the ladder mixes its stages the same way. At 0, 0.5 and 1 the output is exactly the old type's, so all 38 factory presets render bit-identically (compared sample by sample against the previous commit's engine). Saved user presets are migrated on load (type → morph, and a "Filter" knob becomes Morph).
+  - **Resonance** now uses one rule for every morph position: Q = Resonance, capped at 24 dB as the low-pass was. The band-pass used to go up to Q 20; it now stops at about 16, and a resonance route on it now moves in dB like the others.
+  - **Filter 2** (off / series / parallel) is a clean filter with its own Cutoff (default 300 Hz), Resonance and Morph (default high-pass). It follows Key Track, not the filter envelope or the LFOs. Series: after Filter 1. Parallel: on Filter 1's input (after the drive stage), added to Filter 1's output. Stereo voices run it per side.
+  - **Mod matrix:** two new destinations, *morph* (100% = the whole range) and *cutoff 2* (±4 octaves), added at the end so saved routes keep their meaning.
+  - **Synth view:** a Filter 2 block under Filter, drawing its curve (with Filter 1's dimmed behind it) and its own signal; the cables follow the mode. Each filter block's "Listen here" plays that filter on its own. A Filter 2 knob page (Filter 2's four settings, then Filter 1's cutoff, resonance, morph and Key Track). Morph replaces the type on the Filter page. Dice morphs sometimes and turns Filter 2 on 20% of the time.
+  - **Tests:** the morph's drawn response matches the filter's measured one at in-between positions; a 1% morph step never moves the response by 2 dB or more; an LFO on morph adds no jumps beyond the saw's own (both models).
+  - **CPU:** heavy test (10 notes, unison 3, table + saw, drive) 0.69 ms per block in bun; with an LFO on morph and Filter 2 in parallel, 0.75 (26% → 28%).
 
 ### 10. Clean drive and FM
 

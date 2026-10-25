@@ -1,4 +1,4 @@
-import { defaultValues, type ParamId, type ParamValues } from "../audio/params";
+import { defaultValues, MORPH_OF_OLD_TYPE, type ParamId, type ParamValues } from "../audio/params";
 
 export type Rgb = [number, number, number]; // 0-127, the MiniLab's LED range
 
@@ -106,8 +106,8 @@ const ALL_PRESETS: Preset[] = [
     name: "Wind Sweep",
     category: "FX",
     color: [60, 127, 127],
-    knobs: ["cutoff", "resonance", "noiseLevel", "lfoRate", "lfoDepth", "filterType", "reverbMix", "reverbSize"],
-    values: { osc1Wave: 0, osc2Wave: 1, oscMix: 0.3, noiseLevel: 1, filterType: 2, cutoff: 900, resonance: 2, filterEnvAmt: 0, keyTrack: 1, lfoTarget: 1, lfoRate: 0.15, lfoDepth: 0.6, attack: 1.2, decay: 1, sustain: 1, release: 3, reverbMix: 0.6, reverbSize: 7, delayMix: 0.2, delayDiv: 5, volume: 1 },
+    knobs: ["cutoff", "resonance", "noiseLevel", "lfoRate", "lfoDepth", "filterMorph", "reverbMix", "reverbSize"],
+    values: { osc1Wave: 0, osc2Wave: 1, oscMix: 0.3, noiseLevel: 1, filterMorph: 0.5, cutoff: 900, resonance: 2, filterEnvAmt: 0, keyTrack: 1, lfoTarget: 1, lfoRate: 0.15, lfoDepth: 0.6, attack: 1.2, decay: 1, sustain: 1, release: 3, reverbMix: 0.6, reverbSize: 7, delayMix: 0.2, delayDiv: 5, volume: 1 },
   },
   {
     name: "Reese Bass",
@@ -190,7 +190,7 @@ const ALL_PRESETS: Preset[] = [
     name: "Ocean",
     category: "FX",
     color: [0, 60, 127],
-    knobs: ["cutoff", "resonance", "lfoRate", "lfoDepth", "noiseLevel", "filterType", "reverbMix", "reverbSize"],
+    knobs: ["cutoff", "resonance", "lfoRate", "lfoDepth", "noiseLevel", "filterMorph", "reverbMix", "reverbSize"],
     values: { osc1Wave: 0, oscMix: 0, noiseLevel: 1, cutoff: 700, resonance: 1.5, filterEnvAmt: 0, keyTrack: 0.5, lfoTarget: 1, lfoRate: 0.08, lfoDepth: 0.8, attack: 2, decay: 1, sustain: 1, release: 4, reverbMix: 0.5, reverbSize: 6, chorus: 0.4, velocity: 0, volume: 0.65 },
   },
   {
@@ -198,7 +198,7 @@ const ALL_PRESETS: Preset[] = [
     category: "FX",
     color: [0, 127, 90],
     knobs: ["cutoff", "resonance", "osc2Semi", "osc2Detune", "lfoRate", "lfoDepth", "drive", "reverbSize"],
-    values: { osc1Wave: 2, osc2Wave: 3, osc2Semi: -5, osc2Detune: 30, unison: 3, subLevel: 0.3, filterType: 2, cutoff: 600, resonance: 8, filterEnvAmt: 0, keyTrack: 0.6, lfoTarget: 1, lfoRate: 0.3, lfoDepth: 0.5, modTarget: 0, attack: 1.5, decay: 1, sustain: 1, release: 4, drive: 0.5, chorus: 0.3, delayMix: 0.25, delayDiv: 5, delayFeedback: 0.55, reverbMix: 0.55, reverbSize: 7, volume: 0.85 },
+    values: { osc1Wave: 2, osc2Wave: 3, osc2Semi: -5, osc2Detune: 30, unison: 3, subLevel: 0.3, filterMorph: 0.5, cutoff: 600, resonance: 8, filterEnvAmt: 0, keyTrack: 0.6, lfoTarget: 1, lfoRate: 0.3, lfoDepth: 0.5, modTarget: 0, attack: 1.5, decay: 1, sustain: 1, release: 4, drive: 0.5, chorus: 0.3, delayMix: 0.25, delayDiv: 5, delayFeedback: 0.55, reverbMix: 0.55, reverbSize: 7, volume: 0.85 },
   },
   {
     name: "Sync Lead",
@@ -314,10 +314,21 @@ const USER_KEY = "minilab3.userPresets";
 
 export function loadUserPresets(): Preset[] {
   try {
-    return JSON.parse(localStorage.getItem(USER_KEY) ?? "[]");
+    return (JSON.parse(localStorage.getItem(USER_KEY) ?? "[]") as Preset[]).map(migrate);
   } catch {
     return [];
   }
+}
+
+/** Bring a preset saved by an older version up to date: the filter type became Filter Morph. */
+export function migrate(p: Preset): Preset {
+  const values: Record<string, number> = { ...p.values };
+  if ("filterType" in values) {
+    values.filterMorph ??= MORPH_OF_OLD_TYPE[values.filterType] ?? 0;
+    delete values.filterType;
+  }
+  const knobs = p.knobs.map((k) => ((k as string) === "filterType" ? "filterMorph" : k)) as Preset["knobs"];
+  return { ...p, values: values as Preset["values"], knobs };
 }
 
 export function saveUserPresets(presets: Preset[]) {

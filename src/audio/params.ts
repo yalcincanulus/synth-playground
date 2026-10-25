@@ -18,7 +18,8 @@ export interface ParamDef {
 import { WAVETABLE_NAMES } from "./wavetables";
 
 export const WAVES = ["sine", "triangle", "sawtooth", "square", "table"] as const;
-export const FILTER_TYPES = ["lowpass", "highpass", "bandpass"] as const;
+/** Filter 2's place: off, after Filter 1 (series), or beside it on the same input (parallel). */
+export const FILTER2_MODES = ["off", "series", "parallel"] as const;
 /** Clean: the state-variable filter (2-pole). Ladder: the Moog-style 4-pole, which can self-oscillate. */
 export const FILTER_MODELS = ["clean", "ladder"] as const;
 export const LFO_TARGETS = ["pitch", "filter", "amp", "width", "position"] as const;
@@ -28,7 +29,7 @@ export const LFO_SYNCS = ["off", "2 bars", "1 bar", "1/2", "1/4", "1/8", "1/16"]
 export const LFO_SYNC_BEATS = [0, 8, 4, 2, 1, 0.5, 0.25];
 /** Mod matrix sources and destinations (a route's value is the index). */
 export const MOD_SOURCES = ["off", "lfo 1", "lfo 2", "filter env", "amp env", "pitch env", "mod env", "velocity", "key", "mod strip", "random"] as const;
-export const MOD_DESTS = ["pitch", "osc 2 pitch", "cutoff", "resonance", "volume", "wt pos", "width", "fm", "osc mix", "sub", "noise", "pan"] as const;
+export const MOD_DESTS = ["pitch", "osc 2 pitch", "cutoff", "resonance", "volume", "wt pos", "width", "fm", "osc mix", "sub", "noise", "pan", "morph", "cutoff 2"] as const;
 export type ModSource = (typeof MOD_SOURCES)[number];
 export type ModDest = (typeof MOD_DESTS)[number];
 export const MOD_SLOTS = 8;
@@ -39,6 +40,14 @@ export const DELAY_DIV_BEATS = [0.25, 0.5, 0.75, 1, 1.5, 2];
 const hz = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 1 : 2)} kHz` : `${v.toFixed(v < 10 ? 2 : 0)} Hz`);
 const sec = (v: number) => (v >= 1 ? `${v.toFixed(2)} s` : `${Math.round(v * 1000)} ms`);
 const pct = (v: number) => `${Math.round(v * 100)}%`;
+/** A filter morph position: 0 low-pass, 0.5 band-pass, 1 high-pass, and blends between. */
+const morph = (v: number) => {
+  if (v < 0.005) return "low-pass";
+  if (Math.abs(v - 0.5) < 0.005) return "band-pass";
+  if (v > 0.995) return "high-pass";
+  const t = Math.round((v < 0.5 ? v * 2 : v * 2 - 1) * 100);
+  return v < 0.5 ? `LP ${100 - t}/BP ${t}` : `BP ${100 - t}/HP ${t}`;
+};
 const signed = (unit: string, digits = 0) => (v: number) => `${v > 0 ? "+" : ""}${v.toFixed(digits)}${unit}`;
 
 const enumParam = (label: string, options: readonly string[], def = 0): ParamDef => ({
@@ -80,7 +89,8 @@ export const PARAMS = {
   stereoWidth: { label: "Stereo", min: 0, max: 1, curve: "lin", default: 0.6, format: pct },
 
   // Filter
-  filterType: enumParam("Filter", FILTER_TYPES, 0),
+  /** Low-pass -> band-pass -> high-pass, smoothly. */
+  filterMorph: { label: "Filt Morph", min: 0, max: 1, curve: "lin", default: 0, format: morph },
   filterModel: enumParam("Filt Model", FILTER_MODELS, 0),
   cutoff: { label: "Cutoff", min: 30, max: 18000, curve: "exp", default: 2000, format: hz },
   resonance: { label: "Resonance", min: 0.5, max: 20, curve: "exp", default: 1, format: (v) => v.toFixed(1) },
@@ -91,6 +101,12 @@ export const PARAMS = {
   filterSustain: { label: "F Sustain", min: 0, max: 1, curve: "lin", default: 0.2, format: pct },
   filterRelease: { label: "F Release", min: 0.01, max: 8, curve: "exp", default: 0.3, format: sec },
   keyTrack: { label: "Key Track", min: 0, max: 1, curve: "lin", default: 0.5, format: pct },
+
+  // Filter 2: always the clean model; follows Key Track, but not the filter envelope or the LFOs.
+  filter2Mode: enumParam("Filter 2", FILTER2_MODES, 0),
+  filter2Cutoff: { label: "F2 Cutoff", min: 30, max: 18000, curve: "exp", default: 300, format: hz },
+  filter2Resonance: { label: "F2 Reso", min: 0.5, max: 20, curve: "exp", default: 1, format: (v) => v.toFixed(1) },
+  filter2Morph: { label: "F2 Morph", min: 0, max: 1, curve: "lin", default: 1, format: morph },
 
   // Pitch envelope
   pitchEnvAmt: { label: "Pitch Env", min: -48, max: 48, curve: "lin", default: 0, format: signed(" st", 1) },
@@ -161,6 +177,9 @@ export function fromControl(id: ParamId, t: number): number {
       return p.min + t * (p.max - p.min);
   }
 }
+
+/** Filter Morph positions of the old filter types (lowpass, highpass, bandpass), for presets saved before the morph. */
+export const MORPH_OF_OLD_TYPE = [0, 1, 0.5];
 
 /** Parameter value -> 0..1 control position. */
 export function toControl(id: ParamId, v: number): number {

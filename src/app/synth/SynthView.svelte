@@ -29,7 +29,7 @@
   /** Each modulator block's colour, for its cables and matrix routes. */
   const COLORS: Record<string, string> = { lfo: LFO, lfo2: LFO2, filterEnv: FENV, ampEnv: AENV, pitchEnv: PENV, modEnv: MENV, perf: PLAY };
   /** Where matrix route cables land on each destination block. */
-  const DEST_SIDE: Partial<Record<string, Cable["toSide"]>> = { osc1: "r", osc2: "r", filter: "b", amp: "l", mixer: "r" };
+  const DEST_SIDE: Partial<Record<string, Cable["toSide"]>> = { osc1: "r", osc2: "r", filter: "b", filter2: "r", amp: "l", mixer: "r" };
 
   let container = $state<HTMLElement>();
 
@@ -44,7 +44,12 @@
       audio("subNoise", "mixer", "b", "t"),
       audio("mixer", "drive", "b", "t"),
       audio("drive", "filter", "r", "l"),
-      audio("filter", "amp", "r", "l"),
+      // Filter 2: after Filter 1 (series), or beside it on the same input, added at the amp (parallel).
+      ...(v.filter2Mode === 1
+        ? [audio("filter", "filter2", "b", "t"), audio("filter2", "amp", "r", "l")]
+        : v.filter2Mode === 2
+          ? [audio("filter", "amp", "r", "l"), audio("drive", "filter2", "r", "l"), audio("filter2", "amp", "r", "l")]
+          : [audio("filter", "amp", "r", "l")]),
       audio("amp", "chorus", "b", "t"),
       // Delay and reverb are sends: copies go out to the right and come back into the output.
       audio("chorus", "output", "b", "t", "Dry signal"),
@@ -194,6 +199,10 @@
       <Block {pg} id="filter">
         <LiveCanvas height={110} draw={viz.filter(engine, color)} />
         <LiveCanvas height={40} draw={viz.scope(() => taps.filter, color)} />
+      </Block>
+      <Block {pg} id="filter2" inactive={pg.values.filter2Mode === 0 ? "off" : null}>
+        <LiveCanvas height={70} draw={viz.filter2(engine, color)} />
+        <LiveCanvas height={34} draw={viz.scope(() => taps.filter2, color)} />
       </Block>
     </div>
 
