@@ -130,6 +130,9 @@ export function stepParam(step: RecipeStep): ParamId | null {
   return c?.param ?? null;
 }
 
+/** Controls a recipe may ask for that no MiniLab knob reaches in the Synth view: you set them on screen. */
+export const SCREEN_ONLY: ParamId[] = ["wtTable"];
+
 /** The Synth view block a control is on. */
 export function blockOf(param: ParamId): BlockId | null {
   for (const [id, def] of Object.entries(BLOCKS)) if (def.params.includes(param)) return id as BlockId;

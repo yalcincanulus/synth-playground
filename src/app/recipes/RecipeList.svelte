@@ -5,6 +5,19 @@
 
   let { pg }: { pg: Playground } = $props();
 
+  /** Group headings, in the order the groups first appear in RECIPES. */
+  const GROUP_NAMES: Partial<Record<Recipe["category"], string>> = { Bass: "Bass", Lead: "Leads", Keys: "Keys", Pad: "Pads", FX: "Effects" };
+  const groups = [...new Set(RECIPES.map((r) => r.category))].map((cat) => ({
+    name: GROUP_NAMES[cat] ?? cat,
+    recipes: RECIPES.filter((r) => r.category === cat),
+  }));
+
+  let built = $derived(pg.recipesDone.length);
+
+  function reset() {
+    if (confirm("Forget which recipes you have built?")) pg.resetRecipeProgress();
+  }
+
   /** The recipe's colour (the MiniLab's 0-127 LED range) as CSS. */
   const rgb = (c: [number, number, number]) => `rgb(${c.map((x) => Math.round((x / 127) * 255)).join(" ")})`;
 
@@ -28,24 +41,34 @@
   <header>
     <h3>Recipes</h3>
     <p>Build a classic sound yourself, one step at a time. Each recipe starts from <strong>Init</strong>, a blank sound, on the Keys part: the sound you had there is replaced (save it first if you want to keep it).</p>
-    <button onclick={() => (pg.recipeList = false)} aria-label="Close the recipe list">×</button>
+    <span class="progress">
+      {built} of {RECIPES.length} built
+      {#if built}<button class="reset" onclick={reset}>reset</button>{/if}
+    </span>
+    <button class="close" onclick={() => (pg.recipeList = false)} aria-label="Close the recipe list">×</button>
   </header>
-  <div class="cards">
-    {#each RECIPES as r (r.id)}
-      <button class="card" style:--c={rgb(r.color)} onclick={() => pg.startRecipe(r.id)}>
-        <span class="meta"><span class="cat">{r.category}</span><span class="steps">{r.steps.length} steps</span></span>
-        <span class="name">{r.name}</span>
-        <span class="sum">{r.summary}</span>
-        <span class="shape" title="The finished sound's volume shape: how each note rises, holds and fades">
-          <svg viewBox="0 0 120 36" preserveAspectRatio="none" aria-hidden="true">
-            <line x1="4" y1="32" x2="116" y2="32" />
-            <path d={envelopePath(r)} />
-          </svg>
-          <span class="caption">volume shape</span>
-        </span>
-      </button>
-    {/each}
-  </div>
+  {#each groups as group (group.name)}
+    <div class="group">
+      <h4>{group.name}</h4>
+      <div class="cards">
+        {#each group.recipes as r (r.id)}
+          {@const done = pg.recipesDone.includes(r.id)}
+          <button class="card" class:done style:--c={rgb(r.color)} onclick={() => pg.startRecipe(r.id)}>
+            <span class="meta">{#if done}<span class="built" title="You have built this one">✓ Built</span>{:else}<span class="steps">{r.steps.length} steps</span>{/if}</span>
+            <span class="name">{r.name}</span>
+            <span class="sum">{r.summary}</span>
+            <span class="shape" title="The finished sound's volume shape: how each note rises, holds and fades">
+              <svg viewBox="0 0 120 36" preserveAspectRatio="none" aria-hidden="true">
+                <line x1="4" y1="32" x2="116" y2="32" />
+                <path d={envelopePath(r)} />
+              </svg>
+              <span class="caption">volume shape</span>
+            </span>
+          </button>
+        {/each}
+      </div>
+    </div>
+  {/each}
 </section>
 
 <style>
@@ -53,7 +76,12 @@
   header { display: flex; align-items: baseline; gap: 14px; }
   h3 { margin: 0; font-size: 15px; color: var(--accent); }
   header p { margin: 0; flex: 1; font-size: 12px; color: #b9c5c8; }
-  header button { padding: 0 8px; font-size: 16px; color: var(--dim); }
+  .close { padding: 0 8px; font-size: 16px; color: var(--dim); }
+  .progress { font: 11px var(--mono); color: var(--dim); white-space: nowrap; }
+  .reset { margin-left: 6px; padding: 0 6px; font-size: 10px; color: var(--dim); background: none; border: none; text-decoration: underline; }
+  .group { display: grid; gap: 6px; }
+  h4 { margin: 0; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); }
+  .built { font-size: 10px; font-weight: 600; color: #7be08a; }
   .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
   /* A soft glow of the recipe's colour from the top right, fading into the panel. */
   .card {
@@ -68,8 +96,7 @@
     border-color: color-mix(in srgb, var(--c) 60%, transparent); transform: translateY(-1px);
     box-shadow: 0 6px 20px color-mix(in srgb, var(--c) 14%, transparent);
   }
-  .meta { display: flex; align-items: center; justify-content: space-between; }
-  .cat { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text); padding: 1px 7px; border: 1px solid var(--line); border-radius: 999px; }
+  .meta { display: flex; align-items: center; min-height: 14px; }
   .steps { font: 10px var(--mono); color: var(--dim); }
   .name { font-size: 15px; font-weight: 600; color: var(--text); }
   .sum { font-size: 12px; color: #a9b6ba; line-height: 1.35; }

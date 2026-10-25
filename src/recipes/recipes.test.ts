@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { PARAMS } from "../audio/params";
 import { RECIPES } from "./library";
-import { aimOf, blockOf, describe as say, hardwareFor, initValues, isPlay, settingHolds, stepParam, type SettingCheck } from "./recipe";
+import { aimOf, blockOf, describe as say, hardwareFor, initValues, isPlay, SCREEN_ONLY, settingHolds, type SettingCheck } from "./recipe";
+import { SHOWN_WHEN } from "../app/synth/blocks";
 
 describe("recipes", () => {
   test("ids are unique", () => {
@@ -37,13 +38,28 @@ describe("recipes", () => {
         }
       });
 
-      test("every control it asks for is on a Synth view block and on a MiniLab knob or fader", () => {
+      test("every control it asks for is on a Synth view block, and on a MiniLab knob or fader unless it is screen-only", () => {
         for (const step of recipe.steps) {
-          const param = stepParam(step);
-          if (!param) continue;
-          expect(blockOf(param), param).not.toBeNull();
-          expect(hardwareFor(param), param).not.toBeNull();
+          for (const c of step.checks) {
+            if (isPlay(c)) continue;
+            expect(blockOf(c.param), c.param).not.toBeNull();
+            if (!SCREEN_ONLY.includes(c.param)) expect(hardwareFor(c.param), c.param).not.toBeNull();
+          }
         }
+      });
+
+      test("every control is on show on its block when its step comes", () => {
+        // Some controls only show while they do something (Pulse Width with a square wave, the Wavetable
+        // menu with a table playing): an earlier step must have made them appear.
+        const v = initValues();
+        recipe.steps.forEach((step, i) => {
+          const settings = step.checks.filter((c) => !isPlay(c)) as SettingCheck[];
+          for (const c of settings) {
+            const shown = SHOWN_WHEN[blockOf(c.param)!]?.[c.param];
+            if (shown) expect(shown(v), `step ${i + 1}: ${c.param} is hidden`).toBe(true);
+          }
+          for (const c of settings) v[c.param] = aimOf(c);
+        });
       });
 
       test("ends by playing the finished sound", () => {

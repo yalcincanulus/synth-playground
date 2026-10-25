@@ -304,6 +304,12 @@ What the browser still limits, whatever we do:
 - A recipe browser that marks recipes as done.
 - At the end of a recipe you can save the result as a preset.
 - **Done when:** every recipe is completable, and your progress is remembered after a reload.
+- Status: done 2026-10-25 (the user built some of the recipes on the MiniLab).
+  - **12 new recipes**, 15 in all: Bass: Reese, Acid (ladder filter, resonance, fast filter envelope, drive, glide), Sub (sine + a little triangle, filtered round, a touch of drive), FM (two sines, modulator an octave up, quick filter envelope). Leads: Sync (Osc 2 synced, pitch envelope on Osc 2 only), Vowel (the Vowels table swept by LFO 2, mono with glide). Keys: Pluck, E-Piano (sine + octave-up triangle, long decay, velocity, tremolo, chorus), Bell (FM at +22 semitones, long ring, slow filter decay, hall). Pads: Supersaw, PWM Strings (two pulse waves, LFO 2 on width), Wavetable Scan (Formant Sweep table, very slow LFO 2 on position, unison 3). Effects: Laser (big fast pitch envelope, delay with feedback), Wind (noise through a band-pass that follows the keys, slow LFO gusts), Synth Toms (sine, pitch drop, a little noise, velocity). 8 to 14 steps each. No recipe needs the mod matrix.
+  - **Browser:** the recipe list is grouped (Bass, Leads, Keys, Pads, Effects). A recipe you have finished shows "✓ Built", and the header counts "N of 15 built", with a reset link. Progress is kept in localStorage. Saving the result as a preset is on the done screen (slice 15).
+  - **Screen-only controls:** the Wavetable menu has no knob in the Synth view, so the panel says "On screen" for it and the OLED shows "Set Wavetable". It is the only one (`SCREEN_ONLY`).
+  - **Checked in the browser** (Helium, headless): all 15 recipes built from Init in a row, every step moving on by itself and every control reached through the knob or fader the panel named (the Wavetable menu on screen). All 15 still ticked after a reload.
+  - **Tests:** the recipe tests now run for all 15. A new test checks that every control a step asks for is already on show on its block when the step comes (Pulse Width needs a square wave, the Wavetable menu needs a table, Stereo needs unison).
 
 ## Phase F: the learning course
 

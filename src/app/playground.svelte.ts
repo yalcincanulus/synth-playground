@@ -56,6 +56,17 @@ const SCREENS = ["scope", "spectrum", "synth", "wavetable"] as const;
 const SCREEN_NAMES: Record<(typeof SCREENS)[number], string> = { scope: "Waveform", spectrum: "Spectrum", synth: "Synth", wavetable: "Wavetable" };
 const EXPLAIN_KEY = "minilab3.explain";
 const SCALE_KEY = "minilab3.scale";
+const RECIPES_DONE_KEY = "minilab3.recipesDone";
+
+/** The ids of the recipes finished so far. */
+function loadRecipesDone(): string[] {
+  try {
+    const ids = JSON.parse(localStorage.getItem(RECIPES_DONE_KEY) ?? "[]");
+    return Array.isArray(ids) ? ids.filter((id) => RECIPES.some((r) => r.id === id)) : [];
+  } catch {
+    return [];
+  }
+}
 
 function loadScale(): ScaleSettings {
   try {
@@ -195,6 +206,8 @@ export class Playground {
   /** The recipe being followed, if any, and whether the recipe list is open. */
   recipe = $state.raw<RecipeRun | null>(null);
   recipeList = $state(false);
+  /** Recipes you have finished (kept across reloads), for the ticks in the recipe list. */
+  recipesDone = $state<string[]>(loadRecipesDone());
   /** The "Draw a table" editor, while it is open. */
   tableEditor = $state.raw<TableEditor | null>(null);
   private draftTimer = 0;
@@ -1127,6 +1140,20 @@ export class Playground {
     this.recipeList = true;
   }
 
+  /** Forget which recipes were finished. */
+  resetRecipeProgress() {
+    this.saveRecipesDone([]);
+  }
+
+  private saveRecipesDone(ids: string[]) {
+    this.recipesDone = ids;
+    try {
+      localStorage.setItem(RECIPES_DONE_KEY, JSON.stringify(ids));
+    } catch {
+      // Not kept (private window): the ticks last until the page closes.
+    }
+  }
+
   /** Start the recipe again from Init. */
   restartRecipe() {
     if (this.recipe) this.startRecipe(this.recipe.recipe.id);
@@ -1163,6 +1190,7 @@ export class Playground {
     // Finished: the sound is named after the recipe (still unsaved).
     const run = this.recipe;
     if (run?.done && this.parts.keys.dicePreset?.from === "recipe") this.parts.keys.dicePreset = { ...this.parts.keys.dicePreset, name: run.recipe.name };
+    if (run?.done && !this.recipesDone.includes(run.recipe.id)) this.saveRecipesDone([...this.recipesDone, run.recipe.id]);
     const hw = this.recipeHardware;
     if (hw && this.view === "synth") this.focus(hw.focus);
     this.showHome();

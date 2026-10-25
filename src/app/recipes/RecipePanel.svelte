@@ -93,6 +93,9 @@
               {/each}
             </ol>
           {/if}
+        {:else if controls.length}
+          <p class="pointer"><strong>On screen</strong></p>
+          <p class="dim">No knob reaches it here: use the {PARAMS[controls[0].id].label} menu on the highlighted block.</p>
         {:else}
           <p class="pointer"><strong>The keys</strong></p>
         {/if}
