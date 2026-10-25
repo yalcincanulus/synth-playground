@@ -33,6 +33,7 @@ import { CHORD_MODE_NAMES, chordName, defaultScale, keyNotes, noteNameIn, ROOT_N
 import { cutIntoFrames, decodeSoundFile, type CutMode } from "../audio/wavImport";
 import { findPorts, isMainPort, MiniLab, requestMidi } from "../minilab/device";
 import { Freezes, Rolling } from "./timing";
+import { diffValues, History, type Change } from "./history";
 import {
   CC_MAPS,
   displayMessage,
@@ -124,10 +125,24 @@ class PartState {
   /** A rolled Dice patch. While set, it is the current preset (not in the list until saved). */
   dicePreset = $state<Preset | null>(null);
 
+  /** Undo and redo for this part's sound (not reactive: Playground.historyVersion says when it changed). */
+  readonly history = new History<PartSnapshot>();
+
   constructor(index: number) {
     this.presetIndex = index;
     this.values = presetValues(FACTORY_PRESETS[index]);
   }
+}
+
+/** The undo step that starts a recipe is named this, then the recipe. */
+const RECIPE_STEP = "Recipe ";
+
+/** A part's sound at one moment, for undo. */
+interface PartSnapshot {
+  presetIndex: number;
+  dicePreset: Preset | null;
+  values: ParamValues;
+  dirty: boolean;
 }
 
 export class Playground {
@@ -327,6 +342,7 @@ export class Playground {
   /** Edit and show another part: the knobs, faders, Synth view and preset browser follow it. */
   selectPart(part: PartId) {
     if (part === this.part) return;
+    this.endCompare();
     this.part = part;
     this.engine.select(part);
     this.browseIndex = null;
@@ -348,7 +364,9 @@ export class Playground {
 
   loadPreset(index: number) {
     const n = this.presets.length;
-    this.presetIndex = ((index % n) + n) % n;
+    index = ((index % n) + n) % n;
+    this.remember(`Preset ${this.presets[index].name}`);
+    this.presetIndex = index;
     this.browseIndex = null;
     this.dicePreset = null;
     this.values = presetValues(this.preset);
@@ -385,6 +403,7 @@ export class Playground {
 
   /** Roll a random patch and make it the current sound. */
   dice() {
+    this.remember("Dice");
     this.dicePreset = rollDice();
     this.browseIndex = null;
     this.values = presetValues(this.dicePreset);
@@ -403,14 +422,125 @@ export class Playground {
     this.presets = [...FACTORY_PRESETS, ...user];
     // The other part keeps its sound; if it was on the deleted preset, it now counts as edited.
     const other = this.parts[this.part === "keys" ? "seq" : "keys"];
+    // The preset numbers after it move down one, so older undo steps would point at the wrong presets.
+    this.clearHistory();
     if (other.presetIndex === deleted) other.dirty = true;
     if (other.presetIndex >= deleted) other.presetIndex = Math.max(0, Math.min(other.presetIndex - (other.presetIndex > deleted ? 1 : 0), this.presets.length - 1));
     this.loadPreset(Math.min(this.presetIndex, this.presets.length - 1));
   }
 
+  // ------------------------------------------------------------------ undo, redo and compare
+
+  /** Bumped whenever a part's history changes, so the undo buttons follow it. */
+  historyVersion = $state(0);
+  /** Inside edit(): the steps it takes are one undo step. */
+  private editing = false;
+  /** Hearing the saved preset instead of the edited sound (A/B). */
+  comparing = $state(false);
+
+  private snapshot(): PartSnapshot {
+    const p = this.parts[this.part];
+    return { presetIndex: p.presetIndex, dicePreset: p.dicePreset, values: $state.snapshot(p.values), dirty: p.dirty };
+  }
+
+  /** Keep the sound as it is now, before a change. Changes of the same control close together are one step. */
+  private remember(label: string, key: string | null = null) {
+    this.endCompare();
+    if (this.editing) return;
+    this.parts[this.part].history.record(() => this.snapshot(), label, key);
+    this.historyVersion++;
+  }
+
+  /** Several changes as one undo step. */
+  private edit(label: string, fn: () => void) {
+    if (this.editing) return fn();
+    this.remember(label);
+    this.editing = true;
+    try {
+      fn();
+    } finally {
+      this.editing = false;
+    }
+  }
+
+  private clearHistory() {
+    this.parts.keys.history.clear();
+    this.parts.seq.history.clear();
+    this.historyVersion++;
+  }
+
+  get canUndo() {
+    return this.historyVersion >= 0 && this.parts[this.part].history.canUndo;
+  }
+  get canRedo() {
+    return this.historyVersion >= 0 && this.parts[this.part].history.canRedo;
+  }
+  get undoLabel() {
+    return this.historyVersion >= 0 ? this.parts[this.part].history.undoLabel : null;
+  }
+  get redoLabel() {
+    return this.historyVersion >= 0 ? this.parts[this.part].history.redoLabel : null;
+  }
+
+  undo() {
+    this.step("undo");
+  }
+  redo() {
+    this.step("redo");
+  }
+
+  private step(way: "undo" | "redo") {
+    this.endCompare();
+    const history = this.parts[this.part].history;
+    const step = way === "undo" ? history.undo(this.snapshot()) : history.redo(this.snapshot());
+    this.historyVersion++;
+    if (!step) return this.showMessage(way === "undo" ? "Undo" : "Redo", "nothing to do");
+    const s = step.state;
+    this.presetIndex = Math.min(s.presetIndex, this.presets.length - 1);
+    this.dicePreset = s.dicePreset;
+    this.values = { ...s.values };
+    this.dirty = s.dirty;
+    this.browseIndex = null;
+    this.engine.setParams(this.values);
+    // Undoing the start of a recipe goes back to the sound before it: the recipe is over.
+    if (way === "undo" && step.label.startsWith(RECIPE_STEP)) this.stopRecipe();
+    else this.recipe?.changed();
+    this.syncHardware();
+    this.showMessage(way === "undo" ? "Undo" : "Redo", step.label);
+  }
+
+  /** What differs from the saved preset, in words. */
+  get changes(): Change[] {
+    return this.dirty ? diffValues(presetValues(this.preset), this.values) : [];
+  }
+
+  /** A/B: hear the saved preset, then your edit again. The screen keeps showing your edit. */
+  toggleCompare() {
+    if (this.comparing) return this.endCompare();
+    if (!this.dirty) return;
+    this.comparing = true;
+    this.engine.setParams(presetValues(this.preset));
+    this.showMessage("Compare", "saved preset");
+  }
+
+  private endCompare() {
+    if (!this.comparing) return;
+    this.comparing = false;
+    this.engine.setParams(this.values);
+    this.showMessage("Compare", "your edit");
+  }
+
+  /** Put one control back to its saved value. */
+  revertParam(id: ParamId) {
+    this.setParam(id, presetValues(this.preset)[id]);
+    // The last change put back: the sound is the preset again.
+    if (this.changes.length === 0) this.dirty = false;
+  }
+
   // ------------------------------------------------------------------ parameters
 
   setParam(id: ParamId, value: number) {
+    this.remember(PARAMS[id].label, id);
     this.values[id] = value;
     this.engine.setParam(id, value);
     this.dirty = true;
@@ -946,8 +1076,10 @@ export class Playground {
   }
 
   selectTable(id: number) {
-    if (!usesTable(this.values)) this.setParam("osc1Wave", TABLE_WAVE);
-    this.setParam("wtTable", id);
+    this.edit(`Wavetable ${tableDef(id).name}`, () => {
+      if (!usesTable(this.values)) this.setParam("osc1Wave", TABLE_WAVE);
+      this.setParam("wtTable", id);
+    });
     this.showMessage("Wavetable", tableDef(id).name);
     this.realignKnobs();
   }
@@ -991,6 +1123,8 @@ export class Playground {
     const oldCount = WAVETABLES.length;
     removeTable(id);
     this.tables = [...WAVETABLES];
+    // Table numbers after it move down one, so older undo steps would point at the wrong tables.
+    this.clearHistory();
     this.engine.tablesChanged(id, oldCount);
     for (const owner of ["keys", "seq"] as const) {
       const part = this.parts[owner];
@@ -1120,6 +1254,7 @@ export class Playground {
     if (!recipe) return;
     this.recipe?.stop();
     this.selectPart("keys");
+    this.remember(`${RECIPE_STEP}${recipe.name}`);
     this.dicePreset = initPreset(recipe);
     this.browseIndex = null;
     this.values = presetValues(this.dicePreset);
@@ -1279,9 +1414,11 @@ export class Playground {
     let n = 1;
     while (n < MOD_SLOTS && MOD_SOURCES[this.values[slotIds(n).src]] !== "off") n++;
     const ids = slotIds(n);
-    this.setParam(ids.src, src);
-    this.setParam(ids.dst, dst);
-    this.setParam(ids.amt, amount);
+    this.edit(`Add route ${n}`, () => {
+      this.setParam(ids.src, src);
+      this.setParam(ids.dst, dst);
+      this.setParam(ids.amt, amount);
+    });
     this.focus("matrix");
     this.showMessage(`Route ${n}`, `${MOD_SHORT[MOD_SOURCES[src]]}>${MOD_SHORT[MOD_DESTS[dst]]}`);
     this.realignKnobs();
@@ -1290,8 +1427,10 @@ export class Playground {
 
   removeRoute(n: number) {
     const ids = slotIds(n);
-    this.setParam(ids.src, 0);
-    this.setParam(ids.amt, 0);
+    this.edit(`Remove route ${n}`, () => {
+      this.setParam(ids.src, 0);
+      this.setParam(ids.amt, 0);
+    });
     this.realignKnobs();
   }
 
@@ -1338,8 +1477,18 @@ export class Playground {
   private keyOctave = 0;
 
   handleKey(e: KeyboardEvent, down: boolean) {
-    if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.target instanceof Element && e.target.closest("input, select, textarea")) return;
+    // Ctrl+Z undo; Ctrl+Shift+Z or Ctrl+Y redo (Cmd on a Mac).
+    if (down && (e.ctrlKey || e.metaKey) && !e.altKey) {
+      const k = e.key.toLowerCase();
+      if (k === "z" || k === "y") {
+        e.preventDefault();
+        if (k === "y" || e.shiftKey) this.redo();
+        else this.undo();
+      }
+      return;
+    }
+    if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
     const k = e.key.toLowerCase();
     if (down && (k === "z" || k === "x")) {
       this.keyOctave = Math.max(-3, Math.min(3, this.keyOctave + (k === "z" ? -1 : 1)));
@@ -1423,6 +1572,8 @@ export class Playground {
         return;
       }
       case "pitchBend":
+        if (this.shift) return this.shiftStrip(e.value);
+        this.stripArmed = true;
         return this.setBend(e.value);
       case "mod":
         return this.setMod(e.value / 127);
@@ -1466,6 +1617,18 @@ export class Playground {
         this.bank = e.bank;
         this.syncPadLeds();
         return;
+    }
+  }
+
+  /** Shift + pitch strip: down undoes, up redoes, once per push (let it spring back to do it again). */
+  private stripArmed = true;
+  private shiftStrip(v: number) {
+    if (this.bend !== 0) this.setBend(0);
+    if (Math.abs(v) < 0.2) this.stripArmed = true;
+    else if (this.stripArmed && Math.abs(v) > 0.5) {
+      this.stripArmed = false;
+      if (v < 0) this.undo();
+      else this.redo();
     }
   }
 

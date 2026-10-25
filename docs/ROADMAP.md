@@ -359,11 +359,16 @@ The synth must run well on weaker computers, and the app should be easier to fin
 - **Undo and redo** for every sound change (knobs, faders, screen controls, recipe steps, Dice). Ctrl+Z / Ctrl+Shift+Z, buttons on screen, and a MiniLab shortcut. Moving one knob a long way counts as one change.
 - **Compare:** switch between the edited sound and the saved preset (A/B) to hear what your changes did, and a list of what changed ("Cutoff 1.8 kHz → 400 Hz").
 - **Done when:** you can try anything and always get back, and you can hear and read the difference from the saved preset.
+- Status: done 2026-10-25.
+  - **Undo and redo** (`src/app/history.ts`): each part keeps its own history of up to 200 steps. A step is a snapshot of the part's sound (preset, Dice or recipe patch, every value, the "edited" flag). Changes to the same control less than 0.8 s apart join one step, so a knob turned a long way is undone in one go; a pause or another control starts a new step. Covered: knobs, faders, every screen control, preset loads, Dice, starting a recipe (undoing it leaves the recipe), the recipe steps (they are knob moves), adding and removing a route, picking a wavetable. Deleting a user preset or a wavetable clears the history, because the numbers after it move down one.
+  - **Where:** ↶ ↷ next to Dice (the tooltip names the step), Ctrl+Z and Ctrl+Shift+Z or Ctrl+Y, and on the MiniLab Shift + the pitch strip: down undoes, up redoes, once per push. The OLED says what was undone. Holding Shift no longer bends the pitch.
+  - **Compare:** when the sound is edited, "N changes ▾" opens the list of what changed from the saved preset ("Cutoff 1.80 kHz → 30 Hz"), each with ↺ to put it back. Settings of empty matrix routes are left out. "Compare" plays the saved preset while the screen keeps showing your edit; click again, or change anything, to hear your edit.
+  - **Checked** in Helium: a long mouse drag on a knob is one step; undo and redo across a knob, a preset load and Dice; Shift + strip; a route; Compare sends the saved values to the engine.
 
 ### 20. Arpeggiator, and scale and chords on the MiniLab
 
 - **Arpeggiator:** hold notes or a chord and it plays them one at a time: up, down, up-down, random, the order played; 1–3 octaves; rate and gate like the sequencer; latch (keeps going after you let go). On the same clock as the sequencer and drums. Works with chord mode, so one finger makes an arpeggio.
-- **On the MiniLab:** switch the arpeggiator, scale lock and chord mode without the mouse (a Shift combination that is still free), shown on the OLED.
+- **On the MiniLab:** switch the arpeggiator, scale lock and chord mode without the mouse (a Shift combination that is still free; Shift + pitch strip is undo/redo since slice 19), shown on the OLED.
 - **Done when:** one finger plays an in-scale arpeggio in time with the drums, set up from the MiniLab alone.
 
 ### 21. Preset browser

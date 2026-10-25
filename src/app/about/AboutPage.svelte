@@ -41,7 +41,6 @@
 
       <h3>Coming later <span class="tag">not in yet</span></h3>
       <ul class="later">
-        <li>Undo, redo and compare with the saved preset</li>
         <li>An arpeggiator</li>
         <li>A preset browser, more effects, more modulation</li>
         <li>An interactive course that introduces one topic at a time</li>
@@ -66,6 +65,8 @@
         <dd>Tempo</dd>
         <dt>Shift + any key</dt>
         <dd>Switch part (Keys or Sequencer)</dd>
+        <dt>Undo / redo</dt>
+        <dd>Ctrl+Z / Ctrl+Shift+Z (or Ctrl+Y). On the MiniLab: hold Shift and push the pitch strip down to undo, up to redo</dd>
         <dt>Shift + pads</dt>
         <dd>▶ play, ■ stop, ● record, ⟲ clear the drum loop, Tap tempo</dd>
         <dt>Mouse</dt>

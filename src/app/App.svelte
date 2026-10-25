@@ -47,6 +47,16 @@
     if (name) pg.saveAsUserPreset(name);
   }
 
+  // The list of changes from the saved preset: opens under its button, closes on a click elsewhere.
+  let showChanges = $state(false);
+  let changes = $derived(pg.dirty ? pg.changes : []);
+  $effect(() => {
+    if (!pg.dirty) showChanges = false;
+  });
+  function closeChanges(e: MouseEvent) {
+    if (showChanges && !(e.target instanceof Element && e.target.closest(".changes-wrap"))) showChanges = false;
+  }
+
   // The on-screen keyboard can fold away (the MiniLab and the computer keyboard still play); remembered per browser.
   const KEYS_OPEN_KEY = "minilab3.keyboard";
   let keysOpen = $state(localStorage.getItem(KEYS_OPEN_KEY) !== "closed");
@@ -99,7 +109,7 @@
 </script>
 
 
-<svelte:window onkeydown={(e) => pg.handleKey(e, true)} onkeyup={(e) => pg.handleKey(e, false)} />
+<svelte:window onkeydown={(e) => pg.handleKey(e, true)} onkeyup={(e) => pg.handleKey(e, false)} onclick={closeChanges} />
 
 <div class="app" style:--accent={accent}>
   <!-- Row 1: where you are (the views) and the app's state (MiniLab, CPU, help). -->
@@ -171,13 +181,43 @@
       </select>
       <button onclick={() => pg.loadPreset(pg.presetIndex + 1)} aria-label="Next preset">▶</button>
       <button onclick={() => pg.dice()} title="Random patch (hold the encoder down)">🎲 Dice</button>
-      <button onclick={savePreset}>Save as…</button>
-      {#if pg.isUserPreset()}<button onclick={() => pg.deleteUserPreset()}>Delete</button>{/if}
+      <div class="undo" role="group" aria-label="Undo and redo">
+        <button disabled={!pg.canUndo} onclick={() => pg.undo()} aria-label="Undo" title={pg.undoLabel ? `Undo ${pg.undoLabel} (Ctrl+Z · Shift + pitch strip down)` : "Nothing to undo"}>↶</button>
+        <button disabled={!pg.canRedo} onclick={() => pg.redo()} aria-label="Redo" title={pg.redoLabel ? `Redo ${pg.redoLabel} (Ctrl+Shift+Z · Shift + pitch strip up)` : "Nothing to redo"}>↷</button>
+      </div>
       {#if pg.browseIndex !== null}
         <span class="browse">Encoder: {pg.presets[pg.browseIndex].name}, click to load</span>
       {:else if pg.dirty}
-        <span class="dirty">edited</span>
+        <div class="changes-wrap">
+          <button class="changes-btn" class:open={showChanges} onclick={() => (showChanges = !showChanges)} aria-expanded={showChanges} title="What you changed since the preset was loaded">
+            {changes.length} change{changes.length === 1 ? "" : "s"} ▾
+          </button>
+          {#if showChanges}
+            <div class="changes" role="dialog" aria-label="Changes from the saved preset">
+              <div class="changes-head">Changed from <strong>{pg.preset.name}</strong></div>
+              {#if changes.length}
+                <ul>
+                  {#each changes as c (c.id)}
+                    <li class:hot={pg.touched?.param === c.id}>
+                      <span class="c-label">{c.label}</span>
+                      <span class="c-from">{c.from}</span>→<span class="c-to">{c.to}</span>
+                      <button class="c-revert" title="Back to {c.from}" onclick={() => pg.revertParam(c.id)}>↺</button>
+                    </li>
+                  {/each}
+                </ul>
+              {:else}
+                <p class="none">Everything is back where the preset had it.</p>
+              {/if}
+            </div>
+          {/if}
+        </div>
+        <button class="compare" class:active={pg.comparing} onclick={() => pg.toggleCompare()} title={pg.comparing ? "Back to your edit" : "Hear the saved preset (A/B); click again for your edit"}>
+          {pg.comparing ? "Hearing saved" : "Compare"}
+        </button>
       {/if}
+      <span class="push"></span>
+      <button onclick={savePreset}>Save as…</button>
+      {#if pg.isUserPreset()}<button onclick={() => pg.deleteUserPreset()}>Delete</button>{/if}
     </div>
 
     <div class="group transport" role="group" aria-label="Transport">
@@ -430,7 +470,29 @@
   .part-preset { font-size: 12.5px; white-space: nowrap; }
   .sound select { width: 260px; min-width: 0; font-size: 14px; padding: 4px 8px; }
   .browse { color: var(--accent); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .dirty { color: var(--dim); font-size: 12px; font-style: italic; }
+  .push { flex: 1; }
+  .undo { display: flex; gap: 2px; }
+  .undo button { min-width: 30px; padding: 2px 6px; font-size: 15px; line-height: 1.2; }
+  .undo button:disabled { opacity: 0.35; cursor: default; border-color: var(--line); }
+  .changes-wrap { position: relative; }
+  .changes-btn { font-size: 12px; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+  .changes-btn.open { background: color-mix(in srgb, var(--accent) 15%, transparent); }
+  .changes {
+    position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; width: 380px; max-height: 360px; overflow-y: auto;
+    background: #10171a; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; box-shadow: 0 10px 30px #000a; font-size: 12px;
+  }
+  .changes-head { color: var(--dim); margin-bottom: 6px; }
+  .changes-head strong { color: var(--text); }
+  .changes ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+  .changes li { display: grid; grid-template-columns: 1fr auto 14px auto 24px; gap: 6px; align-items: center; color: var(--dim); }
+  .changes li.hot .c-label { color: var(--accent); }
+  .c-label { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .c-from, .c-to { font: 11px var(--mono); white-space: nowrap; }
+  .c-to { color: var(--accent); }
+  .c-revert { padding: 0 4px; font-size: 12px; line-height: 18px; background: none; color: var(--dim); }
+  .none { margin: 0; color: var(--dim); }
+  .compare { font-size: 12px; font-family: var(--mono); }
+  .compare.active { background: #ffcc33; border-color: #ffcc33; color: #111; }
   .transport button { min-width: 34px; }
   .transport .active { background: var(--accent); color: #0b1314; }
   .transport .rec { color: #ff6b6b; }
