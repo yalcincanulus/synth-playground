@@ -63,7 +63,8 @@ import {
 } from "../minilab/protocol";
 import { rollDice } from "../presets/dice";
 import { BLOCK_TAPS, blockDest, blockSource, KNOB_PAGES, MOD_SHORT, pageOf, paramLabel, TAP_NAMES, usesTable, WAVETABLE_KNOBS, type BlockId } from "./synth/blocks";
-import { FACTORY_PRESETS, FADERS, PAD_PRESETS, loadUserPresets, presetValues, saveUserPresets, type Preset, type Rgb } from "../presets/presets";
+import { DEFAULT_FAVOURITES, FACTORY_PRESETS, factoryId, FADERS, loadUserPresets, presetValues, saveUserPresets, userId, type Preset, type Rgb } from "../presets/presets";
+import { emptyFilter, filterPresets, isUserPresetId, presetFile, readPresetFile, type PresetFilter } from "../presets/browser";
 
 export type MidiStatus = "idle" | "unsupported" | "denied" | "not-found" | "connected";
 export type VizMode = "scope" | "spectrum";
@@ -77,6 +78,17 @@ const SCALE_KEY = "minilab3.scale";
 const LAST_SCALE_KEY = "minilab3.lastScale";
 const ARP_KEY = "minilab3.arp";
 const RECIPES_DONE_KEY = "minilab3.recipesDone";
+const FAVOURITES_KEY = "minilab3.favourites";
+
+/** Your favourite presets' ids, in the order you starred them (pad bank B loads the first 8). */
+function loadFavourites(): string[] {
+  try {
+    const ids = JSON.parse(localStorage.getItem(FAVOURITES_KEY) ?? "null");
+    return Array.isArray(ids) ? ids.filter((id) => typeof id === "string") : [...DEFAULT_FAVOURITES];
+  } catch {
+    return [...DEFAULT_FAVOURITES];
+  }
+}
 
 /** The ids of the recipes finished so far. */
 function loadRecipesDone(): string[] {
@@ -158,20 +170,21 @@ export const PART_NAMES: Record<PartId, string> = { keys: "Keys", seq: "Sequence
 /** The Sequencer part starts on this preset, so a bass line plays under the Keys part's sound. */
 const SEQ_START_PRESET = "Round Bass";
 
-/** One part's sound: the preset it is on, its current settings, and whether they were edited since. */
+/**
+ * One part's sound: the preset it is on, its current settings, and whether they were edited since. The
+ * preset may be one that isn't in the list: a rolled Dice patch, a recipe's sound, or a deleted preset.
+ */
 class PartState {
-  presetIndex = $state(0);
+  preset = $state.raw<Preset>(FACTORY_PRESETS[0]);
   values = $state<ParamValues>(presetValues(FACTORY_PRESETS[0]));
   dirty = $state(false);
-  /** A rolled Dice patch. While set, it is the current preset (not in the list until saved). */
-  dicePreset = $state<Preset | null>(null);
 
   /** Undo and redo for this part's sound (not reactive: Playground.historyVersion says when it changed). */
   readonly history = new History<PartSnapshot>();
 
-  constructor(index: number) {
-    this.presetIndex = index;
-    this.values = presetValues(FACTORY_PRESETS[index]);
+  constructor(preset: Preset) {
+    this.preset = preset;
+    this.values = presetValues(preset);
   }
 }
 
@@ -180,8 +193,7 @@ const RECIPE_STEP = "Recipe ";
 
 /** A part's sound at one moment, for undo. */
 interface PartSnapshot {
-  presetIndex: number;
-  dicePreset: Preset | null;
+  preset: Preset;
   values: ParamValues;
   dirty: boolean;
 }
@@ -192,15 +204,21 @@ export class Playground {
   private midiWait = new Rolling(50);
   private freezes = new Freezes();
 
-  presets = $state<Preset[]>([...FACTORY_PRESETS, ...loadUserPresets()]);
+  /** The factory presets, then yours. */
+  presets = $state.raw<Preset[]>([...FACTORY_PRESETS, ...loadUserPresets()]);
   /** Each part's sound. The knobs, faders, Synth view and preset browser edit the selected part. */
   readonly parts: Record<PartId, PartState> = {
-    keys: new PartState(0),
-    seq: new PartState(Math.max(0, FACTORY_PRESETS.findIndex((p) => p.name === SEQ_START_PRESET))),
+    keys: new PartState(FACTORY_PRESETS[0]),
+    seq: new PartState(FACTORY_PRESETS.find((p) => p.id === factoryId(SEQ_START_PRESET)) ?? FACTORY_PRESETS[0]),
   };
   part = $state<PartId>("keys");
   /** Preset highlighted by the encoder but not loaded yet. */
-  browseIndex = $state<number | null>(null);
+  browseId = $state<string | null>(null);
+  /** The preset browser: whether it is open, and what it shows (◀ ▶ and the encoder step through that list too). */
+  browserOpen = $state(false);
+  presetFilter = $state<PresetFilter>(emptyFilter());
+  /** Starred presets' ids; pad bank B loads the first 8. */
+  favourites = $state<string[]>(loadFavourites());
 
   /** Step mode: pads edit the drum loop (bank A = steps 1-8, bank B = 9-16) for one drum. */
   stepMode = $state(false);
@@ -358,12 +376,6 @@ export class Playground {
   }
 
   // The selected part's sound: everything below reads and writes these.
-  get presetIndex() {
-    return this.parts[this.part].presetIndex;
-  }
-  set presetIndex(i: number) {
-    this.parts[this.part].presetIndex = i;
-  }
   get values() {
     return this.parts[this.part].values;
   }
@@ -376,21 +388,16 @@ export class Playground {
   set dirty(d: boolean) {
     this.parts[this.part].dirty = d;
   }
-  get dicePreset() {
-    return this.parts[this.part].dicePreset;
-  }
-  set dicePreset(p: Preset | null) {
-    this.parts[this.part].dicePreset = p;
-  }
-
   get preset(): Preset {
-    return this.presetOf(this.part);
+    return this.parts[this.part].preset;
+  }
+  set preset(p: Preset) {
+    this.parts[this.part].preset = p;
   }
 
   /** The preset a part is on. */
   presetOf(part: PartId): Preset {
-    const s = this.parts[part];
-    return s.dicePreset ?? this.presets[s.presetIndex];
+    return this.parts[part].preset;
   }
 
   /** Edit and show another part: the knobs, faders, Synth view and preset browser follow it. */
@@ -399,7 +406,7 @@ export class Playground {
     this.endCompare();
     this.part = part;
     this.engine.select(part);
-    this.browseIndex = null;
+    this.browseId = null;
     this.faderLive.fill(false);
     this.syncHardware();
     this.showMessage("Part", `${PART_NAMES[part]}: ${this.preset.name}`);
@@ -416,14 +423,23 @@ export class Playground {
 
   // ------------------------------------------------------------------ presets
 
-  loadPreset(index: number) {
-    const n = this.presets.length;
-    index = ((index % n) + n) % n;
-    this.remember(`Preset ${this.presets[index].name}`);
-    this.presetIndex = index;
-    this.browseIndex = null;
-    this.dicePreset = null;
-    this.values = presetValues(this.preset);
+  /** Whether a preset is in the list (not a Dice patch, a recipe's sound, or a preset since deleted). */
+  isListed(p: Preset = this.preset) {
+    return this.presets.some((q) => q.id === p.id);
+  }
+
+  /** Whether a preset is one of yours, and still in the list. */
+  isUserPreset(p: Preset = this.preset) {
+    return isUserPresetId(p.id) && this.isListed(p);
+  }
+
+  loadPreset(id: string) {
+    const preset = this.presets.find((p) => p.id === id);
+    if (!preset) return;
+    this.remember(`Preset ${preset.name}`);
+    this.preset = preset;
+    this.browseId = null;
+    this.values = presetValues(preset);
     this.dirty = false;
     this.engine.setParams(this.values);
     // Another sound on the Keys part: the recipe building it is over.
@@ -431,56 +447,130 @@ export class Playground {
     this.syncHardware();
   }
 
+  /** The list ◀ ▶ and the encoder step through: what the browser shows (every preset when that is empty). */
+  get browseList(): Preset[] {
+    const list = filterPresets(this.presets, this.presetFilter, this.favourites);
+    return list.length ? list : this.presets;
+  }
+
+  /** ◀ ▶: the previous or next preset in the browser's list. From a sound not in it, ▶ goes to the first. */
+  presetAfter(from: string, delta: number): Preset {
+    const list = this.browseList;
+    const i = list.findIndex((p) => p.id === from);
+    if (i < 0) return list[delta > 0 ? 0 : list.length - 1];
+    return list[(((i + delta) % list.length) + list.length) % list.length];
+  }
+
+  stepPreset(delta: number) {
+    this.loadPreset(this.presetAfter(this.preset.id, delta).id);
+  }
+
+  setPresetFilter(change: Partial<PresetFilter>) {
+    this.presetFilter = { ...this.presetFilter, ...change };
+  }
+
+  /** Keep the current sound as a preset of your own, and switch to it. */
   saveAsUserPreset(name: string) {
-    const preset: Preset = {
-      ...$state.snapshot(this.preset),
-      name: name.slice(0, 18),
-      values: $state.snapshot(this.values),
-    };
-    delete preset.from;
-    const user = [...loadUserPresets(), preset];
-    saveUserPresets(user);
-    this.presets = [...FACTORY_PRESETS, ...user];
-    this.presetIndex = this.presets.length - 1;
-    this.dicePreset = null;
+    const { from: _, ...current } = $state.snapshot(this.preset) as Preset;
+    const preset: Preset = { ...current, id: userId(), name: name.slice(0, 18), values: $state.snapshot(this.values) };
+    this.setUserPresets([...this.userPresets, preset]);
+    this.preset = preset;
     this.dirty = false;
     this.syncHardware();
   }
 
-  isUserPreset(index?: number) {
-    if (index === undefined) {
-      if (this.dicePreset) return false;
-      index = this.presetIndex;
+  get userPresets(): Preset[] {
+    return this.presets.filter((p) => isUserPresetId(p.id));
+  }
+
+  /** Store your presets and put them in the list. A part on one of them follows its new version. */
+  private setUserPresets(user: Preset[]) {
+    saveUserPresets(user);
+    this.presets = [...FACTORY_PRESETS, ...user];
+    for (const part of Object.values(this.parts)) {
+      const now = user.find((p) => p.id === part.preset.id);
+      if (now) part.preset = now;
     }
-    return index >= FACTORY_PRESETS.length;
   }
 
   /** Roll a random patch and make it the current sound. */
   dice() {
     this.remember("Dice");
-    this.dicePreset = rollDice();
-    this.browseIndex = null;
-    this.values = presetValues(this.dicePreset);
+    this.preset = rollDice();
+    this.browseId = null;
+    this.values = presetValues(this.preset);
     this.dirty = false;
     this.engine.setParams(this.values);
     if (this.part === "keys") this.stopRecipe();
     this.syncHardware();
   }
 
-  deleteUserPreset() {
-    if (!this.isUserPreset()) return;
-    const deleted = this.presetIndex;
-    const user = loadUserPresets();
-    user.splice(deleted - FACTORY_PRESETS.length, 1);
-    saveUserPresets(user);
-    this.presets = [...FACTORY_PRESETS, ...user];
-    // The other part keeps its sound; if it was on the deleted preset, it now counts as edited.
-    const other = this.parts[this.part === "keys" ? "seq" : "keys"];
-    // The preset numbers after it move down one, so older undo steps would point at the wrong presets.
-    this.clearHistory();
-    if (other.presetIndex === deleted) other.dirty = true;
-    if (other.presetIndex >= deleted) other.presetIndex = Math.max(0, Math.min(other.presetIndex - (other.presetIndex > deleted ? 1 : 0), this.presets.length - 1));
-    this.loadPreset(Math.min(this.presetIndex, this.presets.length - 1));
+  /**
+   * Delete one of your presets. A part playing it keeps the sound (it is no longer in the list, like a
+   * Dice patch), and undo can still bring it back as a sound to save again.
+   */
+  deleteUserPreset(id = this.preset.id) {
+    if (!isUserPresetId(id)) return;
+    this.setUserPresets(this.userPresets.filter((p) => p.id !== id));
+    if (this.favourites.includes(id)) this.setFavourites(this.favourites.filter((f) => f !== id));
+    this.syncHardware();
+  }
+
+  renameUserPreset(id: string, name: string) {
+    name = name.trim().slice(0, 18);
+    if (!name) return;
+    this.setUserPresets(this.userPresets.map((p) => (p.id === id ? { ...p, name } : p)));
+    this.syncHardware();
+  }
+
+  isFavourite(id: string) {
+    return this.favourites.includes(id);
+  }
+
+  toggleFavourite(id: string) {
+    this.setFavourites(this.isFavourite(id) ? this.favourites.filter((f) => f !== id) : [...this.favourites, id]);
+  }
+
+  private setFavourites(ids: string[]) {
+    this.favourites = ids;
+    try {
+      localStorage.setItem(FAVOURITES_KEY, JSON.stringify(ids));
+    } catch {
+      // Not saved (private window): it still works until the page closes.
+    }
+    this.syncPadLeds();
+  }
+
+  /** The favourites pad bank B loads (only the ones still in the list). */
+  get padPresets(): Preset[] {
+    return this.favourites.map((id) => this.presets.find((p) => p.id === id)).filter((p): p is Preset => !!p).slice(0, 8);
+  }
+
+  /** Hear a preset without loading it: a short note (a chord for pads, keys and brass), on its own voice. */
+  previewPreset(id: string) {
+    const p = this.presets.find((q) => q.id === id);
+    if (!p) return;
+    const values = presetValues(p);
+    const chord = (p.category === "Pad" || p.category === "Keys" || p.category === "Brass") && !values.mono;
+    const root = p.category === "Bass" ? 36 : 60;
+    // Long enough to hear a slow attack come in, short enough to stay a preview.
+    const seconds = Math.min(2.5, Math.max(0.6, values.attack + 0.6));
+    this.engine.preview(values, chord ? [root, root + 4, root + 7] : [root], seconds);
+  }
+
+  /** A file with your presets (or the ones given), for the Export button. */
+  exportPresets(presets: Preset[] = this.userPresets): string {
+    return presetFile(presets);
+  }
+
+  /** Add the presets from a file to yours. Returns what happened, in words. */
+  async importPresets(file: File): Promise<string> {
+    const result = readPresetFile(await file.text(), this.userPresets, WAVETABLES.length);
+    if (result.added.length) this.setUserPresets([...this.userPresets, ...result.added]);
+    const parts = [`${result.added.length} preset${result.added.length === 1 ? "" : "s"} added`];
+    if (result.skipped) parts.push(`${result.skipped} already here`);
+    if (result.invalid) parts.push(`${result.invalid} not readable`);
+    return parts.join(", ");
   }
 
   // ------------------------------------------------------------------ undo, redo and compare
@@ -494,7 +584,7 @@ export class Playground {
 
   private snapshot(): PartSnapshot {
     const p = this.parts[this.part];
-    return { presetIndex: p.presetIndex, dicePreset: p.dicePreset, values: $state.snapshot(p.values), dirty: p.dirty };
+    return { preset: p.preset, values: $state.snapshot(p.values), dirty: p.dirty };
   }
 
   /** Keep the sound as it is now, before a change. Changes of the same control close together are one step. */
@@ -550,11 +640,11 @@ export class Playground {
     this.historyVersion++;
     if (!step) return this.showMessage(way === "undo" ? "Undo" : "Redo", "nothing to do");
     const s = step.state;
-    this.presetIndex = Math.min(s.presetIndex, this.presets.length - 1);
-    this.dicePreset = s.dicePreset;
+    // A user preset may have been renamed since: the list's version of it.
+    this.preset = this.presets.find((p) => p.id === s.preset.id) ?? s.preset;
     this.values = { ...s.values };
     this.dirty = s.dirty;
-    this.browseIndex = null;
+    this.browseId = null;
     this.engine.setParams(this.values);
     // Undoing the start of a recipe goes back to the sound before it: the recipe is over.
     if (way === "undo" && step.label.startsWith(RECIPE_STEP)) this.stopRecipe();
@@ -820,7 +910,7 @@ export class Playground {
   toggleStepMode() {
     if (this.seqEdit) this.setSeqEdit(false);
     this.stepMode = !this.stepMode;
-    this.browseIndex = null;
+    this.browseId = null;
     if (this.stepMode) this.showMessage("Step edit", `${DRUM_NAMES[this.stepTrack]}: turn encoder`);
     else this.showMessage("Step edit", "off");
     this.syncPadLeds();
@@ -881,7 +971,7 @@ export class Playground {
     if (on === this.seqEdit) return;
     if (on && this.stepMode) this.toggleStepMode();
     this.seqEdit = on;
-    this.browseIndex = null;
+    this.browseId = null;
     this.endHeldStep();
     if (on) this.noteSeq.enabled = true;
     this.faderLive.fill(false);
@@ -1256,15 +1346,12 @@ export class Playground {
         part.values.wtTable = next;
         this.engine.setParam("wtTable", next, owner);
       }
-      if (part.dicePreset?.values.wtTable !== undefined) part.dicePreset.values.wtTable = idAfterRemoval(part.dicePreset.values.wtTable, id);
+      const wt = part.preset.values.wtTable;
+      if (wt !== undefined && wt >= id && !this.isListed(part.preset)) part.preset = { ...part.preset, values: { ...part.preset.values, wtTable: idAfterRemoval(wt, id) } };
     }
-    const user = loadUserPresets();
-    const changed = user.filter((p) => p.values.wtTable !== undefined && p.values.wtTable >= id);
-    for (const p of changed) p.values.wtTable = idAfterRemoval(p.values.wtTable!, id);
-    if (changed.length) {
-      saveUserPresets(user);
-      this.presets = [...FACTORY_PRESETS, ...user];
-    }
+    const user = this.userPresets;
+    const moved = (p: Preset) => p.values.wtTable !== undefined && p.values.wtTable >= id;
+    if (user.some(moved)) this.setUserPresets(user.map((p) => (moved(p) ? { ...p, values: { ...p.values, wtTable: idAfterRemoval(p.values.wtTable!, id) } } : p)));
     this.realignKnobs();
   }
 
@@ -1377,9 +1464,9 @@ export class Playground {
     this.recipe?.stop();
     this.selectPart("keys");
     this.remember(`${RECIPE_STEP}${recipe.name}`);
-    this.dicePreset = initPreset(recipe);
-    this.browseIndex = null;
-    this.values = presetValues(this.dicePreset);
+    this.preset = initPreset(recipe);
+    this.browseId = null;
+    this.values = presetValues(this.preset);
     this.dirty = false;
     this.engine.setParams(this.values);
     this.patch = null;
@@ -1446,7 +1533,8 @@ export class Playground {
   private recipeStepChanged() {
     // Finished: the sound is named after the recipe (still unsaved).
     const run = this.recipe;
-    if (run?.done && this.parts.keys.dicePreset?.from === "recipe") this.parts.keys.dicePreset = { ...this.parts.keys.dicePreset, name: run.recipe.name };
+    const keys = this.parts.keys;
+    if (run?.done && keys.preset.from === "recipe") keys.preset = { ...keys.preset, name: run.recipe.name };
     if (run?.done && !this.recipesDone.includes(run.recipe.id)) this.saveRecipesDone([...this.recipesDone, run.recipe.id]);
     const hw = this.recipeHardware;
     if (hw && this.view === "synth") this.focus(hw.focus);
@@ -1575,22 +1663,22 @@ export class Playground {
   }
 
   /** Encoder turn: browse presets without loading. Click loads. */
+  /** Encoder turn: browse the browser's list without loading. Click loads. */
   browse(delta: number) {
-    const n = this.presets.length;
-    const from = this.browseIndex ?? this.presetIndex;
-    this.browseIndex = (((from + delta) % n) + n) % n;
-    const p = this.presets[this.browseIndex];
-    this.sendDisplay(`${this.browseIndex + 1}/${n} ${p.category}`, `> ${p.name}`);
+    const list = this.browseList;
+    const p = this.presetAfter(this.browseId ?? this.preset.id, delta);
+    this.browseId = p.id;
+    this.sendDisplay(`${list.indexOf(p) + 1}/${list.length} ${p.category}`, `> ${p.name}`);
     clearTimeout(this.browseTimer);
     this.browseTimer = window.setTimeout(() => {
-      this.browseIndex = null;
+      this.browseId = null;
       this.showHome();
     }, BROWSE_TIMEOUT_MS);
   }
 
   confirmBrowse() {
     clearTimeout(this.browseTimer);
-    if (this.browseIndex !== null) this.loadPreset(this.browseIndex);
+    if (this.browseId !== null) this.loadPreset(this.browseId);
   }
 
   // ------------------------------------------------------------------ QWERTY fallback
@@ -1707,7 +1795,8 @@ export class Playground {
           this.syncPadLeds();
         }
         if (e.bank === "B" && !this.stepMode && !this.seqEdit) {
-          if (e.on) this.loadPreset(PAD_PRESETS[e.index]);
+          const fav = this.padPresets[e.index];
+          if (e.on && fav) this.loadPreset(fav.id);
           return;
         }
         return e.on ? this.hitPad(e.index, e.velocity) : this.releasePad(e.index);
@@ -1816,9 +1905,9 @@ export class Playground {
     clearTimeout(this.longPressTimer);
     if (this.longPressFired) return;
     // In sequencer edit, a click switches what the keys do: play, transpose, split.
-    if (this.seqEdit && this.browseIndex === null) return this.cycleKeysMode();
+    if (this.seqEdit && this.browseId === null) return this.cycleKeysMode();
     // In the Synth view, a click listens to the selected block (if it has a signal to hear).
-    if (this.view === "synth" && this.browseIndex === null) {
+    if (this.view === "synth" && this.browseId === null) {
       this.listenTo(this.listening ? null : (BLOCK_TAPS[this.focusBlock] ?? null));
       return;
     }
@@ -1869,9 +1958,10 @@ export class Playground {
     }
     this.spectrumSent.fill(-1);
     LED_IDS.padsA.forEach((id, i) => this.sendLed(id, this.spectrumPads ? [0, 0, 0] : this.drumColor(i)));
+    const favs = this.padPresets;
     LED_IDS.padsB.forEach((id, i) => {
-      const p = this.presets[PAD_PRESETS[i]];
-      this.sendLed(id, dim(p.color, PAD_PRESETS[i] === this.presetIndex && !this.dicePreset ? 1 : 0.15));
+      const p = favs[i];
+      this.sendLed(id, p ? dim(p.color, p.id === this.preset.id ? 1 : 0.15) : [0, 0, 0]);
     });
   }
 
@@ -1911,8 +2001,10 @@ export class Playground {
 
   showHome() {
     if (this.recipe) return this.sendDisplay(...this.recipeScreen());
-    const n = this.presets.length;
-    const where = this.dicePreset ? (this.dicePreset.from === "recipe" ? "Recipe" : "Dice") : `${this.presetIndex + 1}/${n}`;
+    const p = this.preset;
+    const list = this.browseList;
+    const at = list.findIndex((q) => q.id === p.id);
+    const where = p.from === "recipe" ? "Recipe" : p.from === "dice" ? "Dice" : at >= 0 ? `${at + 1}/${list.length}` : this.isListed(p) ? p.category : "Unsaved";
     this.sendDisplay(`${this.part === "keys" ? "Keys" : "Seq"} ${where}`, this.preset.name);
   }
 

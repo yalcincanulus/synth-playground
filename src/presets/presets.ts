@@ -3,6 +3,8 @@ import { defaultValues, MORPH_OF_OLD_TYPE, type ParamId, type ParamValues } from
 export type Rgb = [number, number, number]; // 0-127, the MiniLab's LED range
 
 export interface Preset {
+  /** Stays the same for good (a name can change): factory presets "factory:<name>", your own "user:<random>". */
+  id: string;
   name: string;
   /** "Test": small presets that each show one feature, for trying it out quickly. */
   category: "Bass" | "Lead" | "Pad" | "Keys" | "Brass" | "FX" | "Test";
@@ -11,6 +13,8 @@ export interface Preset {
   /** What knobs 1-8 control. Faders are always the amp envelope. */
   knobs: [ParamId, ParamId, ParamId, ParamId, ParamId, ParamId, ParamId, ParamId];
   values: Partial<ParamValues>;
+  /** Words that describe the sound (dark, plucky, wide…), for the preset browser's search. */
+  tags?: string[];
   /** A sound that isn't in the list (until saved): a rolled Dice patch, or the one a recipe builds. */
   from?: "dice" | "recipe";
 }
@@ -29,7 +33,7 @@ export const FADERS: [ParamId, ParamId, ParamId, ParamId] = ["attack", "decay", 
 // Delay div: 0 1/16, 1 1/8, 2 3/16, 3 1/4, 4 3/8, 5 1/2.
 
 /** Presets in the order they were added; FACTORY_PRESETS below groups them by category. */
-const ALL_PRESETS: Preset[] = [
+const ALL_PRESETS: Omit<Preset, "id">[] = [
   {
     name: "First Saw",
     category: "Lead",
@@ -364,16 +368,72 @@ const ALL_PRESETS: Preset[] = [
   },
 ];
 
-/** Category order in the preset list and dropdown. */
-const CATEGORIES: Preset["category"][] = ["Lead", "Bass", "Pad", "Brass", "Keys", "FX", "Test"];
+/** Category order in the preset browser. */
+export const CATEGORIES: Preset["category"][] = ["Lead", "Bass", "Pad", "Brass", "Keys", "FX", "Test"];
 
-/** Grouped by category, so the numbers count up within each group (and the encoder browses group by group). */
-export const FACTORY_PRESETS: Preset[] = CATEGORIES.flatMap((c) => ALL_PRESETS.filter((p) => p.category === c));
+/**
+ * What each factory preset sounds like, in the words someone might search for. The browser offers the
+ * words in TAG_CHOICES as buttons; the others are found by typing.
+ */
+const TAGS: Record<string, string[]> = {
+  "First Saw": ["bright", "classic", "buzzy"],
+  "Square Lead": ["hollow", "retro", "echo", "mono"],
+  "Fifth Lead": ["fat", "classic", "echo", "mono"],
+  "Chip Lead": ["8-bit", "retro", "bright", "vibrato", "mono"],
+  Whistle: ["soft", "airy", "pure", "vibrato", "spacey"],
+  "Sync Lead": ["hard", "bright", "screaming", "sync", "mono"],
+  "Vowel Lead": ["moving", "talking", "wavetable", "mono"],
+  "Round Bass": ["warm", "fat", "round", "mono"],
+  "Acid Line": ["acid", "squelchy", "dirty", "resonant", "303", "mono"],
+  Wobble: ["wobbly", "dubstep", "dirty", "moving", "mono"],
+  "Reese Bass": ["dark", "fat", "wide", "moving", "drum and bass", "mono"],
+  "Sub Bass": ["deep", "dark", "clean", "pure", "sub", "mono"],
+  "Funk Bass": ["plucky", "funky", "resonant", "punchy", "mono"],
+  "Pulse Bass": ["hollow", "punchy", "retro", "mono"],
+  "Fold Bass": ["buzzy", "dirty", "wavetable", "punchy", "mono"],
+  "Velocity Bass": ["punchy", "warm", "dynamic", "mono"],
+  "Warm Pad": ["warm", "soft", "wide", "slow", "chords"],
+  "Glass Strings": ["glassy", "bright", "strings", "wide", "chords"],
+  "Dark Pad": ["dark", "slow", "moving", "spacey", "ambient"],
+  "Sweep Pad": ["sweep", "resonant", "moving", "slow", "chords"],
+  "PWM Strings": ["strings", "retro", "warm", "moving", "chords"],
+  "Scan Pad": ["wavetable", "moving", "wide", "ambient", "slow"],
+  "Drift Pad": ["moving", "soft", "ambient", "slow", "evolving"],
+  "Brass Stab": ["punchy", "bright", "chords", "classic"],
+  "Synth Brass": ["fat", "warm", "chords", "retro"],
+  Pluck: ["plucky", "short", "echo", "bright"],
+  "Bell Tower": ["bell", "metallic", "spacey", "pure"],
+  "Combo Organ": ["organ", "retro", "chords", "buzzy"],
+  "E-Piano": ["piano", "soft", "warm", "chords", "tremolo"],
+  Mallets: ["percussive", "plucky", "soft", "short"],
+  "FM Bell": ["bell", "metallic", "glassy", "fm"],
+  "Digital Keys": ["wavetable", "digital", "plucky", "moving"],
+  "Table Pluck": ["wavetable", "plucky", "wide", "bright"],
+  "Wind Sweep": ["noise", "airy", "ambient", "moving"],
+  Ocean: ["noise", "ambient", "soft", "moving", "waves"],
+  "Sci-Fi Drone": ["dark", "drone", "dirty", "spacey", "moving"],
+  "Laser Zap": ["zap", "retro", "percussive", "short"],
+  "Synth Toms": ["drum", "percussive", "punchy", "short"],
+  "Ping-pong Pluck": ["echo", "plucky", "stereo", "demo"],
+  "Damping Room": ["reverb", "spacey", "demo"],
+  "Chorus Tide": ["chorus", "wide", "moving", "demo"],
+  "Delay Throw": ["echo", "rhythmic", "demo"],
+  "Reverb Breath": ["reverb", "spacey", "demo"],
+  "Echo Starts": ["echo", "demo"],
+  "Strip Vibrato": ["vibrato", "mod strip", "demo", "mono"],
+  "Velocity Vibrato": ["vibrato", "dynamic", "demo"],
+};
 
-/** What pad bank B loads: a mix across categories, by name. */
-export const PAD_PRESETS: number[] = ["First Saw", "Round Bass", "Acid Line", "Wobble", "Warm Pad", "Glass Strings", "Brass Stab", "Pluck"].map(
-  (name) => FACTORY_PRESETS.findIndex((p) => p.name === name),
-);
+/** The describing words the browser offers as buttons. */
+export const TAG_CHOICES = ["dark", "bright", "warm", "soft", "fat", "dirty", "punchy", "plucky", "slow", "moving", "wide", "spacey", "retro", "metallic", "chords", "mono"];
+
+export const factoryId = (name: string) => `factory:${name}`;
+
+/** Grouped by category, so the browser lists them group by group. */
+export const FACTORY_PRESETS: Preset[] = CATEGORIES.flatMap((c) => ALL_PRESETS.filter((p) => p.category === c)).map((p) => ({ ...p, id: factoryId(p.name), tags: TAGS[p.name] ?? [] }));
+
+/** The favourites before you pick your own: a mix across categories (pad bank B loads the first 8). */
+export const DEFAULT_FAVOURITES = ["First Saw", "Round Bass", "Acid Line", "Wobble", "Warm Pad", "Glass Strings", "Brass Stab", "Pluck"].map(factoryId);
 
 export function presetValues(p: Preset): ParamValues {
   // Presets made before the filter envelope had its own release used the amp's release for it.
@@ -383,15 +443,22 @@ export function presetValues(p: Preset): ParamValues {
 
 const USER_KEY = "minilab3.userPresets";
 
+/** A new id for a preset of your own. */
+export const userId = () => `user:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+
 export function loadUserPresets(): Preset[] {
   try {
-    return (JSON.parse(localStorage.getItem(USER_KEY) ?? "[]") as Preset[]).map(migrate);
+    const saved = JSON.parse(localStorage.getItem(USER_KEY) ?? "[]") as Preset[];
+    const presets = saved.map(migrate);
+    // Saved before presets had ids: give them one for good.
+    if (saved.some((p) => !p.id)) saveUserPresets(presets);
+    return presets;
   } catch {
     return [];
   }
 }
 
-/** Bring a preset saved by an older version up to date: the filter type became Filter Morph. */
+/** Bring a preset saved by an older version up to date: the filter type became Filter Morph, and presets got ids. */
 export function migrate(p: Preset): Preset {
   const values: Record<string, number> = { ...p.values };
   if ("filterType" in values) {
@@ -399,7 +466,7 @@ export function migrate(p: Preset): Preset {
     delete values.filterType;
   }
   const knobs = p.knobs.map((k) => ((k as string) === "filterType" ? "filterMorph" : k)) as Preset["knobs"];
-  return { ...p, values: values as Preset["values"], knobs };
+  return { ...p, id: p.id || userId(), tags: p.tags ?? [], values: values as Preset["values"], knobs };
 }
 
 export function saveUserPresets(presets: Preset[]) {

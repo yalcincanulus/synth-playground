@@ -17,6 +17,8 @@
   import WavetableView from "./wavetable/WavetableView.svelte";
   import AboutPage from "./about/AboutPage.svelte";
   import SequencerPanel from "./sequencer/SequencerPanel.svelte";
+  import PresetBrowser from "./presets/PresetBrowser.svelte";
+  import Marquee from "./components/Marquee.svelte";
 
   const pg = new Playground();
   if (import.meta.env.DEV) Object.assign(window, { pg });
@@ -27,14 +29,13 @@
     return `rgb(${r} ${g} ${b})`;
   });
 
-  // Dropdown grouped by category (factory presets are already in that order); your own presets come last.
-  let presetGroups = $derived.by(() => {
-    const groups = new Map<string, { p: (typeof pg.presets)[number]; i: number }[]>();
-    pg.presets.forEach((p, i) => {
-      const group = pg.isUserPreset(i) ? "My presets" : p.category;
-      groups.set(group, [...(groups.get(group) ?? []), { p, i }]);
-    });
-    return [...groups];
+  // What the preset button says under the name: where the sound comes from.
+  let presetMeta = $derived.by(() => {
+    const p = pg.preset;
+    if (p.from === "recipe") return "Recipe";
+    if (p.from === "dice") return "🎲 Dice";
+    if (!pg.isListed(p)) return "not saved";
+    return pg.isUserPreset(p) ? `mine · ${p.category}` : p.category;
   });
 
   // The keyboard lights up the keys you hold and the notes the step sequencer plays. With the arpeggiator,
@@ -58,6 +59,7 @@
   });
   function closeChanges(e: MouseEvent) {
     if (showChanges && !(e.target instanceof Element && e.target.closest(".changes-wrap"))) showChanges = false;
+    if (pg.browserOpen && !(e.target instanceof Element && e.target.closest(".preset-wrap"))) pg.browserOpen = false;
   }
 
   // The on-screen keyboard can fold away (the MiniLab and the computer keyboard still play); remembered per browser.
@@ -166,30 +168,28 @@
         {#each ["keys", "seq"] as const as part (part)}
           <button class:active={pg.part === part} onclick={() => pg.selectPart(part)}>
             <span class="part-name">{PART_NAMES[part]}</span>
-            <span class="part-preset">{pg.presetOf(part).name}</span>
+            <span class="part-preset"><Marquee text={pg.presetOf(part).name} /></span>
           </button>
         {/each}
       </div>
-      <button onclick={() => pg.loadPreset(pg.presetIndex - 1)} aria-label="Previous preset">◀</button>
-      <!-- `selected` per option rather than select.value: the Dice option appears in the same update that selects it. -->
-      <select onchange={(e) => pg.loadPreset(+e.currentTarget.value)} aria-label="Preset">
-        {#if pg.dicePreset}<option value={-1} disabled selected>{pg.dicePreset.from === "recipe" ? "Recipe:" : "🎲"} {pg.dicePreset.name} · {pg.dicePreset.category}</option>{/if}
-        {#each presetGroups as [category, entries] (category)}
-          <optgroup label={category}>
-            {#each entries as { p, i } (i)}
-              <option value={i} selected={!pg.dicePreset && i === pg.presetIndex}>{i + 1}. {p.name}{pg.isUserPreset(i) ? " (user)" : ""}</option>
-            {/each}
-          </optgroup>
-        {/each}
-      </select>
-      <button onclick={() => pg.loadPreset(pg.presetIndex + 1)} aria-label="Next preset">▶</button>
+      <button onclick={() => pg.stepPreset(-1)} aria-label="Previous preset" title="Previous preset in the browser's list (or turn the encoder)">◀</button>
+      <div class="preset-wrap">
+        <button class="preset-btn" class:open={pg.browserOpen} onclick={() => (pg.browserOpen = !pg.browserOpen)} aria-expanded={pg.browserOpen} title="Browse presets: search, categories, favourites, preview">
+          <span class="pdot" style:background={accent}></span>
+          <span class="pname">{pg.preset.name}</span>
+          <span class="pmeta">{presetMeta}</span>
+          <span class="chev">▾</span>
+        </button>
+        {#if pg.browserOpen}<PresetBrowser {pg} onclose={() => (pg.browserOpen = false)} />{/if}
+      </div>
+      <button onclick={() => pg.stepPreset(1)} aria-label="Next preset" title="Next preset in the browser's list (or turn the encoder)">▶</button>
       <button onclick={() => pg.dice()} title="Random patch (hold the encoder down)">🎲 Dice</button>
       <div class="undo" role="group" aria-label="Undo and redo">
         <button disabled={!pg.canUndo} onclick={() => pg.undo()} aria-label="Undo" title={pg.undoLabel ? `Undo ${pg.undoLabel} (Ctrl+Z · Shift + pitch strip down)` : "Nothing to undo"}>↶</button>
         <button disabled={!pg.canRedo} onclick={() => pg.redo()} aria-label="Redo" title={pg.redoLabel ? `Redo ${pg.redoLabel} (Ctrl+Shift+Z · Shift + pitch strip up)` : "Nothing to redo"}>↷</button>
       </div>
-      {#if pg.browseIndex !== null}
-        <span class="browse">Encoder: {pg.presets[pg.browseIndex].name}, click to load</span>
+      {#if pg.browseId !== null}
+        <span class="browse">Encoder: {pg.presets.find((p) => p.id === pg.browseId)?.name}, click to load</span>
       {:else if pg.dirty}
         <div class="changes-wrap">
           <button class="changes-btn" class:open={showChanges} onclick={() => (showChanges = !showChanges)} aria-expanded={showChanges} title="What you changed since the preset was loaded">
@@ -220,7 +220,6 @@
       {/if}
       <span class="push"></span>
       <button onclick={savePreset}>Save as…</button>
-      {#if pg.isUserPreset()}<button onclick={() => pg.deleteUserPreset()}>Delete</button>{/if}
     </div>
 
     <div class="group transport" role="group" aria-label="Transport">
@@ -477,12 +476,19 @@
   .group { display: flex; align-items: center; gap: 6px; padding: 4px 6px; background: #0f1416; border: 1px solid var(--line); border-radius: 8px; }
   .sound { flex: 1; min-width: 0; }
   .parts { display: flex; gap: 2px; margin-right: 6px; }
-  .parts button { display: grid; text-align: left; padding: 1px 10px; line-height: 1.2; }
+  /* A fixed size, so loading a preset with a longer name doesn't move the rest of the row. */
+  .parts button { display: grid; width: 150px; text-align: left; padding: 3px 12px; line-height: 1.25; }
   .parts button.active { border-color: var(--accent); }
   .part-name { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); }
   .parts button.active .part-name { color: var(--accent); }
-  .part-preset { font-size: 12.5px; white-space: nowrap; }
-  .sound select { width: 260px; min-width: 0; font-size: 14px; padding: 4px 8px; }
+  .part-preset { font-size: 13.5px; min-width: 0; }
+  .preset-wrap { position: relative; min-width: 0; }
+  .preset-btn { display: flex; align-items: baseline; gap: 8px; width: 270px; max-width: 100%; padding: 4px 10px; text-align: left; }
+  .preset-btn.open { border-color: var(--accent); }
+  .pdot { width: 9px; height: 9px; border-radius: 50%; flex: none; align-self: center; }
+  .pname { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .pmeta { font-size: 11px; color: var(--dim); white-space: nowrap; flex: 1; }
+  .preset-btn .chev { font-size: 10px; color: var(--dim); }
   .browse { color: var(--accent); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .push { flex: 1; }
   .undo { display: flex; gap: 2px; }

@@ -31,6 +31,7 @@
       <ul>
         <li><strong>Play:</strong> the MiniLab's knobs and faders on screen, presets, Dice (a random patch), a drum loop with step editing, waveform and spectrum views.</li>
         <li><strong>Step sequencer:</strong> 8 steps with notes, rests and slides, played on the MiniLab's knobs and pads. Play chords over it, or transpose it from the keys.</li>
+        <li><strong>Preset browser:</strong> click the preset name. Search by what a sound is ("dark bass", "plucky", "wide pad"), pick a category or a describing word, hear a preset with ▷ before loading it, and star favourites (the first 8 are on pad bank B). Your own presets have their own group, and can be exported to a file and imported on another computer.</li>
         <li><strong>Two parts:</strong> the keys and the step sequencer each have their own sound, say a pad over a bass line. Pick the part to edit above the presets, or with Shift + any key on the MiniLab.</li>
         <li><strong>Synth:</strong> the whole synth as blocks with live signals and cables, plain-English explanations, and "Listen here" to hear any stage on its own.</li>
         <li><strong>Wavetable:</strong> eight built-in wavetables in 3D, with the wave playing right now and its harmonics. Import your own (a Serum-format WAV, or any short sound, which is cut into frames) or draw one. Your tables stay in this browser.</li>
@@ -42,7 +43,7 @@
 
       <h3>Coming later <span class="tag">not in yet</span></h3>
       <ul class="later">
-        <li>A preset browser, more effects, more modulation</li>
+        <li>More effects, more modulation</li>
         <li>An interactive course that introduces one topic at a time</li>
       </ul>
 
@@ -58,7 +59,7 @@
         <dt>Computer keyboard</dt>
         <dd>A to ' plays notes (W, E, T… are the black keys); Z / X shift the octave</dd>
         <dt>Encoder</dt>
-        <dd>Turn: browse presets, click to load, hold for Dice. Synth view: turn for the knob pages, click to listen at the selected block. Wavetable view: turn to pick the table</dd>
+        <dd>Turn: browse presets (the preset browser's list: a category, your favourites, a search), click to load, hold for Dice. Synth view: turn for the knob pages, click to listen at the selected block. Wavetable view: turn to pick the table</dd>
         <dt>Shift + encoder</dt>
         <dd>Turn: the next view (Waveform, Spectrum, Synth, Wavetable). Click: drum step edit (turn to pick the drum), again: sequencer edit, again: off</dd>
         <dt>Shift + any knob</dt>
@@ -143,7 +144,7 @@
 
       <h4>Your presets</h4>
       <ul>
-        <li>Saved presets live in this browser profile only. Clearing site data deletes them, and they don't sync between browsers or computers.</li>
+        <li>Saved presets live in this browser profile only. Clearing site data deletes them, and they don't sync between browsers or computers: use <strong>Export mine</strong> in the preset browser to keep them in a file, and <strong>Import…</strong> to add them elsewhere.</li>
       </ul>
     </section>
   </div>

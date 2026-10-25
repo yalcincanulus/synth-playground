@@ -149,10 +149,13 @@ export function rollDice(): Preset {
   while (extras.length < 4) extras.push(["reverbMix", "drive", "chorus", "delayMix"].find((id) => !extras.includes(id as ParamId)) as ParamId);
 
   return {
+    id: `dice:${Math.random().toString(36).slice(2, 10)}`,
     name: randomName(),
     category: CATEGORY[archetype],
     color: randomColor(),
     knobs: ["cutoff", "resonance", "filterEnvAmt", "filterDecay", ...extras] as Preset["knobs"],
     values: v,
+    tags: [archetype, "random"],
+    from: "dice",
   };
 }

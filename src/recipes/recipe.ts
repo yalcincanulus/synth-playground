@@ -86,6 +86,7 @@ export const INIT_VALUES: Partial<ParamValues> = {
 
 export function initPreset(recipe: Recipe): Preset {
   return {
+    id: `recipe:${recipe.id}`,
     name: "Init",
     category: recipe.category,
     color: recipe.color,

@@ -386,6 +386,18 @@ The synth must run well on weaker computers, and the app should be easier to fin
 - Hear a preset before loading it (a short preview note).
 - Export and import presets as files.
 - **Done when:** you can find a sound by what it is ("dark bass") in a few seconds, and move your presets to another computer.
+- Status: done 2026-10-25 (tried by the user).
+  - **Ids instead of list positions:** every preset has an id for good (`factory:<name>`, `user:<random>`; Dice and recipe sounds get their own). Each part holds its preset itself, not a number in the list. The old dropdown's ◀ ▶ went wrong after Dice or a deleted preset, because they stepped from a stale number; that whole class of bug is gone. Undo steps keep the preset too, so deleting a preset no longer clears the history.
+  - **Browser** (`src/app/presets/PresetBrowser.svelte`, logic in `src/presets/browser.ts`): click the preset name in the header. Groups down the left (All, ★ Favourites, My presets, then the categories; "Test" is shown as "Feature demos"), a search box, and 16 describing-word buttons (dark, bright, warm, soft, fat, dirty, punchy, plucky, slow, moving, wide, spacey, retro, metallic, chords, mono). Every typed word must match the name, the category or a tag; the start of a word is enough, plurals and a few other words work ("pads", "effects"). "dark bass" finds Reese Bass and Sub Bass. ↑ ↓ and Enter work in the search box; Esc or a click outside closes it. Click a row to load it; double-click loads and closes.
+  - **Tags:** every factory preset has 3–6 describing words (written from its settings). Your presets keep the tags of the sound they were saved from.
+  - **Preview:** ▷ plays a short note (a chord for pads, keys and brass; a low note for basses; longer for slow attacks) on a third voice processor of its own, made the first time you preview. The parts keep their sounds and notes.
+  - **Favourites:** ★ on any preset, kept after a reload. Pad bank B now loads the first 8 favourites (the old 8 pad presets are the default favourites); a pad with no favourite is dark.
+  - **Your presets:** a group of their own, with rename and delete. Deleting the preset a part is on leaves the sound playing as "not saved".
+  - **Files:** "Export mine" saves your presets as a JSON file; "Import…" adds a file's presets to yours. Presets you already have (same name and settings) are skipped; a name taken by another sound gets a number. Settings are checked: unknown ones are dropped, values are kept in range, and a wavetable the other computer doesn't have becomes the first table.
+  - **◀ ▶ and the encoder** step through the browser's list (a category, favourites, a search), wrapping round; from a sound that isn't in it, ▶ goes to the first. The OLED counts within that list.
+  - **Checked in the browser** (Helium, headless): "dark bass" + Enter; preview without changing the part; tags and groups; ◀ ▶ through Bass, also after Dice; encoder browse and click; save, rename, delete, undo; export, then import into a fresh browser profile (and again: "already here"), kept after a reload. No errors.
+  - **Part buttons:** Keys and Sequencer are a fixed size now, so a preset with a longer name doesn't move the header row. A name too long for its button slides to show the rest and back (`Marquee.svelte`, like a long title in a media player; it stays still with reduced motion).
+  - **Tests:** `browser.test.ts` (search by name, category and tag, word starts, plurals and other words, groups, tag buttons, favourites' order, export → import, duplicates and name clashes, settings checked, files that aren't presets; every factory preset tagged with its own id).
 
 ### 22. Effects
 

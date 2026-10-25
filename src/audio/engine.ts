@@ -63,6 +63,10 @@ export class Engine {
   private cpuAt = 0;
   bpm = 120;
 
+  /** The preset browser's preview voice: its own part, made the first time a preset is previewed. */
+  private previewPart: Part | null = null;
+  private seed = 0;
+
   private listenGain: GainNode;
   private listening: ListenTap | null = null;
   private listenNode: AudioNode | null = null;
@@ -94,6 +98,7 @@ export class Engine {
       for (const part of this.allParts) this.loadTable(part.params.wtTable);
       // One seed for both parts' random LFOs, picked here so a seeded render (render check) repeats them.
       const seed = Math.floor(Math.random() * 2 ** 32);
+      this.seed = seed;
       this.parts.keys.start(seed);
       this.parts.seq.start(seed ^ 0x5eed);
       // The other built-in tables in the background (about 15 ms each), so switching tables later is instant.
@@ -310,6 +315,36 @@ export class Engine {
 
   noteOff(note: number, at?: number, owner: NoteOwner = "keys") {
     this.parts[owner].noteOff(note, Math.max(at ?? 0, this.ctx.currentTime));
+  }
+
+  /**
+   * Hear a sound without loading it (the preset browser): `notes` together for `seconds`, on a part of its
+   * own, so both parts keep their sounds and their notes. A new preview cuts the one before.
+   */
+  preview(values: ParamValues, notes: number[], seconds: number) {
+    if (!this.tableLoader) return; // the voice processors haven't loaded yet
+    if (!this.previewPart) {
+      // Its own small budget: it never cuts your notes, and never more than one chord at a time.
+      const engine = this;
+      const host = {
+        ctx: this.ctx,
+        get bpm() {
+          return engine.bpm;
+        },
+        makeRoom: (part: Part, _weight: number, t: number) => {
+          while (part.voices.length >= 4) part.cut(part.voices[0], t);
+        },
+        changed: (part: Part) => this.loadTable(part.params.wtTable),
+      };
+      this.previewPart = new Part(host, "keys", this.fx.addPart());
+      this.previewPart.start(this.seed ^ 0x9e37);
+    }
+    const part = this.previewPart;
+    part.allNotesOff();
+    part.setParams(values);
+    const t = this.ctx.currentTime;
+    for (const n of notes) part.noteOn(n, 100, t);
+    for (const n of notes) part.noteOff(n, t + seconds);
   }
 
   allNotesOff() {
