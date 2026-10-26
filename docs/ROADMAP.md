@@ -456,7 +456,7 @@ Postponed on 2026-10-25 until Phase F was done; started 2026-10-26. Modelled on 
 - Next/back, progress saved, and MiniLab knobs mapped only to what the page shows.
 - **Chapter 1, about 6 pages:** what sound is, pitch, loudness, wave shapes, harmonics (with the harmonics bars), detune and beating.
 - **Done when:** someone with no synth knowledge can go through Chapter 1 using only the MiniLab and the page.
-- Status: built 2026-10-26, waiting for a check on the MiniLab.
+- Status: done 2026-10-26 (checked by the user).
   - **Where:** a **Learn** tab next to Play, Synth and Wavetable. The page is on the left: a title, 2–3 short paragraphs (new words in bold), one widget, and "Try this". On the right is the reduced synth: only the page's blocks, in signal order (Oscillator 1 → Output; on the last page also Oscillator 2 and the Mixer), each with only the page's controls. Below it, the knobs the page uses. A row of page chips at the top (✓ when done), with Back and Next.
   - **Held still:** each page starts from its own sound over the course's base (Init with a sine: one oscillator, filter open, no envelopes, no effects). Opening Learn stops the transport, leaves any recipe, step or sequencer edit, selects the Keys part, and switches the arpeggiator and scale lock off. The sound bar (presets, Dice, undo) is hidden. Leaving gives back the Keys part's sound (preset, edits, "edited" flag), the arpeggiator and the scale. Changes on a course page are not undo steps, and undo is off while the course is open.
   - **Lessons as data** (`src/course/`): `Lesson` has text, a widget, the blocks, the knobs (MiniLab knobs 1, 2…), a starting sound, choice limits (the Osc 1 wave offers sine to square, without "table"), and steps. The steps are recipe steps and run on the same engine (`RecipeRun`, now generic): they hold for 1.2 s, then stay ticked for 3 s. A new play check, "a high note" (C5 or above).
@@ -471,7 +471,7 @@ Postponed on 2026-10-25 until Phase F was done; started 2026-10-26. Modelled on 
 
 - Amp envelope stage by stage (each control appears only once it's explained), then the filter envelope.
 - The widgets compare a long attack with a short one, and a pluck with a pad.
-- Status: built 2026-10-26, waiting for a check on the MiniLab.
+- Status: done 2026-10-26 (checked by the user).
   - **5 pages** (`src/course/chapter2.ts`), all on the sawtooth: **Attack** (A/B short vs long attack, fader 1), **Decay and Sustain** (faders 1–3), **Release** (all four faders: ADSR), **Pluck and pad** (A/B of the two shapes), **The filter envelope** (Cutoff, Filt Env and F Decay on knobs 1–3, with a short introduction to the filter, which chapter 3 explains).
   - **Each control appears once it is explained:** a page lists its `faders` (the amp envelope keeps its own faders, as everywhere else in the app), and only those faders work there; the others say "not on this page" on the OLED. On the screen they carry an F1–F4 badge, and "On the MiniLab" lists them. When a page opens or A/B changes a fader's setting, the fader picks up: it does nothing until it reaches the new value.
   - **New in the framework:** an envelope widget (the Synth view's envelope picture, with a dot per sounding note), A/B comparisons that show an envelope instead of the wave, and a "Shaping it" group under the reduced synth for the envelope blocks (they are outside the signal path). The OLED names faders too ("Fader 3: Sustain").
@@ -483,6 +483,15 @@ Postponed on 2026-10-25 until Phase F was done; started 2026-10-26. Modelled on 
 - Cutoff, resonance, filter types, key tracking, drive, the ladder filter vs the clean filter.
 - A spectrogram widget shows what the filter removes.
 - That spectrogram view gets built in this slice and can be reused in the Synth view.
+- Status: done 2026-10-26 (checked by the user).
+  - **6 pages** (`src/course/chapter3.ts`): **Cutoff** (subtractive synthesis, the low-pass), **Resonance**, **Filter types** (Filt Morph: low-pass, band-pass, high-pass), **Key tracking**, **Drive** (on a sine, so the new harmonics show), **Clean and ladder** (A/B of the two models, then self-oscillation and an acid sweep).
+  - **Spectrogram** (`src/app/components/spectrogram.ts`): time runs right to left, pitch goes up on a log scale (30 Hz to 16 kHz), brighter is louder. The brightness follows the sound: the loudest level of the last moments is full colour, and 60 dB below it is black, so quiet and loud sounds both show their harmonics. A row's level blends the two nearest analyser bins down low, and takes the loudest of its bins up high. A dashed line can mark a frequency (the filter's live cutoff, with the envelope and key tracking).
+    - Found while testing: moving the history left by drawing the canvas onto itself blended the moved picture over the old one, so faint pixels added up until everything was solid. It now replaces the old picture ("copy").
+  - **Where it is used:** the filter pages show two spectrograms side by side, into and out of the filter (on the Drive page, into the drive and out of the filter), so you see what was taken away. The Synth view's **Filter block** now shows a small spectrogram of its output, with the cutoff line, where its small scope was. The **Play view** has a third tab, **Spectrogram** (also reached with Shift + encoder).
+  - **Other widgets:** the filter's response curve (the Synth view's picture: dashed where the knob is, solid where the filter is now), on its own or under an A/B comparison.
+  - **The stage taps** now also run while the Learn view is open, because the spectrograms read them.
+  - **Self-oscillation:** the ladder only rings on its own above Resonance 16.8 (feedback 4), so the step asks for about 19.
+  - **Checked in the browser** (Helium, headless, 1280 x 720): all 6 pages done from simulated MiniLab events alone; the spectrograms show the harmonics leave as the cutoff falls and appear as the drive rises. No errors.
 
 ### 27. Chapter 4, "Movement" (LFOs and modulation)
 

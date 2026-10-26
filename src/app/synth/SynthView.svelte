@@ -10,6 +10,7 @@
   import LiveCanvas from "./LiveCanvas.svelte";
   import { PatchDrag, providePatchDrag } from "./patchDrag.svelte";
   import * as viz from "./viz";
+  import { spectrogram } from "../components/spectrogram";
 
   let { pg, accent }: { pg: Playground; accent: string } = $props();
 
@@ -240,7 +241,8 @@
     <div class="col">
       <Block {pg} id="filter">
         <LiveCanvas height={76} draw={viz.filter(engine, color)} />
-        <LiveCanvas height={24} draw={viz.scope(() => taps.filter, color)} />
+        <!-- What comes out, over time: the dark area above the dashed cutoff is what the filter takes away. -->
+        <LiveCanvas height={40} draw={spectrogram(() => taps.filter, color, () => ({ hz: viz.liveCutoff(engine), label: "cutoff" }))} />
       </Block>
       <Block {pg} id="filter2" inactive={pg.values.filter2Mode === 0 ? "off" : null}>
         <LiveCanvas height={46} draw={viz.filter2(engine, color)} />

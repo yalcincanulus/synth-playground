@@ -5,7 +5,8 @@
   import Knob from "../components/Knob.svelte";
   import type { Playground } from "../playground.svelte";
   import { harmonicBars, liveWave, noteHz, pitchWave } from "./draw";
-  import { envelope } from "../synth/viz";
+  import { envelope, filter, liveCutoff } from "../synth/viz";
+  import { spectrogram } from "../components/spectrogram";
 
   let { pg, widget, accent }: { pg: Playground; widget: Widget; accent: string } = $props();
 
@@ -22,6 +23,11 @@
 
   // Beating: two oscillators `detune` cents apart beat this many times a second, at the note played (A3 until one is).
   let beatNote = $derived(note ?? 57);
+  /** The filter's cutoff right now (with the envelope and key tracking), marked on the spectrograms. */
+  const cutoffMark = () => ({ hz: liveCutoff(pg.engine), label: "cutoff" });
+  const TAP_TITLES = { mix: "Into the drive", drive: "Into the filter", filter: "Out of the filter" };
+  const tap = (id: "mix" | "drive" | "filter") => () => pg.engine.taps[id];
+
   let beats = $derived(noteHz(beatNote) * (Math.pow(2, pg.values.osc2Detune / 1200) - 1));
 </script>
 
@@ -54,6 +60,19 @@
     </div>
     <div class="frame tall grow"><canvas use:surface={{ draw: liveWave(analyser, color, wave, FIXED_GAIN), animate: true }}></canvas></div>
   </div>
+{:else if widget.kind === "spectrogram"}
+  <div class="pair">
+    {#each [widget.before, widget.after] as id, i (i)}
+      <figure>
+        <figcaption>{i === 1 && widget.before === "mix" ? "Out of the drive and filter" : TAP_TITLES[id]}</figcaption>
+        <div class="frame tall"><canvas use:surface={{ draw: spectrogram(tap(id), color, cutoffMark), animate: true }}></canvas></div>
+      </figure>
+    {/each}
+  </div>
+  <p class="caption"><span class="dim">Time runs right to left; higher pitches are higher up; brighter is louder. The dashed line is the filter's cutoff.</span></p>
+{:else if widget.kind === "response"}
+  <div class="frame tall"><canvas use:surface={{ draw: filter(pg.engine, color), animate: true }}></canvas></div>
+  <p class="caption"><span class="dim">Low frequencies on the left, high on the right; the higher the line, the more gets through. Dashed: where the knob is; solid: where the filter is right now.</span></p>
 {:else if widget.kind === "envelope"}
   <div class="frame tall"><canvas use:surface={{ draw: envelope(pg.engine, widget.which, color), animate: true }}></canvas></div>
   <p class="caption"><span class="dim">Each dot is a note you are playing, travelling along the shape.</span></p>
@@ -72,11 +91,15 @@
   </div>
   {#if widget.picture === "amp" || widget.picture === "filter"}
     <div class="frame"><canvas use:surface={{ draw: envelope(pg.engine, widget.picture, color), animate: true }}></canvas></div>
+  {:else if widget.picture === "response"}
+    <div class="frame"><canvas use:surface={{ draw: filter(pg.engine, color), animate: true }}></canvas></div>
   {:else}
     <div class="frame"><canvas use:surface={{ draw: liveWave(analyser, color, wave, null), animate: true }}></canvas></div>
   {/if}
   <p class="caption">
-    {#if widget.picture && widget.picture !== "wave"}
+    {#if widget.picture === "response"}
+      <span class="dim">The filter's response: how much of each frequency gets through.</span>
+    {:else if widget.picture && widget.picture !== "wave"}
       <span class="dim">Each dot is a note you are playing, travelling along the shape.</span>
     {:else if pg.values.oscMix < 0.05}
       Oscillator 2 is silent (Osc Mix at 0): nothing to beat against.
@@ -95,6 +118,9 @@
   .frame.tall { height: 170px; }
   .frame.grow { flex: 1; min-width: 0; }
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  figure { margin: 0; }
+  figcaption { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
   .readout { display: flex; align-items: baseline; gap: 14px; min-height: 40px; margin-bottom: 6px; flex-wrap: wrap; }
   .big { font-size: 32px; font-weight: 600; color: var(--accent); }
   .hz { font: 20px var(--mono); color: var(--text); }

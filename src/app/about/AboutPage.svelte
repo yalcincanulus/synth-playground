@@ -29,7 +29,7 @@
     <section>
       <h3>What's inside</h3>
       <ul>
-        <li><strong>Play:</strong> the MiniLab's knobs and faders on screen, presets, Dice (a random patch), a drum loop with step editing, waveform and spectrum views.</li>
+        <li><strong>Play:</strong> the MiniLab's knobs and faders on screen, presets, Dice (a random patch), a drum loop with step editing, waveform, spectrum and spectrogram views.</li>
         <li><strong>Step sequencer:</strong> 8 steps with notes, rests and slides, played on the MiniLab's knobs and pads. Play chords over it, or transpose it from the keys.</li>
         <li><strong>Preset browser:</strong> click the preset name. Search by what a sound is ("dark bass", "plucky", "wide pad"), pick a category or a describing word, hear a preset with ▷ before loading it, and star favourites (the first 8 are on pad bank B). Your own presets have their own group, and can be exported to a file and imported on another computer.</li>
         <li><strong>Two parts:</strong> the keys and the step sequencer each have their own sound, say a pad over a bass line. Pick the part to edit above the presets, or with Shift + any key on the MiniLab.</li>
@@ -37,7 +37,7 @@
         <li><strong>Wavetable:</strong> eight built-in wavetables in 3D, with the wave playing right now and its harmonics. Import your own (a Serum-format WAV, or any short sound, which is cut into frames) or draw one. Your tables stay in this browser.</li>
         <li><strong>Scale lock and chord mode:</strong> every key lands on a note of the scale, or plays a whole chord of it. The chord you play is named above the keyboard.</li>
         <li><strong>Arpeggiator:</strong> hold notes or a chord and it plays them one at a time (up, down, up-down, random, or as played) over 1–3 octaves, in time with the drums. With chord mode, one finger plays an arpeggio. It also runs with the drums stopped. Use it rather than the MiniLab's own Arp button, which keeps its own tempo.</li>
-        <li><strong>Learn:</strong> a course on how sound and synths work, one idea per page, with a picture to play with and only the controls that page needs. Chapter 1, "Sound and Oscillators" (6 pages), and Chapter 2, "Shaping over time" (envelopes, 5 pages). The MiniLab's knobs follow the page and the encoder turns the pages. Your own sound comes back when you leave.</li>
+        <li><strong>Learn:</strong> a course on how sound and synths work, one idea per page, with a picture to play with and only the controls that page needs. Chapter 1, "Sound and Oscillators" (6 pages), Chapter 2, "Shaping over time" (envelopes, 5 pages), and Chapter 3, "Filters" (6 pages). The MiniLab's knobs follow the page and the encoder turns the pages. Your own sound comes back when you leave.</li>
         <li><strong>Recipes:</strong> 18 sounds to build step by step, from Init, three of them famous ones (Classics).</li>
         <li><strong>Classics:</strong> 21 presets that recreate famous synth sounds, each naming the original instrument and a record to compare it with.</li>
         <li><strong>Sound:</strong> two oscillators with pulse width, hard sync, FM and wavetables; sub and noise; a clean or a ladder filter with a low-pass to high-pass morph, an optional second filter, and drive; stereo unison and panning; amp, filter, pitch and mod envelopes; three LFOs; a mod matrix with 8 routes that also reaches the effects and the LFOs, patched by dragging cables in the Synth view; a three-line chorus, a stereo or ping-pong delay, and a reverb with damping.</li>
@@ -45,7 +45,7 @@
 
       <h3>Coming later <span class="tag">not in yet</span></h3>
       <ul class="later">
-        <li>More course chapters: filters, LFOs and modulation, and beyond subtractive synthesis</li>
+        <li>More course chapters: LFOs and modulation, and beyond subtractive synthesis</li>
       </ul>
 
       <h3>Getting started</h3>
@@ -62,7 +62,7 @@
         <dt>Encoder</dt>
         <dd>Turn: browse presets (the preset browser's list: a category, your favourites, a search), click to load, hold for Dice. Synth view: turn for the knob pages, click to listen at the selected block. Wavetable view: turn to pick the table. Learn view: turn for the next or previous page, click to switch A/B on a comparison page</dd>
         <dt>Shift + encoder</dt>
-        <dd>Turn: the next view (Waveform, Spectrum, Synth, Wavetable). Click: drum step edit (turn to pick the drum), again: sequencer edit, again: off</dd>
+        <dd>Turn: the next view (Waveform, Spectrum, Spectrogram, Synth, Wavetable). Click: drum step edit (turn to pick the drum), again: sequencer edit, again: off</dd>
         <dt>Shift + any knob</dt>
         <dd>Tempo</dd>
         <dt>Shift + any key</dt>

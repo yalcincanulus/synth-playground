@@ -69,11 +69,11 @@ import { DEFAULT_FAVOURITES, FACTORY_PRESETS, factoryId, FADERS, loadUserPresets
 import { emptyFilter, filterPresets, isUserPresetId, presetFile, readPresetFile, type PresetFilter } from "../presets/browser";
 
 export type MidiStatus = "idle" | "unsupported" | "denied" | "not-found" | "connected";
-export type VizMode = "scope" | "spectrum";
+export type VizMode = "scope" | "spectrum" | "spectrogram";
 export type View = "playground" | "synth" | "wavetable" | "course" | "about";
-/** What Shift + encoder cycles through: the playground's two visualisers, then the Synth and Wavetable views. */
-const SCREENS = ["scope", "spectrum", "synth", "wavetable"] as const;
-const SCREEN_NAMES: Record<(typeof SCREENS)[number], string> = { scope: "Waveform", spectrum: "Spectrum", synth: "Synth", wavetable: "Wavetable" };
+/** What Shift + encoder cycles through: the playground's three visualisers, then the Synth and Wavetable views. */
+const SCREENS = ["scope", "spectrum", "spectrogram", "synth", "wavetable"] as const;
+const SCREEN_NAMES: Record<(typeof SCREENS)[number], string> = { scope: "Waveform", spectrum: "Spectrum", spectrogram: "Spectrogram", synth: "Synth", wavetable: "Wavetable" };
 const EXPLAIN_KEY = "minilab3.explain";
 const SCALE_KEY = "minilab3.scale";
 /** The scale the Scale lock switch brings back (Major the first time). */
@@ -1679,9 +1679,9 @@ export class Playground {
     return (step?.checks ?? []).flatMap((c) => (isPlay(c) ? [] : [c.param]));
   }
 
-  /** The stage taps cost every voice extra work: only the Synth view draws them, and "Listen here" plays them. */
+  /** The stage taps cost every voice extra work: only the Synth view and the course draw them, and "Listen here" plays them. */
   private syncTaps() {
-    this.engine.setTaps(this.view === "synth" || this.listening !== null);
+    this.engine.setTaps(this.view === "synth" || this.view === "course" || this.listening !== null);
   }
 
   /** Hear one stage on its own; the same stage again (or null) returns to the full sound. */

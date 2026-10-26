@@ -27,13 +27,23 @@ export type Widget =
   | { kind: "knob"; param: ParamId }
   /** The harmonics in Osc 1's wave: one bar per sine. */
   | { kind: "harmonics" }
+  /**
+   * Two spectrograms side by side: the sound at one point of the synth and at a later one (say into and out
+   * of the filter), so you see what happened between them. Both mark the filter's live cutoff.
+   */
+  | { kind: "spectrogram"; before: StageTap; after: StageTap }
+  /** The filter's response: how much of each frequency gets through, now. */
+  | { kind: "response" }
   /** An envelope's shape, with a dot for each note showing where it is now. */
   | { kind: "envelope"; which: "amp" | "filter" }
   /**
    * Two sounds to switch between. Each side sets the page's controls (so you see what changed). The
    * picture under them: the wave (the default) or an envelope.
    */
-  | { kind: "compare"; a: CompareSide; b: CompareSide; picture?: "wave" | "amp" | "filter" };
+  | { kind: "compare"; a: CompareSide; b: CompareSide; picture?: "wave" | "amp" | "filter" | "response" };
+
+/** Points in the synth a spectrogram can listen at: after the mixer, after the drive, after the filter. */
+export type StageTap = "mix" | "drive" | "filter";
 
 export interface Lesson {
   id: string;

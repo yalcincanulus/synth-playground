@@ -12,6 +12,8 @@
   import Scope from "./components/Scope.svelte";
   import SeqGrid from "./components/SeqGrid.svelte";
   import Spectrum from "./components/Spectrum.svelte";
+  import { surface } from "./components/canvas";
+  import { spectrogram } from "./components/spectrogram";
   import { PART_NAMES, Playground, SHIFT_FADERS } from "./playground.svelte";
   import SynthView from "./synth/SynthView.svelte";
   import WavetableView from "./wavetable/WavetableView.svelte";
@@ -294,13 +296,16 @@
         <div class="tabs">
           <button class:active={pg.vizMode === "scope"} onclick={() => (pg.vizMode = "scope")}>Waveform</button>
           <button class:active={pg.vizMode === "spectrum"} onclick={() => (pg.vizMode = "spectrum")}>Spectrum</button>
+          <button class:active={pg.vizMode === "spectrogram"} onclick={() => (pg.vizMode = "spectrogram")} title="The spectrum over time: time runs right to left, higher pitches higher up, brighter is louder">Spectrogram</button>
           <span class="hint" class:shifted={pg.shift}>Shift + encoder: next view</span>
         </div>
         <div class="canvas">
           {#if pg.vizMode === "scope"}
             <Scope analyser={pg.engine.analyser} color={accent} />
-          {:else}
+          {:else if pg.vizMode === "spectrum"}
             <Spectrum analyser={pg.engine.analyser} color={accent} />
+          {:else}
+            <canvas class="spectrogram" use:surface={{ draw: spectrogram(() => pg.engine.analyser, () => accent), animate: true }}></canvas>
           {/if}
         </div>
       </section>
@@ -545,6 +550,7 @@
   .faders { display: grid; grid-template-columns: repeat(4, 58px); }
   .main-viz { display: flex; flex-direction: column; min-height: 200px; }
   .canvas { position: relative; flex: 1; min-height: 0; }
+  .spectrogram { position: absolute; inset: 0; width: 100%; height: 100%; display: block; border-radius: 4px; background: #0b0e10; }
   .tabs { display: flex; gap: 4px; align-items: center; margin-bottom: 6px; }
   .tabs button { font-size: 12px; padding: 2px 10px; }
   .tabs .active { border-color: var(--accent); color: var(--accent); }
