@@ -6,6 +6,8 @@ Rewritten 2026-10-24: the engine and sound quality now come first, so recipes an
 
 Updated 2026-10-25: after the recipes, the synth and the app get better first (Phase F: speed on weaker computers, layout, editing safety, presets, arpeggiator, effects, modulation). The course (Phase G) is postponed until that is done.
 
+Updated 2026-10-26: ear training and sound matching (the old slice 29) moved to the backlog; course polish is now slice 29.
+
 ## Done
 
 ### 8-step sequencer
@@ -513,13 +515,7 @@ Postponed on 2026-10-25 until Phase F was done; started 2026-10-26. Modelled on 
   - **Build your own:** "with Init" leaves the course (your sound comes back first), then loads Init as one undo step, so undo gives your sound back. The last page now says "That's the end of the course."
   - **Checked in the browser** (Helium, headless, 1280 x 720): all 7 pages done from simulated MiniLab events alone. An unused knob and the faders changed nothing. "With Init" opened the Synth view on Init, and undo gave back the earlier preset. No errors (only the missing favicon, which was missing before).
 
-### 29. Ear training and sound matching
-
-- **Quizzes:** "which sounds brighter?", "which wave is this?", "is the attack slow or fast?"
-- **Sound matching game:** hear a target sound and recreate it with only the controls the page shows. The app scores how close you are, using measured features like brightness, the shape of the volume, and pitch.
-- Placed at the end of each chapter as an optional challenge.
-
-### 30. Course polish
+### 29. Course polish
 
 - A progress overview, links from course pages to the matching recipes ("now build a Reese bass").
 - A glossary panel: hover a term like "cutoff" to see its definition.
@@ -538,6 +534,10 @@ Postponed on 2026-10-25 until Phase F was done; started 2026-10-26. Modelled on 
 
 Ideas without a place in the order yet. Any of them can slot in between phases.
 
+- Ear training and sound matching (moved out of Phase G, 2026-10-26; was slice 29):
+  - **Quizzes:** "which sounds brighter?", "which wave is this?", "is the attack slow or fast?"
+  - **Sound matching game:** hear a target sound and recreate it with only the controls the page shows. The app scores how close you are, using measured features like brightness, the shape of the volume, and pitch.
+  - Placed at the end of each chapter as an optional challenge.
 - Wavetables: warp modes (bend, mirror, sync).
 - Presets: morphing between two presets with a fader.
 - Sequencer upgrades (kept for later, 2026-10-25): 16 steps (second page on pad bank B), per-step velocity/accent, a second row of values as a mod matrix source (e.g. step → cutoff), a Sequencer block in the Synth view, saving sequences.
