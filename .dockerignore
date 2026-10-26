@@ -1,0 +1,9 @@
+node_modules
+dist
+.git
+.svelte-check
+research
+server/assets.gen.ts
+synth
+Dockerfile
+docker-compose.yml

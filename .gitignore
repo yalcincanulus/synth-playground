@@ -1,3 +1,5 @@
 node_modules
 dist
 .svelte-check
+server/assets.gen.ts
+synth
