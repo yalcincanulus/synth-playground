@@ -71,6 +71,7 @@ export class Voice {
 
   /** Start the release; returns the time the voice falls silent. */
   release(p: ParamValues, t: number): number {
+    t = this.notBeforeStart(t);
     this.releasedAt = t;
     this.send({ type: "release", id: this.id, t });
     return t + releaseEnd(p);
@@ -78,10 +79,19 @@ export class Voice {
 
   /** Fast fade (voice stealing), then stop. */
   kill(t: number) {
-    this.send({ type: "kill", id: this.id, t });
+    this.send({ type: "kill", id: this.id, t: this.notBeforeStart(t) });
   }
 
   stop(at: number) {
-    this.send({ type: "stop", id: this.id, t: at });
+    this.send({ type: "stop", id: this.id, t: this.notBeforeStart(at) });
+  }
+
+  /**
+   * A planned note (arpeggiator, sequencer) may be ended before it starts, say by All Notes Off. The
+   * processor runs messages in time order and ignores one for a voice it doesn't have yet, which would
+   * leave the note playing for ever: such an end happens as the voice starts instead.
+   */
+  private notBeforeStart(t: number) {
+    return Math.max(t, this.startedAt);
   }
 }

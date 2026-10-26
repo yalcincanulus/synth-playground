@@ -327,6 +327,8 @@ export class Playground {
   pattern = $state<Pattern>(basicBeat());
 
   private device: MiniLab | null = null;
+  private midiAccess: MIDIAccess | null = null;
+  private intervals: number[] = [];
   private browseTimer = 0;
   private taps: number[] = [];
   private longPressTimer = 0;
@@ -391,10 +393,25 @@ export class Playground {
     this.seq.arp = this.arpeggiator;
     this.engine.setParams(this.parts.keys.values, "keys");
     this.engine.setParams(this.parts.seq.values, "seq");
-    setInterval(() => (this.cpu = this.engine.cpu), 250);
+    this.intervals.push(window.setInterval(() => (this.cpu = this.engine.cpu), 250));
     this.freezes.observe();
-    setInterval(() => this.updateTiming(), 1000);
+    this.intervals.push(window.setInterval(() => this.updateTiming(), 1000));
     this.engine.ctx.onstatechange = () => (this.audioRunning = this.engine.ctx.state === "running");
+  }
+
+  /**
+   * Fall silent for good. The page makes one Playground, but in development a hot reload makes a new one:
+   * the old one would keep its audio running and keep playing the MiniLab's keys on its own preset.
+   */
+  dispose() {
+    this.intervals.forEach(clearInterval);
+    clearInterval(this.spectrumTimer);
+    this.seq.stop();
+    this.seq.setFree(false);
+    if (this.midiAccess) this.midiAccess.onstatechange = null;
+    this.device?.close();
+    this.device = null;
+    void this.engine.ctx.close();
   }
 
   private updateTiming() {
@@ -1923,6 +1940,7 @@ export class Playground {
       // Give the device a moment after the handshake before painting.
       setTimeout(() => this.syncHardware(), 150);
     };
+    this.midiAccess = access;
     access.onstatechange = (e) => {
       const port = (e as MIDIConnectionEvent).port;
       if (port && isMainPort(port)) open();

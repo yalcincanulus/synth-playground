@@ -90,6 +90,8 @@
         if (p.state === "granted") pg.connectMidi();
       })
       .catch(() => {});
+    // A hot reload (development) mounts a new App with a new Playground: silence this one.
+    return () => pg.dispose();
   });
 
   // What each pad does while Shift is held. Arp, Pad and Prog are handled inside the MiniLab itself.
