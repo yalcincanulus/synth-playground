@@ -5,7 +5,9 @@
   import Knob from "../components/Knob.svelte";
   import type { Playground } from "../playground.svelte";
   import { harmonicBars, liveWave, noteHz, pitchWave } from "./draw";
-  import { envelope, filter, liveCutoff } from "../synth/viz";
+  import { envelope, filter, lfo, liveCutoff, stereoPicture } from "../synth/viz";
+  import { DEST_NAMES, SOURCE_NAMES } from "../synth/blocks";
+  import { MOD_DESTS, MOD_SOURCES, slotIds } from "../../audio/params";
   import { spectrogram } from "../components/spectrogram";
 
   let { pg, widget, accent }: { pg: Playground; widget: Widget; accent: string } = $props();
@@ -73,6 +75,32 @@
 {:else if widget.kind === "response"}
   <div class="frame tall"><canvas use:surface={{ draw: filter(pg.engine, color), animate: true }}></canvas></div>
   <p class="caption"><span class="dim">Low frequencies on the left, high on the right; the higher the line, the more gets through. Dashed: where the knob is; solid: where the filter is right now.</span></p>
+{:else if widget.kind === "lfo"}
+  <div class="frame tall"><canvas use:surface={{ draw: lfo(pg.engine, widget.index, color), animate: true }}></canvas></div>
+  {#if widget.transport}
+    <div class="transport">
+      <button class="primary" class:on={pg.playing} onclick={() => pg.togglePlay()}>{pg.playing ? "■ Stop the drums" : "▶ Start the drums"}</button>
+      <span class="dim">{pg.bpm} BPM: one beat lasts {(60 / pg.bpm).toFixed(2)} s</span>
+    </div>
+  {:else}
+    <p class="caption"><span class="dim">One cycle of the LFO; the dot is where it is now. The line is flat grey while Depth is 0.</span></p>
+  {/if}
+{:else if widget.kind === "route"}
+  {@const ids = slotIds(widget.n)}
+  {@const src = MOD_SOURCES[pg.values[ids.src]]}
+  {@const amt = pg.values[ids.amt]}
+  <div class="route" class:off={src === "off" || amt === 0}>
+    <span class="end"><span class="k">From</span>{SOURCE_NAMES[src]}</span>
+    <span class="cable" style:--w="{2 + Math.abs(amt) * 8}px"><span class="amt">{formatValue(ids.amt, amt)}</span></span>
+    <span class="end"><span class="k">To</span>{DEST_NAMES[MOD_DESTS[pg.values[ids.dst]]]}</span>
+  </div>
+  {#if widget.picture === "stereo"}
+    <div class="frame"><canvas use:surface={{ draw: stereoPicture(() => pg.engine.fx.meters.left, () => pg.engine.fx.meters.right, color), animate: true }}></canvas></div>
+    <p class="caption"><span class="dim">The stereo picture: a sound in the middle is a vertical line; leaning left or right, it comes from that side.</span></p>
+  {:else}
+    <div class="frame"><canvas use:surface={{ draw: spectrogram(tap("filter"), color, cutoffMark), animate: true }}></canvas></div>
+    <p class="caption"><span class="dim">Out of the filter: brighter notes reach higher up.</span></p>
+  {/if}
 {:else if widget.kind === "envelope"}
   <div class="frame tall"><canvas use:surface={{ draw: envelope(pg.engine, widget.which, color), animate: true }}></canvas></div>
   <p class="caption"><span class="dim">Each dot is a note you are playing, travelling along the shape.</span></p>
@@ -118,6 +146,16 @@
   .frame.tall { height: 170px; }
   .frame.grow { flex: 1; min-width: 0; }
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .transport { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+  .transport .on { background: var(--accent); color: #0b1314; }
+  .route { display: flex; align-items: center; gap: 0; margin-bottom: 8px; }
+  .route .end { display: grid; padding: 6px 12px; border: 1px solid var(--accent); border-radius: 6px; font-size: 15px; min-width: 120px; }
+  .route .k { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); }
+  .route .cable { flex: 1; position: relative; height: var(--w); background: var(--accent); border-radius: 4px; display: flex; justify-content: center; }
+  .route .amt { position: absolute; bottom: calc(100% + 4px); font: 12px var(--mono); color: var(--accent); }
+  .route.off .end { border-color: var(--line); }
+  .route.off .cable { background: var(--line); }
+  .route.off .amt { color: var(--dim); }
   .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   figure { margin: 0; }
   figcaption { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }

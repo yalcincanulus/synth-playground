@@ -496,6 +496,11 @@ Postponed on 2026-10-25 until Phase F was done; started 2026-10-26. Modelled on 
 ### 27. Chapter 4, "Movement" (LFOs and modulation)
 
 - LFO shapes, rate, depth, targets and tempo sync, then the idea of the mod matrix through patching exercises.
+- Status: done 2026-10-26 (checked by the user).
+  - **6 pages** (`src/course/chapter4.ts`): **The LFO** (depth and rate as vibrato on a sine), **What it moves** (LFO To: pitch, filter, volume; the other two targets are left out), **LFO shapes** (on the filter, ending on random at 8 Hz), **Tempo sync** (a wobble on a resonant filter, at 1/4 then 1/8, with the drums), **The mod matrix** (route 1: Velocity → Cutoff, then play softly and hard), **Patching LFO 3** (LFO 3 → Pan, then a slower LFO 3).
+  - **Patching from the MiniLab:** route 1's From, To and Amount are on knobs 1–3, so the exercises need no mouse. The page mentions that the Synth view patches the same routes by dragging cables. The routes count as the Mod Matrix block (`lessonBlockOf`).
+  - **New widgets:** an LFO picture (the Synth view's, with its dot and rate), with a ▶ / ■ drums button on the tempo sync page (the MiniLab's transport buttons work too). The drums stop when you turn to another page or leave the Learn view from that page (the user's request); and a route diagram (From → To with the amount, the cable's thickness following it) over a spectrogram of the filter's output or the stereo picture.
+  - **Checked in the browser** (Helium, headless, 1280 x 720): all 6 pages done from simulated MiniLab events alone, the drums started and stopped with the MiniLab's transport buttons. No errors.
 
 ### 28. Chapter 5, "Beyond subtractive"
 

@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { PARAMS, toControl } from "../audio/params";
 import { FADERS } from "../presets/presets";
-import { blockOf, aimOf, describe as say, isPlay, settingHolds, type SettingCheck } from "../recipes/recipe";
+import { aimOf, describe as say, isPlay, settingHolds, type SettingCheck } from "../recipes/recipe";
 import { SHOWN_WHEN } from "../app/synth/blocks";
 import { CHAPTERS, PAGES } from "./course";
-import { controlsOf, lessonValues } from "./lesson";
+import { controlsOf, lessonBlockOf, lessonValues } from "./lesson";
 
 describe("course", () => {
   test("page ids are unique", () => {
@@ -23,7 +23,7 @@ describe("course", () => {
       test("fits the MiniLab's 8 knobs, and every control is on a block the page shows", () => {
         expect(lesson.knobs.length).toBeLessThanOrEqual(8);
         const shown = [...lesson.blocks, ...(lesson.modulators ?? [])];
-        for (const id of controlsOf(lesson)) expect(shown, id).toContain(blockOf(id)!);
+        for (const id of controlsOf(lesson)) expect(shown, id).toContain(lessonBlockOf(id)!);
       });
 
       test("faders only hold the amp envelope, which stays on its own faders (not on a knob too)", () => {
@@ -64,7 +64,7 @@ describe("course", () => {
       test("every control is on show on its block", () => {
         const v = lessonValues(lesson);
         for (const id of controlsOf(lesson)) {
-          const shown = SHOWN_WHEN[blockOf(id)!]?.[id];
+          const shown = SHOWN_WHEN[lessonBlockOf(id)!]?.[id];
           if (shown) expect(shown(v), id).toBe(true);
         }
       });

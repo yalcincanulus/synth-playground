@@ -6,7 +6,7 @@
 // change the sound. Its "try this" steps are recipe steps, checked by the same engine (RecipeRun).
 
 import type { ParamId, ParamValues } from "../audio/params";
-import { initValues, type RecipeStep } from "../recipes/recipe";
+import { blockOf, initValues, type RecipeStep } from "../recipes/recipe";
 import type { BlockId } from "../app/synth/blocks";
 
 /** One side of an A/B comparison: what it is called, and the settings it puts on the page's controls. */
@@ -34,6 +34,10 @@ export type Widget =
   | { kind: "spectrogram"; before: StageTap; after: StageTap }
   /** The filter's response: how much of each frequency gets through, now. */
   | { kind: "response" }
+  /** An LFO's shape and where it is now. With `transport`, a ▶ button for the drums (for tempo sync). */
+  | { kind: "lfo"; index: 0 | 1 | 2; transport?: boolean }
+  /** Route n of the mod matrix as a diagram (from → to, by how much), over a picture of what it moves. */
+  | { kind: "route"; n: number; picture: "spectrogram" | "stereo" }
   /** An envelope's shape, with a dot for each note showing where it is now. */
   | { kind: "envelope"; which: "amp" | "filter" }
   /**
@@ -82,6 +86,9 @@ export const COURSE_BASE: Partial<ParamValues> = {
 
 /** A page's starting settings. */
 export const lessonValues = (lesson: Lesson): ParamValues => ({ ...initValues(), ...COURSE_BASE, ...lesson.sound });
+
+/** The block a control is on; the mod matrix's routes belong to the Mod Matrix block. */
+export const lessonBlockOf = (id: ParamId): BlockId | null => blockOf(id) ?? (/^mod\d(Src|Dst|Amt)$/.test(id) ? "matrix" : null);
 
 /** Every control on the page: its knobs, then its faders. */
 export const controlsOf = (lesson: Lesson): ParamId[] => [...lesson.knobs, ...(lesson.faders ?? [])];

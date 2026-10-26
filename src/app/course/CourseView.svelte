@@ -1,9 +1,9 @@
 <script lang="ts">
   import { formatValue, PARAMS } from "../../audio/params";
-  import { controlsOf } from "../../course/lesson";
+  import { controlsOf, lessonBlockOf } from "../../course/lesson";
   import { FADERS } from "../../presets/presets";
   import { CHAPTERS, PAGES } from "../../course/course";
-  import { blockOf, describe, isPlay, LINGER_MS } from "../../recipes/recipe";
+  import { describe, isPlay, LINGER_MS } from "../../recipes/recipe";
   import type { Playground } from "../playground.svelte";
   import { BLOCKS } from "../synth/blocks";
   import ParamControl from "../synth/ParamControl.svelte";
@@ -14,7 +14,7 @@
   let course = $derived(pg.course);
   let lesson = $derived(course.lesson);
   let run = $derived(course.run);
-  let targetBlock = $derived(pg.targetParams[0] ? blockOf(pg.targetParams[0]) : null);
+  let targetBlock = $derived(pg.targetParams[0] ? lessonBlockOf(pg.targetParams[0]) : null);
   let last = $derived(course.index === course.total - 1);
   let controls = $derived(controlsOf(lesson));
   let faders = $derived(lesson.faders ?? []);
@@ -107,7 +107,7 @@
       <div class="title">The synth on this page</div>
       <div class="blocks">
         {#each lesson.blocks as b, i (b)}
-          {@const own = controls.filter((id) => blockOf(id) === b)}
+          {@const own = controls.filter((id) => lessonBlockOf(id) === b)}
           {#if i > 0}<div class="arrow" aria-hidden="true">↓</div>{/if}
           <div class="block" class:target={b === targetBlock}>
             <h4>{BLOCKS[b].title}</h4>
@@ -123,7 +123,7 @@
       {#if lesson.modulators?.length}
         <div class="title">Shaping it</div>
         {#each lesson.modulators as b (b)}
-          {@const own = controls.filter((id) => blockOf(id) === b)}
+          {@const own = controls.filter((id) => lessonBlockOf(id) === b)}
           <div class="block mod" class:target={b === targetBlock}>
             <h4>{BLOCKS[b].title}</h4>
             <p>{BLOCKS[b].short}</p>

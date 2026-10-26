@@ -1624,6 +1624,7 @@ export class Playground {
 
   /** Leaving the Learn view: your sound, the arpeggiator and scale lock come back as they were. */
   private leaveCourse() {
+    this.stopPageDrums();
     this.course.close();
     const before = this.beforeCourse;
     this.beforeCourse = null;
@@ -1640,6 +1641,8 @@ export class Playground {
   /** A course page opened (with its starting sound), or its step changed. */
   private coursePage(values: ParamValues | null) {
     if (values) {
+      // The drums belong to the page that starts them (tempo sync): another page starts in silence.
+      if (this.playing) this.stop();
       const keys = this.parts.keys;
       keys.preset = coursePreset(this.course.lesson, values);
       keys.values = values;
@@ -1650,6 +1653,12 @@ export class Playground {
       this.faderLive.fill(false);
     }
     this.showHome();
+  }
+
+  /** Leaving a page that offers the drums (tempo sync) stops them. */
+  private stopPageDrums() {
+    const w = this.course.lesson.widget;
+    if (this.playing && w.kind === "lfo" && w.transport) this.stop();
   }
 
   /** The encoder in the Learn view: the next or previous page. */
