@@ -63,7 +63,9 @@
         <dd>Turn: browse presets (the preset browser's list: a category, your favourites, a search), click to load, hold for Dice. Synth view: turn for the knob pages, click to listen at the selected block. Wavetable view: turn to pick the table. Learn view: turn for the next or previous page, click to switch A/B on a comparison page</dd>
         <dt>Shift + encoder</dt>
         <dd>Turn: the next view (Waveform, Spectrum, Spectrogram, Synth, Wavetable). Click: drum step edit (turn to pick the drum), again: sequencer edit, again: off</dd>
-        <dt>Shift + any knob</dt>
+        <dt>Shift + knob 1</dt>
+        <dd>The step sequencer's clock (Free: its speed; Sync: the note length)</dd>
+        <dt>Shift + knobs 2–8</dt>
         <dd>Tempo</dd>
         <dt>Shift + any key</dt>
         <dd>Switch part (Keys or Sequencer)</dd>

@@ -15,14 +15,21 @@ Updated 2026-10-26: ear training and sound matching (the old slice 29) moved to 
 Replaces the arpeggiator. Modelled on the Oberheim Mini-Sequencer: one knob and one light per step.
 
 - 8 steps, each with a note, on/off (off is a rest) and a slide (holds the note into the next step and glides to it, like a TB-303).
-- Settings: length 1–8, gate, rate (1/8, 1/8T, 1/16, 1/16T), direction (forward, backward, ping-pong, random).
-- Runs on the drum loop's clock, so ▶ / ■ / Tap control both and they stay in time.
+- Settings: length 1–8, gate, clock, direction (forward, backward, ping-pong, random).
+- **Clock**, Sync or Free (like the Clock knob of the Mini-Sequencer):
+  - Sync: the knob picks a note length (1/8, 1/8T, 1/16, 1/16T), locked to the tempo and the drums.
+  - Free: a free-running clock, 0.5 steps per second to 2 kHz on an exponential knob. The tempo doesn't move it, so it drifts against the drums; sweeping it while it plays speeds the line up or slows it down. A new speed counts from the last step played. "Match tempo" sets it to the Sync speed at the current tempo. Switching modes while playing carries on from the next step due (to Sync: on the next grid point).
+  - Audio rates (from 40 steps per second, `LEGATO_HZ`): one note is held and each step only moves its pitch, like an analog sequencer's pitch voltage at a fast clock (gate, rests and slides wait until it slows down). The notes blur into one sound; from about 20 loops a second the loop is itself a pitch. Turning the clock down from the top reveals the line. Pitch steps are `glide` messages with no glide time, sent only when the pitch changes; the keyboard lights every note of the line while it blurs, and the playhead is reported at most 20 times a second.
+  - The panel shows the other mode's terms beside the knob (steps/s in Sync, "16ths at N BPM" in Free, the loop's rate and note at audio rates).
+  - Shift + knob 1 on the MiniLab turns the clock (Free: an eighth of an octave a click; Sync: a division every 4 clicks). Shift + knobs 2–8 are still the tempo.
+- Runs on the drum loop's lookahead scheduler either way, so ▶ / ■ control both. Tap and the tempo move it only in Sync.
+- Default line: G3, C4, B♭4, B♭4, C5, C5, C5, C5.
 - While it plays, the keys either play notes and chords over it (Play, the default), transpose the whole line (Transpose, C4 = no change), or both (Split: below C4 transposes, C3 = no change). Encoder click in sequencer edit switches. Your notes and the sequencer's don't cut each other off.
 - On the MiniLab, **sequencer edit** (Shift + encoder click twice: drum steps, then sequencer, then off):
   - knobs 1–8: step notes (two octaves from C3)
   - pads bank A: steps on/off; hold a pad and press a key to set that step's note
   - pads bank B: slides
-  - faders: length, gate, rate, direction. After the faders change job, they "pick up": a fader does nothing until it reaches the current value, so the sound doesn't jump.
+  - faders: length, gate, clock (division in Sync, speed in Free), direction. Sync/Free is switched on screen. After the faders change job, they "pick up": a fader does nothing until it reaches the current value, so the sound doesn't jump.
 - On screen: a Step sequencer panel under the pads, and the keyboard lights the notes it plays.
 - Status: built and checked on the MiniLab 2026-10-24. Also added: Shift + any knob changes the tempo, and the drum loop can be switched off.
 

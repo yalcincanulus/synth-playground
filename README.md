@@ -25,6 +25,7 @@ Pad lights and the screen need the device in **DAW mode** (Shift + Prog).
 | Shift + encoder click | Step edit: pads edit the drum loop (bank A = steps 1–8, bank B = 9–16), encoder picks the drum |
 | Pads, bank A | Drum kit, recordable into the 16-step loop. Optional "Spectrum lights" turn them into a live 8-band meter |
 | Pads, bank B | Load 8 favourite presets (First Saw, Round Bass, Acid Line, Wobble, Warm Pad, Glass Strings, Brass Stab, Pluck) |
+| Shift + knob 1 / knobs 2–8 | Step sequencer clock / tempo |
 | Shift + ▶ / ■ / ● / ⟲ / Tap | Play / stop / record the drum loop / clear it / tap tempo |
 
 ### Two parts

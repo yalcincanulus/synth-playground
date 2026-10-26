@@ -232,7 +232,7 @@
     <div class="group transport" role="group" aria-label="Transport">
       <button class:active={pg.playing} onclick={() => pg.togglePlay()} title="Play / stop the drums and the step sequencer (Shift + ▶)">{pg.playing ? "■" : "▶"}</button>
       <button class="rec" class:active={pg.recording} onclick={() => pg.toggleRecord()} title="Record pads into the drum loop (Shift + ●)">●</button>
-      <label class="bpm" title="Shift + any knob on the MiniLab">
+      <label class="bpm" title="Shift + knobs 2–8 on the MiniLab">
         <input type="number" min="40" max="240" value={pg.bpm} onchange={(e) => pg.setBpm(+e.currentTarget.value)} />
         BPM
       </label>

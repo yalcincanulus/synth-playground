@@ -81,4 +81,17 @@ describe("Sequencer timing", () => {
     expect(seq.timing.lateSteps).toBe(0);
     expect(host.hits.some(([, t]) => Math.abs(t - next) < 1e-9)).toBe(true);
   });
+
+  test("the note sequencer's free clock keeps its speed when the tempo changes", () => {
+    const { seq, host, notes, run } = setup();
+    seq.notes!.s.free = true;
+    seq.notes!.s.hz = 5;
+    seq.start();
+    run(1);
+    host.bpm = 200;
+    run(1);
+    const times = notes.map(([, t]) => t);
+    expect(times.length).toBeGreaterThan(8);
+    times.slice(1).forEach((t, i) => expect(t - times[i]).toBeCloseTo(0.2, 9));
+  });
 });

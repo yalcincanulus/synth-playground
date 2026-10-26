@@ -281,6 +281,18 @@ export class Part {
     for (const v of this.voices) if (v.note === note && v.releasedAt === null) this.releaseVoice(v, t);
   }
 
+  /**
+   * Move sounding note `from` to pitch `to` at once, keeping its envelopes (the step sequencer at legato
+   * speed: one held note whose pitch steps). Works on mono and poly presets alike.
+   */
+  pitchTo(from: number, to: number, t: number) {
+    if (!this.node) return;
+    const v = this.mono ? this.monoVoice : this.voices.find((x) => x.note === from && x.releasedAt === null);
+    if (!v || v.releasedAt !== null || v.note !== from) return;
+    if (this.mono) this.held = this.held.map((n) => (n === from ? to : n));
+    v.stepTo(to, t);
+  }
+
   private newVoice(note: number, velocity: number, t: number) {
     const v = new Voice(this.node!.port, this.params, note, velocity, t);
     v.owner = this.owner;

@@ -60,6 +60,12 @@ export class Voice {
     this.send({ type: "glide", id: this.id, t, note, tc: Math.max(0.001, p.glide / 3) });
   }
 
+  /** Jump to a new pitch at once, without retriggering the envelopes (the step sequencer at legato speed). */
+  stepTo(note: number, t: number) {
+    this.note = note;
+    this.send({ type: "glide", id: this.id, t, note, tc: 0 });
+  }
+
   /** Mono: restart the envelopes from where they are. */
   retrigger(velocity: number, t: number) {
     this.releasedAt = null;

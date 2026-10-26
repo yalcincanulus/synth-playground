@@ -310,6 +310,11 @@ export class Engine {
     this.parts[owner].noteOff(note, Math.max(at ?? 0, this.ctx.currentTime));
   }
 
+  /** Move a sounding note to a new pitch at once, keeping its envelopes (see Part.pitchTo). */
+  pitchTo(from: number, to: number, at: number, owner: NoteOwner = "seq") {
+    this.parts[owner].pitchTo(from, to, Math.max(at, this.ctx.currentTime));
+  }
+
   /**
    * Hear a sound without loading it (the preset browser): `notes` together for `seconds`, on a part of its
    * own, so both parts keep their sounds and their notes. A new preview cuts the one before.

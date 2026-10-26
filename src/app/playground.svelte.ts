@@ -11,6 +11,11 @@ import {
   NOTE_STEPS,
   NoteSequencer,
   RATES,
+  clampHz,
+  freeHzAt,
+  freeHzPosition,
+  isLegato,
+  LEGATO_HZ,
   STEP_NOTE_LOW,
   STEP_NOTE_RANGE,
   TRANSPOSE_ROOT,
@@ -153,7 +158,13 @@ const SLIDE_COLOR: Rgb = [70, 0, 127];
 const KNOB_PARK = 64;
 
 /** What the 4 faders do in sequencer edit mode. */
-export const SEQ_FADERS = ["Length", "Gate", "Rate", "Direction"] as const;
+export const SEQ_FADERS = ["Length", "Gate", "Clock", "Direction"] as const;
+/** Shift + knob 1, Sync clock: clicks per division, so a small turn doesn't skip past one. */
+const CLOCK_CLICKS_PER_DIVISION = 4;
+const formatHz = (hz: number) => (hz >= 1000 ? `${(hz / 1000).toFixed(2)} kHz` : `${hz.toFixed(hz < 10 ? 1 : 0)} Hz`);
+const hzToNote = (hz: number) => Math.round(69 + 12 * Math.log2(hz / 440));
+/** The SEQ_FADERS entry that is the clock: drawn on screen as the Clock knob instead of a fader. */
+export const SEQ_CLOCK_FADER = 2;
 
 /** Timing figures for the About page (see timing.ts). Times in ms. */
 export interface TimingReport {
@@ -250,6 +261,8 @@ export class Playground {
   seqStep = $state(-1);
   /** Notes the sequencer is sounding right now, for the on-screen keyboard. */
   seqNotes = new SvelteSet<number>();
+  /** The sequencer is at legato speed and the keyboard lights all its notes at once. */
+  private seqBlur = false;
   /** While the sequencer plays: keys play notes (Play), move the sequence (Transpose), or both, split at C4 (Split). */
   keysMode = $state<KeysMode>("Play");
   /** Pad lights follow the audio spectrum instead of flashing on drum hits. */
@@ -321,7 +334,8 @@ export class Playground {
   private draftTimer = 0;
 
   bpm = $state(120);
-  drumsOn = $state(true);
+  /** The drum loop starts off: ▶ plays nothing until the drums or the step sequencer is switched on. */
+  drumsOn = $state(false);
   playing = $state(false);
   recording = $state(false);
   pattern = $state<Pattern>(basicBeat());
@@ -376,12 +390,23 @@ export class Playground {
       },
       noteOff: (note, time) => {
         this.engine.noteOff(note, time, "seq");
-        this.atAudioTime(time, () => this.seqNotes.delete(note));
+        // The end of a legato-speed note puts out the whole blur of lights (see pitchTo).
+        const blur = this.seqBlur;
+        this.seqBlur = false;
+        this.atAudioTime(time, () => (blur ? this.seqNotes.clear() : this.seqNotes.delete(note)));
+      },
+      pitchTo: (from, to, time) => {
+        this.engine.pitchTo(from, to, time, "seq");
+        // Too fast to light each note: light every note of the line while it blurs.
+        if (this.seqBlur) return;
+        this.seqBlur = true;
+        this.atAudioTime(time, () => this.lightSeqBlur());
       },
     });
     this.noteSequencer.onStep = (step, time) => this.atAudioTime(time, () => this.moveSeqHead(step));
     this.noteSequencer.pitch = (note) => snapToScale(note, this.scale);
     this.seq.notes = this.noteSequencer;
+    this.seq.drumsOn = this.drumsOn;
     this.arpeggiator = new Arpeggiator(this.arp, {
       noteOn: (note, velocity, time) => this.engine.noteOn(note, velocity, time, false, "keys"),
       noteOff: (note, time) => this.engine.noteOff(note, time, "keys"),
@@ -1104,12 +1129,84 @@ export class Playground {
 
   seqFaderPosition(i: number) {
     const s = this.noteSeq;
-    return [(s.length - 1) / (NOTE_STEPS - 1), (s.gate - 0.05) / 0.95, s.rate / (RATES.length - 1), s.direction / (DIRECTIONS.length - 1)][i];
+    return [(s.length - 1) / (NOTE_STEPS - 1), (s.gate - 0.05) / 0.95, this.clockPosition, s.direction / (DIRECTIONS.length - 1)][i];
   }
 
   seqFaderDisplay(i: number) {
     const s = this.noteSeq;
-    return [`${s.length} steps`, `${Math.round(s.gate * 100)}%`, RATES[s.rate].name, DIRECTIONS[s.direction]][i];
+    return [`${s.length} steps`, `${Math.round(s.gate * 100)}%`, this.clockDisplay, DIRECTIONS[s.direction]][i];
+  }
+
+  /** Clock knob position (0..1): the division in Sync, the speed (exponential) in Free. */
+  get clockPosition() {
+    const s = this.noteSeq;
+    return s.free ? freeHzPosition(s.hz) : s.rate / (RATES.length - 1);
+  }
+
+  get clockDisplay() {
+    const s = this.noteSeq;
+    return s.free ? formatHz(s.hz) : RATES[s.rate].name;
+  }
+
+  /** The clock is fast enough that one note is held and its pitch steps (see stepSequencer.ts). */
+  get clockLegato() {
+    return isLegato(this.noteSeq);
+  }
+
+  /** Whether step i's lamp is lit: the step playing now, or, while the line blurs, every step in the length. */
+  seqLamp(i: number) {
+    if (this.seqStep < 0) return false;
+    return this.clockLegato ? i < this.noteSeq.length : i === this.seqStep;
+  }
+
+  /** Steps per second the Sync clock gives at the current tempo. */
+  private get syncHz() {
+    return this.bpm / 60 / RATES[this.noteSeq.rate].beats;
+  }
+
+  /** The other mode's speed in the other mode's terms, so you can match one to the other by ear or by eye. */
+  get clockHint() {
+    const s = this.noteSeq;
+    if (!s.free) return `${this.syncHz.toFixed(1)} steps/s`;
+    // As a tempo, if each step were a 16th note.
+    if (s.hz < LEGATO_HZ) return `16ths at ${Math.round(s.hz * 15)} BPM`;
+    // At legato speed: how often the whole line repeats. From 20 Hz up that is a pitch you hear.
+    const loop = s.hz / s.length;
+    return `loop ${formatHz(loop)}${loop >= 20 ? ` ≈ ${this.noteName(hzToNote(loop))}` : ""}`;
+  }
+
+  setClockKnob(t: number) {
+    const s = this.noteSeq;
+    if (s.free) s.hz = freeHzAt(t);
+    else s.rate = Math.round(t * (RATES.length - 1));
+  }
+
+  /** Shift + knob 1 on the MiniLab: turn the clock. Free: each click is an eighth of an octave; Sync: every few clicks, the next division. */
+  private clockShiftKnob(delta: number, cc: number) {
+    const s = this.noteSeq;
+    if (s.free) s.hz = clampHz(s.hz * 2 ** (delta / 8));
+    else {
+      this.clockClicks += delta;
+      const move = Math.trunc(this.clockClicks / CLOCK_CLICKS_PER_DIVISION);
+      if (move === 0) return this.device?.send(knobValueMessage(0, KNOB_PARK), "knob-0");
+      this.clockClicks -= move * CLOCK_CLICKS_PER_DIVISION;
+      s.rate = Math.max(0, Math.min(RATES.length - 1, s.rate + move));
+    }
+    this.device?.send(knobValueMessage(0, KNOB_PARK), "knob-0");
+    this.device?.send(parameterMessage(cc, s.free ? "Seq clock (Free)" : "Seq clock (Sync)", this.clockDisplay), "display");
+  }
+  private clockClicks = 0;
+
+  setClockFree(free: boolean) {
+    if (free === this.noteSeq.free) return;
+    this.noteSeq.free = free;
+    this.showMessage("Seq clock", free ? `Free ${this.clockDisplay}` : `Sync ${this.clockDisplay}`);
+  }
+
+  /** Set the Free clock to the speed the Sync clock has at the current tempo. */
+  matchClockToTempo() {
+    this.noteSeq.hz = clampHz(this.syncHz);
+    this.showMessage("Seq clock", this.clockDisplay);
   }
 
   setSeqFader(i: number, t: number, cc?: number) {
@@ -1118,7 +1215,7 @@ export class Playground {
       s.length = 1 + Math.round(t * (NOTE_STEPS - 1));
       if (this.seqEdit) this.syncPadLeds();
     } else if (i === 1) s.gate = 0.05 + t * 0.95;
-    else if (i === 2) s.rate = Math.round(t * (RATES.length - 1));
+    else if (i === SEQ_CLOCK_FADER) this.setClockKnob(t);
     else s.direction = Math.round(t * (DIRECTIONS.length - 1));
     if (cc !== undefined) this.device?.send(parameterMessage(cc, SEQ_FADERS[i], this.seqFaderDisplay(i)), "display");
   }
@@ -1153,6 +1250,13 @@ export class Playground {
   private stopAudition() {
     if (this.auditionNote !== null) this.engine.noteOff(this.auditionNote, undefined, "seq");
     this.auditionNote = null;
+  }
+
+  /** Legato speed: light every note the line plays, since they all sound at once. */
+  private lightSeqBlur() {
+    if (!this.seqBlur) return;
+    const s = this.noteSeq;
+    for (let i = 0; i < s.length; i++) if (s.steps[i].on) this.seqNotes.add(snapToScale(s.steps[i].note + s.transpose, this.scale));
   }
 
   private moveSeqHead(step: number) {
@@ -1260,6 +1364,7 @@ export class Playground {
 
   stop() {
     this.seq.stop();
+    this.seqBlur = false;
     this.playing = false;
     this.recording = false;
     this.movePlayhead(-1);
@@ -1271,6 +1376,8 @@ export class Playground {
 
   toggleRecord() {
     this.recording = !this.recording;
+    // Recording pad hits into a loop you can't hear makes no sense: switch the drums on.
+    if (this.recording && !this.drumsOn) this.setDrumsOn(true);
     this.seq.recording = this.recording;
     if (this.recording && !this.playing) this.play();
     this.syncTransportLeds();
@@ -1312,10 +1419,11 @@ export class Playground {
     this.showMessage("Tempo", `${this.bpm} BPM`);
   }
 
-  /** Shift + knob: each click of the knob is 1 BPM, measured from the parked middle position. */
+  /** Shift + knob 2–8: each click of the knob is 1 BPM, measured from the parked middle position (knob 1 is the sequencer clock). */
   private tempoKnob(i: number, value: number, cc: number) {
     const delta = value - KNOB_PARK;
     if (delta === 0) return;
+    if (i === 0) return this.clockShiftKnob(delta, cc);
     this.setBpm(this.bpm + delta);
     this.device?.send(knobValueMessage(i, KNOB_PARK), `knob-${i}`);
     this.device?.send(parameterMessage(cc, "Tempo", `${this.bpm} BPM`), "display");
@@ -2009,7 +2117,7 @@ export class Playground {
         return this.encoderClick(e.pressed, e.shifted || this.shift);
       case "shift":
         this.shift = e.pressed;
-        // Shift + any knob turns the tempo. The knobs are parked in the middle so they can turn either way
+        // Shift + knob 1 turns the sequencer clock, Shift + knobs 2–8 the tempo. The knobs are parked in the middle so they can turn either way
         // without hitting an end, then given back their real values on release.
         if (e.pressed) this.parkKnobs();
         else this.realignKnobs();

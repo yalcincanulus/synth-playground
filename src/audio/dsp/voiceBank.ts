@@ -51,7 +51,7 @@ export type BankMessage =
   | { type: "controls"; bend: number; mod: number }
   /** `random` is the note's "random" mod source (-1..1); `phases` and `seed` its unison phases and noise. */
   | { type: "on"; id: number; t: number; note: number; velocity: number; random: number; unison: number; phases: number[]; seed: number }
-  /** Mono: move to a new note; `tc` is the glide's time constant in seconds. */
+  /** Move to a new note; `tc` is the glide's time constant in seconds (0: at once, within a few samples). */
   | { type: "glide"; id: number; t: number; note: number; tc: number }
   /** Mono: restart the envelopes from where they are. */
   | { type: "retrigger"; id: number; t: number; velocity: number; random: number }
@@ -815,7 +815,7 @@ export class VoiceBank {
     if (!v) return;
     switch (msg.type) {
       case "glide": {
-        const tc = Math.max(0.001, msg.tc) * sr;
+        const tc = Math.max(1, msg.tc * sr);
         v.note = msg.note;
         v.freq.approach(midiToHz(msg.note), tc);
         v.cutoff.approach(filterBase(p, msg.note), tc);
