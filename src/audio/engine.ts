@@ -265,6 +265,10 @@ export class Engine {
     return this.part.livePosition();
   }
 
+  liveWidth() {
+    return this.part.liveWidth();
+  }
+
   voiceStates(): VoiceState[] {
     return this.part.voiceStates();
   }

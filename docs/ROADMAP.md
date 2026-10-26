@@ -505,6 +505,13 @@ Postponed on 2026-10-25 until Phase F was done; started 2026-10-26. Modelled on 
 ### 28. Chapter 5, "Beyond subtractive"
 
 - Sync, FM, pulse width and wavetables, ending with a "build your own" page that opens the full Synth view.
+- Status: done 2026-10-26 (checked by the user).
+  - **7 pages** (`src/course/chapter5.ts`): **Pulse width** (a square narrowing to a thin pulse), **PWM** (LFO 2 moving the width), **Hard sync** (only Osc 2 heard; Sync on, then Osc 2 Pitch to +7 and about +16), **FM** (two sines, only Osc 1 heard; FM Amount, then Osc 2 at +12 and +6 for a bell-like clang), **Wavetables** (WT Pos through the Shapes table, then the Vowels table), **Moving through a table** (LFO 2 moving WT Pos through the Formant table), **Build your own** (a recap, and two buttons into the Synth view: with Init, or with your own sound back).
+  - **Sync aims avoid whole ratios:** at +12 or +19 Osc 2 finishes whole cycles before each restart, so nothing is cut and you only hear a higher note. The page says so.
+  - **New widgets:** an oscillator picture (the wave Osc 1 or Osc 2 makes from its settings, over two cycles of Osc 1, with Osc 1's restarts dashed) beside a spectrogram of that oscillator's tap; and the Wavetable tab's table stack beside the harmonics of the wave playing. The Wavetable choice offers only the 8 built-in tables.
+  - **Live pulse width:** the oscillator pictures (here and in the Synth view) now draw the pulse width as it is right now, with the LFOs and routes (`liveWidth`, next to `livePosition`), so PWM shows in the picture.
+  - **Build your own:** "with Init" leaves the course (your sound comes back first), then loads Init as one undo step, so undo gives your sound back. The last page now says "That's the end of the course."
+  - **Checked in the browser** (Helium, headless, 1280 x 720): all 7 pages done from simulated MiniLab events alone. An unused knob and the faders changed nothing. "With Init" opened the Synth view on Init, and undo gave back the earlier preset. No errors (only the missing favicon, which was missing before).
 
 ### 29. Ear training and sound matching
 

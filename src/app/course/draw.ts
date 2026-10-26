@@ -3,7 +3,9 @@
 import { naive } from "../../audio/oscCore";
 import { harmonicAmps } from "../../audio/tableDraw";
 import { FRAME_SIZE } from "../../audio/wavetables";
+import type { Engine } from "../../audio/engine";
 import { glowStroke, grid, type Surface } from "../components/canvas";
+import { oscIdeal } from "../synth/viz";
 
 type Draw = (s: Surface) => void;
 
@@ -152,5 +154,37 @@ export function harmonicBars(wave: () => number, color: () => string): Draw {
       g.fillRect(x, bottom - bh, bw - 4, bh);
       label(g, String(i + 1), x + (bw - 4) / 2, h - 4, "center", i === 0 ? "#ffffffd0" : LABEL);
     });
+  };
+}
+
+/**
+ * Osc 1's or Osc 2's wave as its settings make it, over two cycles of Osc 1. The dashed lines are where
+ * Osc 1 starts a cycle: with sync on, where Osc 2 is made to start again.
+ */
+export function oscWave(engine: Engine, which: 0 | 1, color: () => string): Draw {
+  return ({ g, w, h }) => {
+    grid(g, w, h, [], [h / 2]);
+    const v = engine.params;
+    g.strokeStyle = "#ffffff40";
+    g.setLineDash([3, 4]);
+    g.beginPath();
+    for (const x of [1, w / 2, w - 1]) {
+      g.moveTo(x, 4);
+      g.lineTo(x, h - 4);
+    }
+    g.stroke();
+    g.setLineDash([]);
+    if (which === 1 && v.oscSync === 1) label(g, "Osc 1 restarts Osc 2", w / 2 + 6, 14);
+    const f = oscIdeal(v, which, engine);
+    const n = Math.round(w * 2);
+    g.beginPath();
+    for (let i = 0; i <= n; i++) {
+      const x = (i / n) * w;
+      const y = h / 2 - f(Math.min(0.99999, i / n)) * h * 0.38;
+      if (i === 0) g.moveTo(x, y);
+      else g.lineTo(x, y);
+    }
+    glowStroke(g, color(), 2);
+    label(g, "two cycles of Osc 1", w - 8, h - 8, "right");
   };
 }

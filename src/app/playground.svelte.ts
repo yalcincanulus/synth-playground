@@ -31,7 +31,7 @@ import { RecipeRun } from "./recipes/recipeRun.svelte";
 import { Course } from "./course/course.svelte";
 import type { Lesson } from "../course/lesson";
 import { RECIPES } from "../recipes/library";
-import { blockOf, hardwareFor, initPreset, isPlay, stepParam, type PlayCheck } from "../recipes/recipe";
+import { blockOf, hardwareFor, INIT_VALUES, initPreset, isPlay, stepParam, type PlayCheck } from "../recipes/recipe";
 import {
   CHORD_MODE_NAMES,
   CHORD_MODES,
@@ -196,6 +196,11 @@ const COURSE_COLOR: Rgb = [40, 90, 127];
 /** A course page's sound: not in the preset list, and never saved. */
 function coursePreset(lesson: Lesson, values: ParamValues): Preset {
   return { id: `course:${lesson.id}`, name: lesson.title, category: "Test", color: COURSE_COLOR, knobs: [...FACTORY_PRESETS[0].knobs], values, from: "course" };
+}
+
+/** The course's "build your own" sound: Init, not in the preset list until you save it. */
+function buildPreset(): Preset {
+  return { id: "course:build", name: "Init", category: "Test", color: COURSE_COLOR, knobs: [...FACTORY_PRESETS[0].knobs], values: { ...INIT_VALUES }, from: "course" };
 }
 
 /** The undo step that starts a recipe is named this, then the recipe. */
@@ -1636,6 +1641,22 @@ export class Playground {
     this.engine.setParams(keys.values, "keys");
     if (before.arp) this.setArp({ on: true });
     if (before.scale !== "off") this.setScale({ scale: before.scale });
+  }
+
+  /**
+   * The course's last page: leave for the Synth view, with your own sound back, or with Init over it (one
+   * undo step, so undo gives your sound back).
+   */
+  buildYourOwn(init: boolean) {
+    this.setView("synth");
+    if (!init) return;
+    this.remember("Init");
+    this.preset = buildPreset();
+    this.browseId = null;
+    this.values = presetValues(this.preset);
+    this.dirty = false;
+    this.engine.setParams(this.values);
+    this.syncHardware();
   }
 
   /** A course page opened (with its starting sound), or its step changed. */

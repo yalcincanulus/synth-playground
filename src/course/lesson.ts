@@ -38,6 +38,15 @@ export type Widget =
   | { kind: "lfo"; index: 0 | 1 | 2; transport?: boolean }
   /** Route n of the mod matrix as a diagram (from → to, by how much), over a picture of what it moves. */
   | { kind: "route"; n: number; picture: "spectrogram" | "stereo" }
+  /**
+   * An oscillator's wave as its settings make it (pulse width, sync, FM), over two cycles of Osc 1, beside a
+   * spectrogram of what it plays.
+   */
+  | { kind: "oscillator"; which: 0 | 1 }
+  /** Osc 1's wavetable as a stack of waves, the one playing lit, beside its harmonics. */
+  | { kind: "table" }
+  /** Buttons that leave the course for the Synth view, with Init or with your own sound. */
+  | { kind: "build" }
   /** An envelope's shape, with a dot for each note showing where it is now. */
   | { kind: "envelope"; which: "amp" | "filter" }
   /**

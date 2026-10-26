@@ -95,7 +95,7 @@
           <p class="page-done">
             ✓ Page done.
             {#if !last}<button class="primary" onclick={() => course.goTo(course.index + 1)}>Next: {PAGES[course.index + 1].lesson.title} →</button>
-            {:else}That's the end of Chapter {CHAPTERS.indexOf(course.chapter) + 1}. More chapters are coming.{/if}
+            {:else}That's the end of the course.{/if}
           </p>
         {:else if run}
           <button class="skip" onclick={() => run.next()}>Skip this step</button>

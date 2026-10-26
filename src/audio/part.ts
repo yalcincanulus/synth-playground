@@ -2,13 +2,14 @@
 // its own voices and LFOs, and its own way into the effects. The engine has two: Keys (what you play)
 // and Sequencer (what the step sequencer plays).
 
-import { LFO_POSITION, lfoDepths, type PerTarget } from "./dsp/lfo";
+import { LFO_POSITION, LFO_WIDTH, lfoDepths, type PerTarget } from "./dsp/lfo";
+import { clampWidth } from "./oscCore";
 import { FX_AMOUNTS, TAPS, type LfoState, type TapName } from "./dsp/voiceBank";
 import { keySource, MOD_RANGE } from "./dsp/voiceMath";
 import { envelopeAt } from "./envelope";
 import type { PartFx } from "./fx";
 import { Lfo } from "./lfo";
-import { LFO_SYNC_BEATS, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, defaultValues, slotIds, type Effect, type ModSource, type ParamId, type ParamValues } from "./params";
+import { LFO_SYNC_BEATS, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, defaultValues, slotIds, type Effect, type ModDest, type ModSource, type ParamId, type ParamValues } from "./params";
 import { Voice, type NoteOwner } from "./voice";
 import { voiceWeight } from "./voiceLimit";
 
@@ -224,16 +225,25 @@ export class Part {
 
   /** Wavetable position 0..1 right now, with the LFOs' and mod matrix's position modulation. */
   livePosition() {
+    return Math.min(1, Math.max(0, this.liveValue(this.params.wtPos, 4, LFO_POSITION, "wt pos")));
+  }
+
+  /** The pulse width right now, with the LFOs and the routes to it (as livePosition). */
+  liveWidth() {
+    return clampWidth(this.liveValue(this.params.pulseWidth, 3, LFO_WIDTH, "width"));
+  }
+
+  /** A setting moved by the LFOs (their target `lfoTarget`, scaled by `lfoScale`) and the matrix routes to `dest`, as heard on the newest note. */
+  private liveValue(base: number, lfoTarget: number, lfoScale: number, dest: ModDest) {
     const p = this.params;
-    let pos = p.wtPos;
-    this.lfos.forEach((lfo, i) => (pos += this.lfoDepths(i)[4] * LFO_POSITION * lfo.value()));
-    // Mod matrix routes to WT Pos, as heard on the newest note.
+    let x = base;
+    this.lfos.forEach((lfo, i) => (x += this.lfoDepths(i)[lfoTarget] * lfoScale * lfo.value()));
     for (let n = 1; n <= MOD_SLOTS; n++) {
       const ids = slotIds(n);
-      if (MOD_DESTS[p[ids.dst]] !== "wt pos") continue;
-      pos += p[ids.amt] * MOD_RANGE["wt pos"] * (this.modSourceValue(MOD_SOURCES[p[ids.src]]) ?? 0);
+      if (MOD_DESTS[p[ids.dst]] !== dest) continue;
+      x += p[ids.amt] * MOD_RANGE[dest] * (this.modSourceValue(MOD_SOURCES[p[ids.src]]) ?? 0);
     }
-    return Math.min(1, Math.max(0, pos));
+    return x;
   }
 
   /** Every voice still making sound, oldest first. */

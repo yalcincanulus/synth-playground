@@ -52,7 +52,7 @@ export function oscIdeal(v: ParamValues, which: 0 | 1, engine: Engine): (x: numb
   const frames = tableFrames(v.wtTable);
   const position = engine.livePosition();
   const shape = {
-    wave1: v.osc1Wave, wave2: v.osc2Wave, width: v.pulseWidth, sync: v.oscSync === 1, fm: v.fmAmount,
+    wave1: v.osc1Wave, wave2: v.osc2Wave, width: engine.liveWidth(), sync: v.oscSync === 1, fm: v.fmAmount,
     ratio: Math.pow(2, (v.osc2Semi * 100 + v.osc2Detune) / 1200),
     table: (p: number) => frameAt(frames, position, p),
   };

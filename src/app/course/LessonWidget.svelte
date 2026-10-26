@@ -4,7 +4,8 @@
   import { surface } from "../components/canvas";
   import Knob from "../components/Knob.svelte";
   import type { Playground } from "../playground.svelte";
-  import { harmonicBars, liveWave, noteHz, pitchWave } from "./draw";
+  import { harmonicBars, liveWave, noteHz, oscWave, pitchWave } from "./draw";
+  import { harmonics as tableHarmonics, stack } from "../wavetable/draw";
   import { envelope, filter, lfo, liveCutoff, stereoPicture } from "../synth/viz";
   import { DEST_NAMES, SOURCE_NAMES } from "../synth/blocks";
   import { MOD_DESTS, MOD_SOURCES, slotIds } from "../../audio/params";
@@ -28,7 +29,7 @@
   /** The filter's cutoff right now (with the envelope and key tracking), marked on the spectrograms. */
   const cutoffMark = () => ({ hz: liveCutoff(pg.engine), label: "cutoff" });
   const TAP_TITLES = { mix: "Into the drive", drive: "Into the filter", filter: "Out of the filter" };
-  const tap = (id: "mix" | "drive" | "filter") => () => pg.engine.taps[id];
+  const tap = (id: "osc1" | "osc2" | "mix" | "drive" | "filter") => () => pg.engine.taps[id];
 
   let beats = $derived(noteHz(beatNote) * (Math.pow(2, pg.values.osc2Detune / 1200) - 1));
 </script>
@@ -101,6 +102,42 @@
     <div class="frame"><canvas use:surface={{ draw: spectrogram(tap("filter"), color, cutoffMark), animate: true }}></canvas></div>
     <p class="caption"><span class="dim">Out of the filter: brighter notes reach higher up.</span></p>
   {/if}
+{:else if widget.kind === "oscillator"}
+  <div class="pair">
+    <figure>
+      <figcaption>Oscillator {widget.which + 1}'s wave</figcaption>
+      <div class="frame tall"><canvas use:surface={{ draw: oscWave(pg.engine, widget.which, color), animate: true }}></canvas></div>
+    </figure>
+    <figure>
+      <figcaption>Its harmonics</figcaption>
+      <div class="frame tall"><canvas use:surface={{ draw: spectrogram(tap(widget.which === 0 ? "osc1" : "osc2"), color), animate: true }}></canvas></div>
+    </figure>
+  </div>
+  <p class="caption"><span class="dim">Left: the wave the settings make, even before you play. Right: what it plays, over time; each bright row is a harmonic.</span></p>
+{:else if widget.kind === "table"}
+  <div class="pair">
+    <figure>
+      <figcaption>{formatValue("wtTable", pg.values.wtTable)} table</figcaption>
+      <div class="frame tall"><canvas use:surface={{ draw: stack(pg.engine, color), animate: true }}></canvas></div>
+    </figure>
+    <figure>
+      <figcaption>Harmonics of the wave playing</figcaption>
+      <div class="frame tall"><canvas use:surface={{ draw: tableHarmonics(pg.engine, color), animate: true }}></canvas></div>
+    </figure>
+  </div>
+  <p class="caption"><span class="dim">The dashed wave is where the WT Pos knob is; the lit one is what plays now.</span></p>
+{:else if widget.kind === "build"}
+  <div class="build">
+    <button class="primary" onclick={() => pg.buildYourOwn(true)}>
+      <span class="side-label">Open the Synth view with Init</span>
+      <span class="side-text">A blank sound to build on. Undo gives back the sound you had before.</span>
+    </button>
+    <button onclick={() => pg.buildYourOwn(false)}>
+      <span class="side-label">Open it with your own sound</span>
+      <span class="side-text">The sound you were playing before you opened Learn.</span>
+    </button>
+  </div>
+  <p class="caption"><span class="dim">You can come back to Learn at any time: it remembers where you were.</span></p>
 {:else if widget.kind === "envelope"}
   <div class="frame tall"><canvas use:surface={{ draw: envelope(pg.engine, widget.which, color), animate: true }}></canvas></div>
   <p class="caption"><span class="dim">Each dot is a note you are playing, travelling along the shape.</span></p>
@@ -167,6 +204,11 @@
   .big-knob { flex: none; width: 150px; display: flex; justify-content: center; }
   .caption { margin: 6px 0 0; font-size: 13px; color: #b9c5c8; }
   .caption strong { color: var(--accent); }
+  .build { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .build button { display: grid; gap: 2px; text-align: left; padding: 12px 14px; border-radius: 6px; }
+  .build .side-label { font-size: 15px; }
+  .build .side-text { font-size: 12px; font-weight: 400; color: var(--dim); }
+  .build .primary .side-text { color: inherit; opacity: 0.8; }
   .ab { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px; }
   .ab button { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 12px; text-align: left; padding: 8px 12px; border-radius: 6px; }
   .ab .letter { grid-row: 1 / 3; align-self: center; font: 600 22px var(--mono); color: var(--dim); }
