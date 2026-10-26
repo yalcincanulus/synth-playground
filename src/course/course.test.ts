@@ -1,29 +1,40 @@
 import { describe, expect, test } from "bun:test";
 import { PARAMS, toControl } from "../audio/params";
+import { FADERS } from "../presets/presets";
 import { blockOf, aimOf, describe as say, isPlay, settingHolds, type SettingCheck } from "../recipes/recipe";
 import { SHOWN_WHEN } from "../app/synth/blocks";
 import { CHAPTERS, PAGES } from "./course";
-import { lessonValues } from "./lesson";
+import { controlsOf, lessonValues } from "./lesson";
 
 describe("course", () => {
   test("page ids are unique", () => {
     expect(new Set(PAGES.map((p) => p.lesson.id)).size).toBe(PAGES.length);
   });
 
-  test("chapter 1 has about 6 pages", () => {
-    expect(CHAPTERS[0].lessons.length).toBeGreaterThanOrEqual(5);
-    expect(CHAPTERS[0].lessons.length).toBeLessThanOrEqual(8);
+  test("each chapter has about 6 pages", () => {
+    for (const chapter of CHAPTERS) {
+      expect(chapter.lessons.length).toBeGreaterThanOrEqual(5);
+      expect(chapter.lessons.length).toBeLessThanOrEqual(8);
+    }
   });
 
   for (const { lesson } of PAGES) {
     describe(lesson.title, () => {
       test("fits the MiniLab's 8 knobs, and every control is on a block the page shows", () => {
         expect(lesson.knobs.length).toBeLessThanOrEqual(8);
-        for (const id of lesson.knobs) expect(lesson.blocks, id).toContain(blockOf(id)!);
+        const shown = [...lesson.blocks, ...(lesson.modulators ?? [])];
+        for (const id of controlsOf(lesson)) expect(shown, id).toContain(blockOf(id)!);
       });
 
-      test("its steps only ask for controls on its knobs", () => {
-        for (const step of lesson.steps) for (const c of step.checks) if (!isPlay(c)) expect(lesson.knobs, c.param).toContain(c.param);
+      test("faders only hold the amp envelope, which stays on its own faders (not on a knob too)", () => {
+        for (const id of lesson.faders ?? []) {
+          expect(FADERS).toContain(id);
+          expect(lesson.knobs).not.toContain(id);
+        }
+      });
+
+      test("its steps only ask for controls on its knobs and faders", () => {
+        for (const step of lesson.steps) for (const c of step.checks) if (!isPlay(c)) expect(controlsOf(lesson), c.param).toContain(c.param);
       });
 
       test("can be done from its starting sound by following the hints, and no step is done before it starts", () => {
@@ -52,7 +63,7 @@ describe("course", () => {
 
       test("every control is on show on its block", () => {
         const v = lessonValues(lesson);
-        for (const id of lesson.knobs) {
+        for (const id of controlsOf(lesson)) {
           const shown = SHOWN_WHEN[blockOf(id)!]?.[id];
           if (shown) expect(shown(v), id).toBe(true);
         }
@@ -67,7 +78,7 @@ describe("course", () => {
       if (lesson.widget.kind === "compare") {
         const { a, b } = lesson.widget;
         test("A/B only sets the page's controls, and A is the starting sound", () => {
-          for (const side of [a, b]) for (const id of Object.keys(side.values)) expect(lesson.knobs as string[]).toContain(id);
+          for (const side of [a, b]) for (const id of Object.keys(side.values)) expect(controlsOf(lesson) as string[]).toContain(id);
           const v = lessonValues(lesson);
           for (const [id, x] of Object.entries(a.values)) expect(v[id as keyof typeof v]).toBe(x!);
         });

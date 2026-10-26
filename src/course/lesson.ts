@@ -27,8 +27,13 @@ export type Widget =
   | { kind: "knob"; param: ParamId }
   /** The harmonics in Osc 1's wave: one bar per sine. */
   | { kind: "harmonics" }
-  /** Two sounds to switch between. Each side sets the page's controls (so you see what changed). */
-  | { kind: "compare"; a: CompareSide; b: CompareSide };
+  /** An envelope's shape, with a dot for each note showing where it is now. */
+  | { kind: "envelope"; which: "amp" | "filter" }
+  /**
+   * Two sounds to switch between. Each side sets the page's controls (so you see what changed). The
+   * picture under them: the wave (the default) or an envelope.
+   */
+  | { kind: "compare"; a: CompareSide; b: CompareSide; picture?: "wave" | "amp" | "filter" };
 
 export interface Lesson {
   id: string;
@@ -40,6 +45,10 @@ export interface Lesson {
   blocks: BlockId[];
   /** The controls on this page, on MiniLab knobs 1, 2, 3… (none: only the keys play). */
   knobs: ParamId[];
+  /** Amp envelope controls on this page: they stay on their own faders (Attack 1 … Release 4). */
+  faders?: ParamId[];
+  /** Blocks that shape the sound from outside the signal path (the envelopes), shown apart. */
+  modulators?: BlockId[];
   /** Choice controls limited to their first n choices here (the Osc 1 wave without "table"). */
   choices?: Partial<Record<ParamId, number>>;
   /** The page's starting sound, over the base sound. */
@@ -64,5 +73,5 @@ export const COURSE_BASE: Partial<ParamValues> = {
 /** A page's starting settings. */
 export const lessonValues = (lesson: Lesson): ParamValues => ({ ...initValues(), ...COURSE_BASE, ...lesson.sound });
 
-/** The MiniLab knob (0-based) a control is on, on this page, or -1. */
-export const knobOf = (lesson: Lesson, param: ParamId) => lesson.knobs.indexOf(param);
+/** Every control on the page: its knobs, then its faders. */
+export const controlsOf = (lesson: Lesson): ParamId[] => [...lesson.knobs, ...(lesson.faders ?? [])];

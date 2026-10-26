@@ -301,7 +301,12 @@ export class Playground {
   /** The learning course (the Learn view). */
   readonly course = new Course(
     () => this.parts.keys.values,
-    (id, v) => this.setParam(id, v),
+    (id, v) => {
+      this.setParam(id, v);
+      // A/B moved a fader's control: the fader waits until it reaches the new value.
+      const f = FADERS.indexOf(id);
+      if (f >= 0) this.faderLive[f] = false;
+    },
     (values) => this.coursePage(values),
   );
   /** What the course put aside while it runs, and gives back when you leave: the Keys part's sound, the arpeggiator and scale lock. */
@@ -736,7 +741,7 @@ export class Playground {
   setFader(i: number, t: number, cc?: number) {
     const id = FADERS[i];
     // The course only lets you touch what the page explains.
-    if (this.view === "course" && !this.course.lesson.knobs.includes(id)) return this.showMessage(`Fader ${i + 1}`, "not on this page");
+    if (this.view === "course" && !this.course.allows(id)) return this.showMessage(`Fader ${i + 1}`, "not on this page");
     this.setParam(id, fromControl(id, t));
     this.popup(id, cc);
   }
@@ -1641,6 +1646,8 @@ export class Playground {
       keys.dirty = false;
       this.engine.setParams(values, "keys");
       this.realignKnobs();
+      // The faders pick up the page's envelope: each waits until it reaches its new value.
+      this.faderLive.fill(false);
     }
     this.showHome();
   }
@@ -1660,7 +1667,8 @@ export class Playground {
     const param = stepParam(step);
     if (param) {
       const k = c.lesson.knobs.indexOf(param);
-      return [head, k >= 0 ? `Knob ${k + 1}: ${PARAMS[param].label}` : `Set ${PARAMS[param].label}`];
+      const f = FADERS.indexOf(param);
+      return [head, k >= 0 ? `Knob ${k + 1}: ${PARAMS[param].label}` : f >= 0 ? `Fader ${f + 1}: ${PARAMS[param].label}` : `Set ${PARAMS[param].label}`];
     }
     return [head, PLAY_SCREEN[step.checks.find(isPlay)!.play]];
   }

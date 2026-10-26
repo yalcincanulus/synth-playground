@@ -1,6 +1,7 @@
 <script lang="ts">
   import { formatValue, fromControl, PARAMS, toControl, type ParamDef, type ParamId } from "../../audio/params";
   import Knob from "../components/Knob.svelte";
+  import { FADERS } from "../../presets/presets";
   import type { Playground } from "../playground.svelte";
 
   let { pg, id, inline = false }: { pg: Playground; id: ParamId; inline?: boolean } = $props();
@@ -20,6 +21,8 @@
   let options = $derived((id === "wtTable" ? pg.tables.map((t) => t.short) : def.options)?.slice(0, (pg.view === "course" && pg.course.choicesOf(id)) || undefined));
   /** Which hardware knob (1-8) controls this right now, if any. */
   let knob = $derived(pg.knobParams.indexOf(id) + 1);
+  /** A course page's amp envelope control: the MiniLab fader (1-4) it is on. */
+  let fader = $derived(pg.view === "course" && pg.course.lesson.faders?.includes(id) ? FADERS.indexOf(id) + 1 : 0);
   /** A recipe step (or a course step) asks for this control. */
   let target = $derived(pg.targetParams.includes(id));
 </script>
@@ -44,7 +47,7 @@
   </div>
 {:else}
   <div class="knob-wrap" class:target class:inline>
-    {#if knob}<span class="k knob-k" title="MiniLab knob {knob}">{knob}</span>{/if}
+    {#if knob}<span class="k knob-k" title="MiniLab knob {knob}">{knob}</span>{:else if fader}<span class="k knob-k fader-k" title="MiniLab fader {fader}">F{fader}</span>{/if}
     <Knob
       size={inline ? 30 : 38}
       {inline}
@@ -78,5 +81,6 @@
     border-radius: 50%; background: var(--accent); color: #0b1314; font: 600 9px var(--mono); vertical-align: 1px;
   }
   .knob-k { position: absolute; top: 0; right: 2px; margin: 0; }
+  .fader-k { width: auto; padding: 0 4px; border-radius: 7px; }
   .inline .knob-k { top: -3px; left: -3px; right: auto; }
 </style>

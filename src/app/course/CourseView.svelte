@@ -1,5 +1,7 @@
 <script lang="ts">
   import { formatValue, PARAMS } from "../../audio/params";
+  import { controlsOf } from "../../course/lesson";
+  import { FADERS } from "../../presets/presets";
   import { CHAPTERS, PAGES } from "../../course/course";
   import { blockOf, describe, isPlay, LINGER_MS } from "../../recipes/recipe";
   import type { Playground } from "../playground.svelte";
@@ -14,6 +16,8 @@
   let run = $derived(course.run);
   let targetBlock = $derived(pg.targetParams[0] ? blockOf(pg.targetParams[0]) : null);
   let last = $derived(course.index === course.total - 1);
+  let controls = $derived(controlsOf(lesson));
+  let faders = $derived(lesson.faders ?? []);
 
   /** A paragraph cut into plain text and **bold** words. */
   const pieces = (text: string) => text.split(/\*\*(.+?)\*\*/).map((t, i) => ({ t, bold: i % 2 === 1 }));
@@ -103,29 +107,50 @@
       <div class="title">The synth on this page</div>
       <div class="blocks">
         {#each lesson.blocks as b, i (b)}
-          {@const controls = lesson.knobs.filter((id) => blockOf(id) === b)}
+          {@const own = controls.filter((id) => blockOf(id) === b)}
           {#if i > 0}<div class="arrow" aria-hidden="true">↓</div>{/if}
           <div class="block" class:target={b === targetBlock}>
             <h4>{BLOCKS[b].title}</h4>
             <p>{BLOCKS[b].short}</p>
-            {#if controls.length}
+            {#if own.length}
               <div class="controls">
-                {#each controls as id (id)}<ParamControl {pg} {id} />{/each}
+                {#each own as id (id)}<ParamControl {pg} {id} />{/each}
               </div>
             {/if}
           </div>
         {/each}
       </div>
-      <p class="hidden-note">The rest of the synth is hidden, and held still: the filter wide open, no envelopes, no effects.</p>
+      {#if lesson.modulators?.length}
+        <div class="title">Shaping it</div>
+        {#each lesson.modulators as b (b)}
+          {@const own = controls.filter((id) => blockOf(id) === b)}
+          <div class="block mod" class:target={b === targetBlock}>
+            <h4>{BLOCKS[b].title}</h4>
+            <p>{BLOCKS[b].short}</p>
+            {#if own.length}
+              <div class="controls" class:four={own.length > 2}>
+                {#each own as id (id)}<ParamControl {pg} {id} />{/each}
+              </div>
+            {/if}
+          </div>
+        {/each}
+      {/if}
+      <p class="hidden-note">The rest of the synth is hidden and held still, so only what this page explains changes the sound.</p>
 
       <div class="title">On the MiniLab</div>
-      {#if lesson.knobs.length}
+      {#if controls.length}
         <ul class="knobmap">
           {#each lesson.knobs as id, i (id)}
             <li class:target={pg.targetParams.includes(id)}><span class="n">Knob {i + 1}</span>{PARAMS[id].label}<span class="v">{formatValue(id, pg.values[id])}</span></li>
           {/each}
+          {#each faders as id (id)}
+            <li class:target={pg.targetParams.includes(id)}><span class="n">Fader {FADERS.indexOf(id) + 1}</span>{PARAMS[id].label}<span class="v">{formatValue(id, pg.values[id])}</span></li>
+          {/each}
         </ul>
-        <p class="dim">The other knobs and the faders do nothing on this page.</p>
+        <p class="dim">
+          {lesson.knobs.length ? "The other knobs" : "The knobs"}{faders.length === 4 ? "" : faders.length ? " and the other faders" : " and the faders"} do nothing on this page.
+          {#if faders.length}A fader whose setting changed (a new page, A/B) waits until you move it to that value.{/if}
+        </p>
       {:else}
         <p class="dim">Only the keys on this page: the knobs and faders do nothing.</p>
       {/if}
@@ -192,6 +217,10 @@
   h4 { margin: 0; font-size: 13px; }
   .block p { margin: 2px 0 0; font-size: 11.5px; color: var(--dim); line-height: 1.35; }
   .controls { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 8px; align-items: start; }
+  .controls.four { grid-template-columns: repeat(4, 1fr); }
+  /* A knob's box is only as wide as the knob, so its number badge sits at the knob, not at the edge of a wide cell. */
+  .controls :global(.knob-wrap) { justify-self: center; }
+  .block.mod { border-style: dashed; }
   .hidden-note { margin: 0; font-size: 11.5px; color: var(--dim); }
   .knobmap { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 13px; }
   .knobmap li { display: flex; gap: 8px; align-items: baseline; }

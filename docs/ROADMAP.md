@@ -471,6 +471,12 @@ Postponed on 2026-10-25 until Phase F was done; started 2026-10-26. Modelled on 
 
 - Amp envelope stage by stage (each control appears only once it's explained), then the filter envelope.
 - The widgets compare a long attack with a short one, and a pluck with a pad.
+- Status: built 2026-10-26, waiting for a check on the MiniLab.
+  - **5 pages** (`src/course/chapter2.ts`), all on the sawtooth: **Attack** (A/B short vs long attack, fader 1), **Decay and Sustain** (faders 1–3), **Release** (all four faders: ADSR), **Pluck and pad** (A/B of the two shapes), **The filter envelope** (Cutoff, Filt Env and F Decay on knobs 1–3, with a short introduction to the filter, which chapter 3 explains).
+  - **Each control appears once it is explained:** a page lists its `faders` (the amp envelope keeps its own faders, as everywhere else in the app), and only those faders work there; the others say "not on this page" on the OLED. On the screen they carry an F1–F4 badge, and "On the MiniLab" lists them. When a page opens or A/B changes a fader's setting, the fader picks up: it does nothing until it reaches the new value.
+  - **New in the framework:** an envelope widget (the Synth view's envelope picture, with a dot per sounding note), A/B comparisons that show an envelope instead of the wave, and a "Shaping it" group under the reduced synth for the envelope blocks (they are outside the signal path). The OLED names faders too ("Fader 3: Sustain").
+  - **Checked in the browser** (Helium, headless, 1280 x 720): all 5 pages done from simulated MiniLab events alone (keys, faders with pickup, knobs, encoder turns and clicks). Fader 1 does nothing on the filter page. No errors.
+  - **Tests:** the course tests now cover both chapters, plus: faders only hold the amp envelope and are not also on a knob; steps only ask for the page's knobs and faders; every control is on a block or modulator the page shows.
 
 ### 26. Chapter 3, "Filters"
 

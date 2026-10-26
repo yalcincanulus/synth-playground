@@ -6,7 +6,7 @@
 
 import { fromControl, toControl, type ParamId, type ParamValues } from "../../audio/params";
 import { PAGES } from "../../course/course";
-import { lessonValues, type Lesson } from "../../course/lesson";
+import { controlsOf, lessonValues, type Lesson } from "../../course/lesson";
 import { RecipeRun } from "../recipes/recipeRun.svelte";
 
 const COURSE_KEY = "minilab3.course";
@@ -100,6 +100,11 @@ export class Course {
   notePlayed(note: number, held: number) {
     this.lastNote = note;
     this.run?.notePlayed(note, held);
+  }
+
+  /** Whether a control is on this page (on a knob or a fader). */
+  allows(id: ParamId) {
+    return controlsOf(this.lesson).includes(id);
   }
 
   /** The page's controls on the MiniLab's 8 knobs. */

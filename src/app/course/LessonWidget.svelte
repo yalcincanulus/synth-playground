@@ -5,6 +5,7 @@
   import Knob from "../components/Knob.svelte";
   import type { Playground } from "../playground.svelte";
   import { harmonicBars, liveWave, noteHz, pitchWave } from "./draw";
+  import { envelope } from "../synth/viz";
 
   let { pg, widget, accent }: { pg: Playground; widget: Widget; accent: string } = $props();
 
@@ -53,6 +54,9 @@
     </div>
     <div class="frame tall grow"><canvas use:surface={{ draw: liveWave(analyser, color, wave, FIXED_GAIN), animate: true }}></canvas></div>
   </div>
+{:else if widget.kind === "envelope"}
+  <div class="frame tall"><canvas use:surface={{ draw: envelope(pg.engine, widget.which, color), animate: true }}></canvas></div>
+  <p class="caption"><span class="dim">Each dot is a note you are playing, travelling along the shape.</span></p>
 {:else if widget.kind === "harmonics"}
   <div class="frame tall"><canvas use:surface={{ draw: harmonicBars(wave, color), key: wave() }}></canvas></div>
   <p class="caption">{formatValue("osc1Wave", wave())}: {["one sine, no harmonics", "odd harmonics, fading fast", "every harmonic, each weaker than the last", "odd harmonics only"][wave()] ?? ""}</p>
@@ -66,9 +70,15 @@
       </button>
     {/each}
   </div>
-  <div class="frame"><canvas use:surface={{ draw: liveWave(analyser, color, wave, null), animate: true }}></canvas></div>
+  {#if widget.picture === "amp" || widget.picture === "filter"}
+    <div class="frame"><canvas use:surface={{ draw: envelope(pg.engine, widget.picture, color), animate: true }}></canvas></div>
+  {:else}
+    <div class="frame"><canvas use:surface={{ draw: liveWave(analyser, color, wave, null), animate: true }}></canvas></div>
+  {/if}
   <p class="caption">
-    {#if pg.values.oscMix < 0.05}
+    {#if widget.picture && widget.picture !== "wave"}
+      <span class="dim">Each dot is a note you are playing, travelling along the shape.</span>
+    {:else if pg.values.oscMix < 0.05}
       Oscillator 2 is silent (Osc Mix at 0): nothing to beat against.
     {:else if pg.values.osc2Detune < 0.5}
       In tune: no beating.
