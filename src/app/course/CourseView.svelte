@@ -1,5 +1,6 @@
 <script lang="ts">
   import { formatValue, PARAMS } from "../../audio/params";
+  import { introducedOn, markTerms, type Piece, type Term } from "../../course/glossary";
   import { controlsOf, lessonBlockOf } from "../../course/lesson";
   import { FADERS } from "../../presets/presets";
   import { CHAPTERS, PAGES } from "../../course/course";
@@ -7,6 +8,9 @@
   import type { Playground } from "../playground.svelte";
   import { BLOCKS } from "../synth/blocks";
   import ParamControl from "../synth/ParamControl.svelte";
+  import ChapterRecipes from "./ChapterRecipes.svelte";
+  import CourseContents from "./CourseContents.svelte";
+  import CourseGlossary from "./CourseGlossary.svelte";
   import LessonWidget from "./LessonWidget.svelte";
 
   let { pg, accent }: { pg: Playground; accent: string } = $props();
@@ -18,9 +22,23 @@
   let last = $derived(course.index === course.total - 1);
   let controls = $derived(controlsOf(lesson));
   let faders = $derived(lesson.faders ?? []);
+  let paragraphs = $derived(markTerms(lesson.text, course.index));
+  let chapterNumber = $derived(CHAPTERS.indexOf(course.chapter) + 1);
+  /** The last page of its chapter: it offers the chapter's recipes once done. */
+  let chapterEnd = $derived(course.chapter.lessons.at(-1) === lesson);
 
-  /** A paragraph cut into plain text and **bold** words. */
-  const pieces = (text: string) => text.split(/\*\*(.+?)\*\*/).map((t, i) => ({ t, bold: i % 2 === 1 }));
+  /** The glossary tooltip: the term pointed at, and where it shows (under the word, or over it near the bottom). */
+  let tip = $state.raw<{ term: Term; left: number; top?: number; bottom?: number } | null>(null);
+  const TIP_WIDTH = 300;
+
+  function showTip(e: Event, term: Term) {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const left = Math.max(8, Math.min(r.left, innerWidth - TIP_WIDTH - 8));
+    tip = r.bottom + 140 > innerHeight ? { term, left, bottom: innerHeight - r.top + 6 } : { term, left, top: r.bottom + 6 };
+  }
+  const hideTip = () => (tip = null);
+
+  const togglePanel = (panel: "contents" | "glossary") => (course.panel = course.panel === panel ? null : panel);
   const pageNumber = (id: string) => PAGES.findIndex((p) => p.lesson.id === id);
   /** Where step i stands: done, being done now, or still to come. */
   const stepState = (i: number) => (!run ? "todo" : run.done || i < run.index ? "done" : i === run.index ? "now" : "todo");
@@ -29,7 +47,7 @@
 <section class="course" aria-label="Learn">
   <header class="pages">
     <div class="chapter">
-      <span class="kicker">Learn · Chapter {CHAPTERS.indexOf(course.chapter) + 1}</span>
+      <span class="kicker">Learn · Chapter {chapterNumber}</span>
       <h2>{course.chapter.title}</h2>
     </div>
     <ol class="chips">
@@ -43,16 +61,26 @@
       {/each}
     </ol>
     <div class="nav">
+      <button class:on={course.panel === "contents"} aria-pressed={course.panel === "contents"} onclick={() => togglePanel("contents")}>
+        Contents <span class="count">{course.done.length}/{course.total}</span>
+      </button>
+      <button class:on={course.panel === "glossary"} aria-pressed={course.panel === "glossary"} onclick={() => togglePanel("glossary")}>Glossary</button>
+      <span class="gap"></span>
       <button onclick={() => course.goTo(course.index - 1)} disabled={course.index === 0}>← Back</button>
       <button class="primary" onclick={() => course.goTo(course.index + 1)} disabled={last}>Next →</button>
     </div>
   </header>
 
+  {#if course.panel === "contents"}
+    <CourseContents {pg} />
+  {:else if course.panel === "glossary"}
+    <CourseGlossary {course} />
+  {:else}
   <div class="layout">
     <article class="page">
       <h3><span class="pn">{course.index + 1}</span>{lesson.title}</h3>
-      {#each lesson.text as p, i (i)}
-        <p>{#each pieces(p) as piece, j (j)}{#if piece.bold}<strong>{piece.t}</strong>{:else}{piece.t}{/if}{/each}</p>
+      {#each paragraphs as p, i (i)}
+        <p>{#each p as piece, j (j)}{@render word(piece)}{/each}</p>
       {/each}
 
       <div class="widget"><LessonWidget {pg} widget={lesson.widget} {accent} /></div>
@@ -94,9 +122,12 @@
         {#if run?.done}
           <p class="page-done">
             ✓ Page done.
-            {#if !last}<button class="primary" onclick={() => course.goTo(course.index + 1)}>Next: {PAGES[course.index + 1].lesson.title} →</button>
-            {:else}That's the end of the course.{/if}
+            {#if last}That's the end of the course.
+            {:else if chapterEnd}That's the end of Chapter {chapterNumber}.
+              <button class="primary" onclick={() => course.goTo(course.index + 1)}>Next: Chapter {chapterNumber + 1}, {PAGES[course.index + 1].chapter.title} →</button>
+            {:else}<button class="primary" onclick={() => course.goTo(course.index + 1)}>Next: {PAGES[course.index + 1].lesson.title} →</button>{/if}
           </p>
+          {#if chapterEnd}<div class="chapter-recipes"><ChapterRecipes {pg} chapter={course.chapter} /></div>{/if}
         {:else if run}
           <button class="skip" onclick={() => run.next()}>Skip this step</button>
         {/if}
@@ -155,13 +186,24 @@
         <p class="dim">Only the keys on this page: the knobs and faders do nothing.</p>
       {/if}
       <p class="dim">Turn the encoder for the next or previous page{lesson.widget.kind === "compare" ? "; click it to switch A/B" : ""}.</p>
-      <p class="progress">
-        {course.done.length} of {course.total} pages done
-        {#if course.done.length}<button class="link" onclick={() => course.reset()}>reset</button>{/if}
-      </p>
     </aside>
   </div>
+  {/if}
 </section>
+
+<!-- A term: hover or focus shows its definition (a click too, for touch). -->
+{#snippet word(piece: Piece)}{#if piece.term}{@const term = piece.term}<button class="term" class:bold={piece.bold} aria-describedby={tip?.term === term ? "term-tip" : undefined} onmouseenter={(e) => showTip(e, term)} onmouseleave={hideTip} onfocus={(e) => showTip(e, term)} onblur={hideTip} onclick={(e) => showTip(e, term)}>{piece.t}</button>{:else if piece.bold}<strong>{piece.t}</strong>{:else}{piece.t}{/if}{/snippet}
+
+<svelte:window onscroll={hideTip} />
+
+{#if tip}
+  {@const at = introducedOn(tip.term)}
+  <div id="term-tip" class="tip" role="tooltip" style:left="{tip.left}px" style:top={tip.top === undefined ? null : `${tip.top}px`} style:bottom={tip.bottom === undefined ? null : `${tip.bottom}px`} style:width="{TIP_WIDTH}px">
+    <b>{tip.term.term}</b>
+    <span>{tip.term.text}</span>
+    {#if at !== course.index}<span class="from">Explained on page {at + 1}, {PAGES[at].lesson.title}</span>{/if}
+  </div>
+{/if}
 
 <style>
   .course { display: grid; gap: 10px; }
@@ -176,6 +218,10 @@
   .chips .now { border-color: var(--accent); color: var(--text); }
   .chips .now .num { background: var(--accent); color: #0b1314; }
   .nav { display: flex; gap: 6px; }
+  .nav { align-items: center; }
+  .nav .gap { width: 8px; }
+  .nav .on { border-color: var(--accent); color: var(--text); }
+  .count { font: 11px var(--mono); color: var(--dim); margin-left: 4px; }
   .nav button:disabled { opacity: 0.35; cursor: default; }
 
   .layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 14px; align-items: start; }
@@ -184,6 +230,13 @@
   .pn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #0b1314; font: 600 13px var(--mono); }
   .page > p { margin: 0 0 8px; font-size: 14.5px; line-height: 1.5; color: #cfd8da; max-width: 92ch; }
   .page > p strong { color: var(--accent); font-weight: 600; }
+  /* A glossary word: inline text, underlined with dots; a bold one keeps the bold look. */
+  .term { all: unset; cursor: help; text-decoration: underline dotted color-mix(in srgb, var(--accent) 70%, transparent); text-underline-offset: 3px; }
+  .term.bold { color: var(--accent); font-weight: 600; }
+  .term:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; border-radius: 2px; }
+  .tip { position: fixed; z-index: 50; display: grid; gap: 3px; padding: 8px 10px; border-radius: 6px; background: #10181a; border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--line)); box-shadow: 0 6px 20px #0008; font-size: 13px; line-height: 1.4; color: #cfd8da; pointer-events: none; }
+  .tip b { color: var(--accent); }
+  .tip .from { font-size: 11.5px; color: var(--dim); }
   .widget { margin: 12px 0; }
 
   .try { border-top: 1px solid var(--line); padding-top: 10px; }
@@ -205,7 +258,8 @@
   .complete button { font-size: 12px; padding: 2px 10px; border-color: #7be08a; color: #7be08a; }
   .complete i { position: absolute; left: 0; bottom: 0; height: 2px; width: 100%; background: #7be08a; transform-origin: left; animation: countdown linear forwards; }
   @keyframes countdown { from { transform: scaleX(1); } to { transform: scaleX(0); } }
-  .page-done { display: flex; align-items: center; gap: 12px; margin: 10px 0 0; padding: 8px 10px; border-radius: 6px; background: #7be08a14; color: #7be08a; font-size: 14px; }
+  .chapter-recipes { margin-top: 10px; }
+  .page-done { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 10px 0 0; padding: 8px 10px; border-radius: 6px; background: #7be08a14; color: #7be08a; font-size: 14px; }
   .skip { margin-top: 8px; font-size: 11px; padding: 2px 10px; color: var(--dim); }
 
   .mini { display: grid; gap: 8px; position: sticky; top: 8px; }
@@ -227,8 +281,6 @@
   .knobmap .n { font: 600 11px var(--mono); color: var(--accent); width: 52px; }
   .knobmap .target { color: #ffe08a; }
   .dim { margin: 0; color: var(--dim); font-size: 12px; }
-  .progress { margin: 4px 0 0; font-size: 12px; color: var(--dim); }
-  .link { background: none; border: none; padding: 0 4px; color: var(--dim); text-decoration: underline; font-size: 12px; }
 
   @media (max-width: 1000px) {
     .layout { grid-template-columns: 1fr; }

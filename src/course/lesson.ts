@@ -84,6 +84,8 @@ export interface Chapter {
   id: string;
   title: string;
   lessons: Lesson[];
+  /** Recipes (ids) that use what the chapter taught, offered at its end. */
+  recipes: string[];
 }
 
 /** The course's base sound: Init with a sine wave, at a comfortable level. */

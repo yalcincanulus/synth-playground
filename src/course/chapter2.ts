@@ -12,6 +12,7 @@ const PAD = { attack: 0.9, decay: 1, sustain: 0.9, release: 1.8 };
 export const CHAPTER_2: Chapter = {
   id: "envelopes",
   title: "Shaping over time",
+  recipes: ["pluck", "supersaw"],
   lessons: [
     {
       id: "attack",

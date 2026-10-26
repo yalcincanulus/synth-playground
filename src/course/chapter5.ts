@@ -11,6 +11,7 @@ const BUILT_IN_TABLES = { wtTable: 8 };
 export const CHAPTER_5: Chapter = {
   id: "beyond",
   title: "Beyond subtractive",
+  recipes: ["pwmStrings", "syncLead", "bell", "vowelLead"],
   lessons: [
     {
       id: "pulse-width",

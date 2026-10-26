@@ -3,8 +3,13 @@ import { PARAMS, toControl } from "../audio/params";
 import { FADERS } from "../presets/presets";
 import { aimOf, describe as say, isPlay, settingHolds, type SettingCheck } from "../recipes/recipe";
 import { SHOWN_WHEN } from "../app/synth/blocks";
+import { RECIPES } from "../recipes/library";
 import { CHAPTERS, PAGES } from "./course";
+import { GLOSSARY, introducedOn, markTerms, termFor } from "./glossary";
 import { controlsOf, lessonBlockOf, lessonValues } from "./lesson";
+
+/** Bold words that are the page's control labels, not terms: the reduced synth and the page explain them. */
+const NOT_TERMS = ["Volume", "Filt Env", "F Decay", "Filt Morph", "Depth", "Rate", "LFO To", "Random", "LFO Sync", "Amount", "LFO 2", "LFO 3", "FM Amount", "WT Pos", "Synth view"];
 
 describe("course", () => {
   test("page ids are unique", () => {
@@ -16,6 +21,48 @@ describe("course", () => {
       expect(chapter.lessons.length).toBeGreaterThanOrEqual(5);
       expect(chapter.lessons.length).toBeLessThanOrEqual(8);
     }
+  });
+
+  test("each chapter ends with a few recipes that exist", () => {
+    for (const chapter of CHAPTERS) {
+      expect(chapter.recipes.length).toBeGreaterThanOrEqual(1);
+      expect(chapter.recipes.length).toBeLessThanOrEqual(4);
+      for (const id of chapter.recipes) expect(RECIPES.map((r) => r.id), id).toContain(id);
+    }
+  });
+
+  describe("glossary", () => {
+    test("every bold word is a term, or a control's label", () => {
+      for (const [i, { lesson }] of PAGES.entries()) {
+        for (const piece of markTerms(lesson.text, i).flat()) if (piece.bold && !piece.term) expect(NOT_TERMS, `${lesson.title}: ${piece.t}`).toContain(piece.t);
+      }
+    });
+
+    test("every term is introduced (in bold) on some page, and has a short definition", () => {
+      for (const t of GLOSSARY) {
+        expect(introducedOn(t), t.term).toBeGreaterThanOrEqual(0);
+        expect(t.text.split(/\s+/).length, t.term).toBeLessThan(30);
+      }
+    });
+
+    test("no word belongs to two terms", () => {
+      const words = GLOSSARY.flatMap((t) => [t.term, ...(t.also ?? [])].map((w) => w.toLowerCase()));
+      expect(new Set(words).size).toBe(words.length);
+    });
+
+    test("marking keeps the text, and marks a term from an earlier chapter once per page", () => {
+      for (const [i, { lesson }] of PAGES.entries()) {
+        const pieces = markTerms(lesson.text, i);
+        pieces.forEach((p, k) => expect(p.map((x) => x.t).join("")).toBe(lesson.text[k].replace(/\*\*/g, "")));
+        const plain = pieces.flat().filter((x) => x.term && !x.bold).map((x) => x.term!);
+        expect(new Set(plain).size).toBe(plain.length);
+        for (const t of plain) expect(PAGES[introducedOn(t)].chapter).not.toBe(PAGES[i].chapter);
+      }
+      // The LFO chapter's "What it moves" names the cutoff, from the filter chapters.
+      const at = PAGES.findIndex((p) => p.lesson.id === "lfo-targets");
+      const marked = markTerms(PAGES[at].lesson.text, at).flat().filter((x) => x.term && !x.bold);
+      expect(marked.map((x) => x.term)).toContain(termFor("cutoff"));
+    });
   });
 
   for (const { lesson } of PAGES) {

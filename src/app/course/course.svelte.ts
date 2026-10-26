@@ -39,6 +39,8 @@ export class Course {
   side = $state<"a" | "b" | null>(null);
   /** The last note played on this page (for the pitch picture). */
   lastNote = $state<number | null>(null);
+  /** The overview over the page: the contents (every chapter, its pages and recipes) or the glossary. */
+  panel = $state<"contents" | "glossary" | null>(null);
 
   constructor(
     /** The settings being taught (the Keys part's). */
@@ -69,11 +71,17 @@ export class Course {
     return this.done.includes(id);
   }
 
+  /** The first page not done yet (-1: all are). */
+  get nextUndone() {
+    return PAGES.findIndex((p) => !this.done.includes(p.lesson.id));
+  }
+
   /** Open the current page, from its starting sound. */
   open() {
     this.run?.stop();
     this.side = null;
     this.lastNote = null;
+    this.panel = null;
     this.run = new RecipeRun(this.lesson, this.values, () => this.stepChanged());
     this.save();
     this.onPage(lessonValues(this.lesson));
@@ -85,6 +93,12 @@ export class Course {
     this.index = i;
     this.open();
     return true;
+  }
+
+  /** Open page i from the overview (closing it, even if page i is the open one). */
+  show(i: number) {
+    this.panel = null;
+    this.goTo(i);
   }
 
   /** Leaving the course: the timers stop, the page is remembered. */

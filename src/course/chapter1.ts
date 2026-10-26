@@ -9,6 +9,7 @@ const FOUR_WAVES = { osc1Wave: 4 };
 export const CHAPTER_1: Chapter = {
   id: "sound",
   title: "Sound and Oscillators",
+  recipes: ["reese", "sub"],
   lessons: [
     {
       id: "what-is-sound",

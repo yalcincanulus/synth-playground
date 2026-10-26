@@ -1659,6 +1659,15 @@ export class Playground {
     this.syncHardware();
   }
 
+  /**
+   * A recipe offered at a chapter's end: leave the course (your sound comes back first), then follow it. Its
+   * start is an undo step, so undo gives your sound back; Learn keeps its page for when you come back.
+   */
+  courseRecipe(id: string) {
+    this.setView("synth");
+    this.startRecipe(id);
+  }
+
   /** A course page opened (with its starting sound), or its step changed. */
   private coursePage(values: ParamValues | null) {
     if (values) {

@@ -9,6 +9,7 @@ const SAW = { osc1Wave: 2 };
 export const CHAPTER_3: Chapter = {
   id: "filters",
   title: "Filters",
+  recipes: ["acid", "wind"],
   lessons: [
     {
       id: "cutoff",

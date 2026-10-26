@@ -10,6 +10,7 @@ const SAW = { osc1Wave: 2 };
 export const CHAPTER_4: Chapter = {
   id: "movement",
   title: "Movement",
+  recipes: ["ePiano", "g-funk"],
   lessons: [
     {
       id: "lfo",
