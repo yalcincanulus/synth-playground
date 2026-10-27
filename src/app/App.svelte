@@ -5,6 +5,7 @@
   import Fader from "./components/Fader.svelte";
   import Keyboard from "./components/Keyboard.svelte";
   import ScaleBar from "./components/ScaleBar.svelte";
+  import Switch from "./components/Switch.svelte";
   import ArpBar from "./components/ArpBar.svelte";
   import ChordDisplay from "./components/ChordDisplay.svelte";
   import { playable } from "../audio/scale";
@@ -162,9 +163,7 @@
         CPU {Math.round(pg.cpu.load * 100)}%
       </span>
     {/if}
-    <label class="explain-toggle" title="Plain-English explanations on every view">
-      <input type="checkbox" checked={pg.explain} onchange={(e) => pg.setExplain(e.currentTarget.checked)} /> Explanations
-    </label>
+    <Switch on={pg.explain} label="Explanations" title="Plain-English explanations on every view" onchange={() => pg.setExplain(!pg.explain)} />
     <button class="about-link" class:active={pg.view === "about"} onclick={() => pg.setView("about")} title="What this is, the MiniLab and keyboard shortcuts, and this browser's limits">About & shortcuts</button>
   </header>
 
@@ -491,7 +490,6 @@
     background: linear-gradient(to right, color-mix(in srgb, var(--accent) 30%, transparent) calc(var(--load) * 100%), transparent 0);
   }
   .cpu.hot { color: #ff6b6b; border-color: #ff6b6b; }
-  .explain-toggle { font-size: 12px; display: flex; align-items: center; gap: 6px; white-space: nowrap; color: var(--dim); }
   .about-link { background: none; border: none; color: var(--dim); font-size: 12px; padding: 4px 2px; white-space: nowrap; }
   .about-link:hover { color: var(--text); }
   .about-link.active { color: var(--accent); text-decoration: underline; text-underline-offset: 4px; }

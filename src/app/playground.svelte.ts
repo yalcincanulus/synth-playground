@@ -304,7 +304,8 @@ export class Playground {
   /** Synth view patching: null when off, "source" while picking a source block, or the picked source. */
   patch = $state<null | "source" | number>(null);
   /** Synth view: show plain-English explanations on each block. */
-  explain = $state(localStorage.getItem(EXPLAIN_KEY) !== "off");
+  /** Off until switched on: the views are short, and the explanations are there when wanted. */
+  explain = $state(localStorage.getItem(EXPLAIN_KEY) === "on");
 
   /** Every wavetable, built-in then imported (a copy of WAVETABLES, replaced when it changes, for the UI). */
   tables = $state.raw<WavetableDef[]>([...WAVETABLES]);
