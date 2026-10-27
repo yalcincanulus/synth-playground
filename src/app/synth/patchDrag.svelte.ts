@@ -35,6 +35,8 @@ export class PatchDrag {
   constructor(
     private playground: () => Playground,
     private container: () => HTMLElement | undefined,
+    /** What a cable is dropped on, for the hint at the pointer. */
+    private target = "a block",
   ) {}
 
   /** A press on source `src`'s socket (`route` null) or on route `route`'s cable end. */
@@ -114,7 +116,7 @@ export class PatchDrag {
     const s = this.state;
     if (!s) return "";
     if (s.over !== null) return `→ ${DEST_NAMES[MOD_DESTS[s.over]]}`;
-    return s.route === null ? "Drop on a block" : `Let go to remove route ${s.route}`;
+    return s.route === null ? `Drop on ${this.target}` : `Let go to remove route ${s.route}`;
   }
 
   /** A click on a socket or cable end (mouse or keyboard), when it wasn't the end of a drag. */

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { EFFECT_ON, effectChain, effectOrder, formatValue, LFO_SYNC_BEATS, MOD_DESTS, MOD_SOURCES, PARAMS, slotIds, type Effect } from "../../audio/params";
+  import { EFFECT_ON, effectChain, effectOrder, formatValue, LFO_SYNC_BEATS, MOD_DESTS, MOD_SOURCES, PARAMS, slotIds } from "../../audio/params";
   import type { Playground } from "../playground.svelte";
   import Block from "./Block.svelte";
   import { BLOCKS, DEST_BLOCK, jackAt, KNOB_PAGES, paramLabel, SOURCE_BLOCK, TAP_NAMES } from "./blocks";
@@ -10,6 +10,9 @@
   import LiveCanvas from "./LiveCanvas.svelte";
   import { PatchDrag, providePatchDrag } from "./patchDrag.svelte";
   import * as viz from "./viz";
+  import { AENV, COLORS, FENV, LFO, LFO2, LFO3, MENV, OSC, PENV, PLAY } from "./colors";
+  import { EffectRow } from "./effectRow.svelte";
+  import PanelView from "./PanelView.svelte";
   import { spectrogram } from "../components/spectrogram";
 
   let { pg, accent }: { pg: Playground; accent: string } = $props();
@@ -21,20 +24,16 @@
   const values = () => pg.values;
   const noise = () => () => Math.random() * 2 - 1;
 
-  // Modulation colours, shared by cables, legend and block visuals.
-  const LFO = "#ffcc33";
-  const LFO2 = "#ff9f43";
-  const LFO3 = "#ffd8a8";
-  const FENV = "#ff7ab6";
-  const AENV = "#7ab8ff";
-  const PLAY = "#b388ff";
-  const PENV = "#5ee0a0";
-  const OSC = "#ff6b6b";
-  const MENV = "#c6f05e";
-  /** Each modulator block's colour, for its cables and matrix routes. */
-  const COLORS: Record<string, string> = { lfo: LFO, lfo2: LFO2, lfo3: LFO3, filterEnv: FENV, ampEnv: AENV, pitchEnv: PENV, modEnv: MENV, perf: PLAY, osc: OSC };
   /** Where matrix route cables land on each destination block. */
   const DEST_SIDE: Partial<Record<string, Cable["toSide"]>> = { osc1: "r", osc2: "r", filter: "b", filter2: "r", amp: "l", mixer: "r", lfo: "t", lfo2: "t", lfo3: "t" };
+
+  // Two looks: the cables, drawn between the blocks, or a plugin-style panel. Remembered per browser.
+  const LAYOUT_KEY = "minilab3.synthLayout";
+  let layout = $state<"cables" | "panel">(localStorage.getItem(LAYOUT_KEY) === "panel" ? "panel" : "cables");
+  function setLayout(to: "cables" | "panel") {
+    layout = to;
+    localStorage.setItem(LAYOUT_KEY, to);
+  }
 
   let container = $state<HTMLElement>();
   const drag = new PatchDrag(() => pg, () => container);
@@ -130,39 +129,18 @@
   }
   let focusDef = $derived(BLOCKS[pg.focusBlock]);
 
-  // The effect row, in the order they run. Drag a block's handle to move it: the drop point is before the
-  // block whose middle is right of the pointer.
+  // The effect row, in the order they run; drag a block's handle to move it.
   let order = $derived(effectOrder(pg.values));
-  let fxRow = $state<HTMLElement>();
-  let dropAt = $state<number | null>(null);
+  const fxRow = new EffectRow(() => pg);
 
-  function dropIndex(e: DragEvent): number {
-    const blocks = [...(fxRow?.querySelectorAll<HTMLElement>("[data-block]") ?? [])];
-    const i = blocks.findIndex((b) => {
-      const r = b.getBoundingClientRect();
-      return e.clientY < r.bottom && (e.clientX < r.left + r.width / 2 || e.clientY < r.top);
-    });
-    return i < 0 ? blocks.length : i;
-  }
-  function dragOver(e: DragEvent) {
-    if (!e.dataTransfer?.types.includes("application/x-effect")) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    dropAt = dropIndex(e);
-  }
-  function drop(e: DragEvent) {
-    const fx = e.dataTransfer?.getData("application/x-effect") as Effect | undefined;
-    dropAt = null;
-    if (!fx || !order.includes(fx)) return;
-    e.preventDefault();
-    const at = dropIndex(e);
-    // Taken out first, so a later drop point is one place earlier.
-    pg.moveEffect(fx, at > order.indexOf(fx) ? at - 1 : at);
-  }
   const amountOff = (amount: number) => (amount < 0.01 ? "at 0" : null);
 </script>
 
 <section class="synth">
+  <div class="layout" role="group" aria-label="Synth view look">
+    <button class:on={layout === "cables"} aria-pressed={layout === "cables"} title="The blocks with cables between them: what moves what, drawn" onclick={() => setLayout("cables")}>Cables</button>
+    <button class:on={layout === "panel"} aria-pressed={layout === "panel"} title="A plugin-style panel: modulation shows as rings around the knobs it moves" onclick={() => setLayout("panel")}>Panel</button>
+  </div>
   {#if pg.recipeList}<RecipeList {pg} />{/if}
   {#if pg.listening}
     <button class="listening" onclick={() => pg.listenTo(null)}>
@@ -170,6 +148,10 @@
     </button>
   {/if}
 
+  {#if layout === "panel"}
+    {#if pg.recipe}<RecipePanel {pg} />{/if}
+    <PanelView {pg} {accent} />
+  {:else}
   {#if pg.recipe}
     <RecipePanel {pg} />
   {:else}
@@ -262,10 +244,10 @@
     </div>
 
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="fxrow" bind:this={fxRow} ondragover={dragOver} ondragleave={(e) => !fxRow?.contains(e.relatedTarget as Node) && (dropAt = null)} ondrop={drop}>
+    <div class="fxrow" bind:this={fxRow.row} ondragover={fxRow.over} ondragleave={fxRow.leave} ondrop={fxRow.drop}>
       {#each order as fx, i (fx)}
         {@const on = pg.values[EFFECT_ON[fx]] === 1}
-        <div class="slot" class:off={!on} class:drop-before={dropAt === i} class:drop-after={dropAt === order.length && i === order.length - 1}>
+        <div class="slot" class:off={!on} class:drop-before={fxRow.dropAt === i} class:drop-after={fxRow.dropAt === order.length && i === order.length - 1}>
           <Block {pg} id={fx} compact={!on} inactive={fx === "chorus" ? amountOff(pg.values.chorus) : fx === "delay" ? amountOff(pg.values.delayMix) : fx === "reverb" ? amountOff(pg.values.reverbMix) : null}>
             {#if fx === "distortion"}<LiveCanvas height={40} draw={viz.distortion(values, color)} />
             {:else if fx === "compressor"}<LiveCanvas height={40} draw={viz.compressor(engine, color)} />
@@ -322,10 +304,17 @@
       <div class="drag-hint" class:remove={d.route !== null && d.over === null} style:left="{d.x + 12}px" style:top="{d.y + 10}px">{drag.hint}</div>
     {/if}
   </div>
+  {/if}
 </section>
 
 <style>
   .synth { display: grid; gap: 8px; }
+  /* The look switch, top right; the view below starts level with it. */
+  .layout { justify-self: end; display: flex; margin-bottom: -4px; }
+  .layout button { font-size: 11px; padding: 1px 10px; border-radius: 0; color: var(--dim); }
+  .layout button:first-child { border-radius: 10px 0 0 10px; }
+  .layout button:last-child { border-radius: 0 10px 10px 0; margin-left: -1px; }
+  .layout .on { background: var(--accent); border-color: var(--accent); color: #0b1314; }
   .listening { text-align: left; background: #ffcc3322; border-color: #ffcc33; color: #ffe08a; font-size: 12px; }
   .detail {
     display: grid; grid-template-columns: 1fr 520px; gap: 20px; align-items: start;

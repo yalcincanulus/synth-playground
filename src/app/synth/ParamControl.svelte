@@ -1,10 +1,34 @@
 <script lang="ts">
-  import { formatValue, fromControl, PARAMS, toControl, type ParamDef, type ParamId } from "../../audio/params";
-  import Knob from "../components/Knob.svelte";
+  import { formatValue, fromControl, MOD_DESTS, PARAMS, toControl, type ParamDef, type ParamId } from "../../audio/params";
+  import Knob, { type KnobRing } from "../components/Knob.svelte";
   import { FADERS } from "../../presets/presets";
   import type { Playground } from "../playground.svelte";
+  import { DEST_NAMES } from "./blocks";
+  import { usePatchDrag } from "./patchDrag.svelte";
 
-  let { pg, id, inline = false }: { pg: Playground; id: ParamId; inline?: boolean } = $props();
+  interface Props {
+    pg: Playground;
+    id: ParamId;
+    inline?: boolean;
+    /** The knob's size; by default it follows `inline`. */
+    size?: number;
+    /** The modulations moving it (Panel view). */
+    rings?: KnobRing[];
+    /** Panel view: the mod destination this knob is, by MOD_DESTS index, so a cable can be dropped (or clicked) on it. */
+    dest?: number;
+  }
+  let { pg, id, inline = false, size, rings, dest }: Props = $props();
+
+  const drag = usePatchDrag();
+  /** A cable is being dragged, or a source was clicked, and this knob can take it. */
+  let droppable = $derived(dest !== undefined && (!!drag?.state || typeof pg.patch === "number"));
+  /** Click patching: a click on the knob makes the route. */
+  function pick(e: MouseEvent) {
+    if (dest === undefined || typeof pg.patch !== "number") return;
+    e.stopPropagation();
+    pg.addRoute(pg.patch, dest);
+    pg.patch = null;
+  }
 
   const SHORT: Record<string, string> = {
     sine: "Sine", triangle: "Tri", sawtooth: "Saw", square: "Sqr",
@@ -46,10 +70,21 @@
     </div>
   </div>
 {:else}
-  <div class="knob-wrap" class:target class:inline>
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+  <div
+    class="knob-wrap"
+    class:target
+    class:inline
+    class:droppable
+    class:over={dest !== undefined && drag?.state?.over === dest}
+    data-dest={dest}
+    title={droppable ? `Patch to ${DEST_NAMES[MOD_DESTS[dest!]]}` : undefined}
+    onclickcapture={pick}
+  >
     {#if knob}<span class="k knob-k" title="MiniLab knob {knob}">{knob}</span>{:else if fader}<span class="k knob-k fader-k" title="MiniLab fader {fader}">F{fader}</span>{/if}
     <Knob
-      size={inline ? 30 : 38}
+      size={size ?? (inline ? 30 : 38)}
+      {rings}
       {inline}
       label={def.label}
       display={formatValue(id, pg.values[id])}
@@ -82,5 +117,8 @@
   }
   .knob-k { position: absolute; top: 0; right: 2px; margin: 0; }
   .fader-k { width: auto; padding: 0 4px; border-radius: 7px; }
+  /* Panel view patching: the knobs a cable can go to. */
+  .droppable { outline: 1px dashed #ffcc3388; outline-offset: 3px; border-radius: 8px; cursor: crosshair; }
+  .over { outline: 2px solid #ffcc33; background: #ffcc3322; }
   .inline .knob-k { top: -3px; left: -3px; right: auto; }
 </style>
