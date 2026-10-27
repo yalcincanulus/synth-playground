@@ -428,11 +428,11 @@
       {/if}
       {#if !pg.hasDevice}
         <!-- Without a MiniLab, the computer keyboard plays: which notes, and Z / X to move them. -->
-        <div class="qwerty" title="The computer keyboard plays notes: A to ' (W, E, T… are the black keys). Z / X move it an octave.">
-          <span class="label">Computer keys</span>
-          <button onclick={(e) => { pg.shiftKeyOctave(-1); e.currentTarget.blur(); }} disabled={pg.keyOctave <= -3} aria-label="Octave down (Z)"><kbd>Z</kbd> ◀</button>
+        <div class="qwerty" title="The octave the computer keyboard plays: A to ' (W, E, T… are the black keys) play the notes shown here. Z / X move it down or up an octave.">
+          <span class="label">Octave</span>
+          <button onclick={(e) => { pg.shiftKeyOctave(-1); e.currentTarget.blur(); }} disabled={pg.keyOctave <= -3} aria-label="Computer keyboard octave down (Z)"><kbd>Z</kbd> ◀</button>
           <span class="range">{noteName(60 + pg.keyOctave * 12)}–{noteName(77 + pg.keyOctave * 12)}</span>
-          <button onclick={(e) => { pg.shiftKeyOctave(1); e.currentTarget.blur(); }} disabled={pg.keyOctave >= 3} aria-label="Octave up (X)">▶ <kbd>X</kbd></button>
+          <button onclick={(e) => { pg.shiftKeyOctave(1); e.currentTarget.blur(); }} disabled={pg.keyOctave >= 3} aria-label="Computer keyboard octave up (X)">▶ <kbd>X</kbd></button>
         </div>
       {/if}
       <button class="fold" onclick={toggleKeys} aria-expanded={keysOpen} title="{keysOpen ? 'Hide' : 'Show'} the on-screen keyboard. {pg.hasDevice ? 'The MiniLab and the computer keyboard' : 'The computer keyboard'} (A–' row) play{pg.hasDevice ? '' : 's'} either way">
