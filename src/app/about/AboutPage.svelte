@@ -5,47 +5,30 @@
 
   let ctx = $derived(pg.engine.ctx);
   const hasMidi = typeof navigator !== "undefined" && "requestMIDIAccess" in navigator;
-  /** What the browser reports as the delay from the synth to the speakers. */
-  let latencyMs = $derived(pg.audioRunning ? Math.round(((ctx.baseLatency ?? 0) + (ctx.outputLatency ?? 0)) * 1000) : null);
-  /** Notes start at the next audio block, about this long after the page handles a key. */
-  const blockMs = $derived((128 / ctx.sampleRate) * 1000);
-  let t = $derived(pg.timing);
-  let keyToSound = $derived(latencyMs === null || t.midiAverage === null ? null : Math.round(t.midiAverage + blockMs + latencyMs));
-  const ms = (v: number) => `${v < 10 ? v.toFixed(1) : Math.round(v)} ms`;
 </script>
 
 <article class="about">
   <section class="intro">
     <h2>About</h2>
     <p class="lead">
-      MiniLab 3 Playground is a synthesizer that runs in the browser, made for the Arturia MiniLab 3. Every knob, fader, pad
-      and touch strip does something, and the MiniLab's pad lights and screen follow what the app is doing. There is nothing to
-      install.
+      MiniLab 3 Playground is a synthesizer in the browser, made for the Arturia MiniLab 3: every knob, fader, pad and strip
+      does something, and the pad lights and screen follow along. It is for learning synthesis by playing, in the spirit of
+      Ableton's Learning Synths. Nothing to install.
     </p>
-    <p>It is for learning synthesis by playing, in the spirit of Ableton's Learning Synths, built around a real controller.</p>
   </section>
 
   <div class="columns">
     <section>
       <h3>What's inside</h3>
       <ul>
-        <li><strong>Play:</strong> the MiniLab's knobs and faders on screen, presets, Dice (a random patch), a drum loop with step editing, waveform, spectrum and spectrogram views.</li>
-        <li><strong>Step sequencer:</strong> 8 steps with notes, rests and slides, played on the MiniLab's knobs and pads. Play chords over it, or transpose it from the keys.</li>
-        <li><strong>Preset browser:</strong> click the preset name. Search by what a sound is ("dark bass", "plucky", "wide pad"), pick a category or a describing word, hear a preset with ▷ before loading it, and star favourites (the first 8 are on pad bank B). Your own presets have their own group, and can be exported to a file and imported on another computer.</li>
-        <li><strong>Two parts:</strong> the keys and the step sequencer each have their own sound, say a pad over a bass line. Pick the part to edit above the presets, or with Shift + any key on the MiniLab.</li>
-        <li><strong>Synth:</strong> the whole synth as blocks with live signals and cables, plain-English explanations, and "Listen here" to hear any stage on its own.</li>
-        <li><strong>Wavetable:</strong> eight built-in wavetables in 3D, with the wave playing right now and its harmonics. Import your own (a Serum-format WAV, or any short sound, which is cut into frames) or draw one. Your tables stay in this browser.</li>
-        <li><strong>Scale lock and chord mode:</strong> every key lands on a note of the scale, or plays a whole chord of it. The chord you play is named above the keyboard.</li>
-        <li><strong>Arpeggiator:</strong> hold notes or a chord and it plays them one at a time (up, down, up-down, random, or as played) over 1–3 octaves, in time with the drums. With chord mode, one finger plays an arpeggio. It also runs with the drums stopped. Use it rather than the MiniLab's own Arp button, which keeps its own tempo.</li>
-        <li><strong>Learn:</strong> a course on how sound and synths work, one idea per page, with a picture to play with and only the controls that page needs. Chapter 1, "Sound and Oscillators" (6 pages), Chapter 2, "Shaping over time" (envelopes, 5 pages), Chapter 3, "Filters" (6 pages), and Chapter 4, "Movement" (LFOs and the mod matrix, 6 pages). The MiniLab's knobs follow the page and the encoder turns the pages. Your own sound comes back when you leave.</li>
-        <li><strong>Recipes:</strong> 18 sounds to build step by step, from Init, three of them famous ones (Classics).</li>
-        <li><strong>Classics:</strong> 21 presets that recreate famous synth sounds, each naming the original instrument and a record to compare it with.</li>
-        <li><strong>Sound:</strong> two oscillators with pulse width, hard sync, FM and wavetables; sub and noise; a clean or a ladder filter with a low-pass to high-pass morph, an optional second filter, and drive; stereo unison and panning; amp, filter, pitch and mod envelopes; three LFOs; a mod matrix with 8 routes that also reaches the effects and the LFOs, patched by dragging cables in the Synth view; a three-line chorus, a stereo or ping-pong delay, and a reverb with damping.</li>
-      </ul>
-
-      <h3>Coming later <span class="tag">not in yet</span></h3>
-      <ul class="later">
-        <li>The last course chapter: beyond subtractive synthesis (sync, FM, pulse width, wavetables)</li>
+        <li><strong>Play:</strong> the MiniLab's controls on screen, presets, Dice for a random patch, a drum loop, and live pictures of the sound.</li>
+        <li><strong>Two parts:</strong> the keys and an 8-step sequencer each have their own sound, say a pad over a bass line.</li>
+        <li><strong>Synth:</strong> the whole synth with plain-English explanations, as blocks joined by cables or as a plugin-style panel. "Listen here" plays any stage on its own.</li>
+        <li><strong>Wavetable:</strong> eight built-in wavetables in 3D; import your own or draw one.</li>
+        <li><strong>Learn:</strong> a five-chapter course on how sound and synths work, one idea per page, with only the controls that page needs.</li>
+        <li><strong>Recipes and Classics:</strong> 18 sounds to build step by step, and 21 presets that recreate famous synth sounds.</li>
+        <li><strong>Scale lock, chords and arpeggiator:</strong> every key lands in the scale, plays a whole chord, or an arpeggio in time with the drums.</li>
+        <li><strong>Preset browser:</strong> search by what a sound is ("dark bass", "wide pad"), star favourites, and save your own.</li>
       </ul>
 
       <h3>Getting started</h3>
@@ -54,32 +37,43 @@
         <li>On the MiniLab, hold <strong>Shift</strong> and tap <strong>Prog</strong> to switch to DAW mode. The pads light up and the screen follows the app.</li>
         <li>No MiniLab? The computer keyboard plays notes (A row; Z / X change octave), and every control works with the mouse.</li>
       </ol>
+    </section>
 
+    <section>
       <h3 id="shortcuts">Shortcuts</h3>
       <dl class="keys">
         <dt>Computer keyboard</dt>
         <dd>A to ' plays notes (W, E, T… are the black keys); Z / X shift the octave</dd>
         <dt>Encoder</dt>
-        <dd>Turn: browse presets (the preset browser's list: a category, your favourites, a search), click to load, hold for Dice. Synth view: turn for the knob pages, click to listen at the selected block. Wavetable view: turn to pick the table. Learn view: turn for the next or previous page, click to switch A/B on a comparison page</dd>
+        <dd>Turn to browse presets, click to load, hold for Dice. In the Synth, Wavetable and Learn views it turns the knob pages, tables or course pages</dd>
         <dt>Shift + encoder</dt>
-        <dd>Turn: the next view (Waveform, Spectrum, Spectrogram, Synth, Wavetable). Click: drum step edit (turn to pick the drum), again: sequencer edit, again: off</dd>
+        <dd>Turn: the next view. Click: drum step edit, again: sequencer edit, again: off</dd>
         <dt>Shift + knob 1</dt>
-        <dd>The step sequencer's clock (Free: its speed; Sync: the note length)</dd>
+        <dd>The step sequencer's clock</dd>
         <dt>Shift + knobs 2–8</dt>
         <dd>Tempo</dd>
         <dt>Shift + any key</dt>
         <dd>Switch part (Keys or Sequencer)</dd>
         <dt>Shift + faders</dt>
-        <dd>Pick by where the fader is. 1: the arpeggiator (bottom = off, then Up, Down, Up-down, Random, Played). 2: its range, 1–3 octaves. 3: the scale (bottom = off). 4: one key plays notes, triads or 7ths. After Shift, a fader does its own job again once it gets back to that value</dd>
+        <dd>1: arpeggiator mode, 2: its range, 3: the scale, 4: notes, triads or 7ths (bottom = off)</dd>
         <dt>Shift + mod strip</dt>
         <dd>The scale's root: C at the left end, B at the right</dd>
         <dt>Undo / redo</dt>
-        <dd>Ctrl+Z / Ctrl+Shift+Z (or Ctrl+Y). On the MiniLab: hold Shift and push the pitch strip down to undo, up to redo</dd>
+        <dd>Ctrl+Z / Ctrl+Shift+Z, or hold Shift and push the pitch strip down or up</dd>
         <dt>Shift + pads</dt>
         <dd>▶ play, ■ stop, ● record, ⟲ clear the drum loop, Tap tempo</dd>
         <dt>Mouse</dt>
         <dd>Drag a knob or fader up and down; double-click a knob to reset it</dd>
       </dl>
+
+      <h3>Good to know</h3>
+      <ul>
+        <li>It needs a Chromium-based browser (Chrome, Edge, Brave, Opera). Safari has no Web MIDI, and Firefox isn't tested.</li>
+        <li>Sound starts after your first click on the page.</li>
+        <li>Your presets and tables stay in this browser. Use <strong>Export mine</strong> in the preset browser to keep them in a file.</li>
+        <li>If the MiniLab won't connect, close other apps that have it open (a DAW, Arturia MIDI Control Center).</li>
+        <li>It isn't a plugin, so it can't load in a DAW. To record it, capture the system audio.</li>
+      </ul>
 
       <h3>This browser</h3>
       <dl class="facts">
@@ -87,69 +81,7 @@
         <dd class:bad={!hasMidi}>{hasMidi ? "supported" : "not supported: the MiniLab can't connect"}</dd>
         <dt>Audio</dt>
         <dd>{pg.audioRunning ? `running at ${(ctx.sampleRate / 1000).toFixed(1)} kHz` : "not started yet (click anywhere to start)"}</dd>
-        <dt>Output delay</dt>
-        <dd>{latencyMs === null ? "—" : `about ${latencyMs} ms, as reported by the browser`}</dd>
-        <dt>MIDI wait</dt>
-        <dd>
-          {t.midiAverage === null || t.midiWorst === null
-            ? "play a few notes on the MiniLab to measure"
-            : `${ms(t.midiAverage)} on average, ${ms(t.midiWorst)} at worst: how long a key's message waits before the page handles it`}
-        </dd>
-        <dt>Key to sound</dt>
-        <dd>{keyToSound === null ? "—" : `about ${keyToSound} ms (MIDI wait + one audio block + output delay)`}</dd>
-        <dt>Page freezes</dt>
-        <dd>{t.longestFreeze ? `longest ${Math.round(t.longestFreeze)} ms in the last minute` : "none over 50 ms in the last minute"}</dd>
-        <dt>Sequencer</dt>
-        <dd>
-          {#if t.sequencer}
-            {t.sequencer.lateSteps
-              ? `${t.sequencer.lateSteps} step${t.sequencer.lateSteps > 1 ? "s" : ""} skipped because the page was too busy`
-              : "every step on time"}{t.sequencer.closest !== null ? `; closest step planned ${ms(t.sequencer.closest * 1000)} ahead` : ""}
-          {:else}
-            not playing
-          {/if}
-        </dd>
       </dl>
-
-      <h3>Sound engine</h3>
-      <p class="note">
-        Every note is made by one piece of our own code on the audio thread, sample by sample: oscillators, filter, drive,
-        envelopes, the LFOs and the mod matrix. So are the distortion, phaser and flanger; the other effects (compressor, EQ,
-        chorus, delay, reverb) are the browser's own audio nodes. The CPU meter at the top shows how much of the available
-        time our code uses.
-      </p>
-    </section>
-
-    <section>
-      <h3>Limitations of a browser app</h3>
-
-      <h4>Browsers</h4>
-      <ul>
-        <li>Needs a Chromium-based browser: Chrome, Edge, Brave, Opera and similar. Safari has no Web MIDI. Firefox needs an extra site permission add-on and is untested.</li>
-        <li>Sound starts only after a click on the page. MIDI needs your permission and an https or localhost address.</li>
-      </ul>
-
-      <h4>Audio</h4>
-      <ul>
-        <li><strong>Delay:</strong> sound goes through the browser and the system's standard audio path, so there is more delay between key and sound than in a desktop synth with a dedicated audio driver. There is no buffer size setting and no choice of output device.</li>
-        <li><strong>One CPU core:</strong> all sound is made on one audio thread. With heavy patches (many notes, unison, wavetables, routes) the synth plays fewer notes at once rather than crackle; the CPU meter's tooltip counts the notes cut. The browser's own effects aren't measured, so very heavy reverb or delay use can still crackle.</li>
-        <li><strong>Background tabs:</strong> browsers slow down hidden tabs. The sequencer and drums keep time (their clock runs in a worker thread, which isn't slowed down), but the visuals pause.</li>
-        <li><strong>A busy page:</strong> notes are planned 100 ms ahead. If the page freezes for longer, the steps it missed are skipped, so the loop stays on the beat instead of stumbling.</li>
-        <li><strong>Not a plugin:</strong> it can't load in a DAW. To record it, capture the system audio.</li>
-        <li><strong>Sound quality:</strong> the sound path runs at twice the sample rate and a soft clipper guards the output, but very high notes with strong FM or a fully driven ladder filter still have some harshness; the regular oscillators are less clean than the wavetables on very high notes. Panning keeps the sound in mono unchanged, so a hard-panned note is louder on its side than a centred one.</li>
-      </ul>
-
-      <h4>The MiniLab</h4>
-      <ul>
-        <li>The pad lights and screen use Arturia's DAW protocol, learned from Ableton's MiniLab 3 integration script rather than official documentation. A firmware update could change it.</li>
-        <li>If another app (a DAW, Arturia MIDI Control Center) has the MiniLab open, the browser may not be able to connect, especially on Windows.</li>
-        <li>The keys don't send pressure (aftertouch); only the pads do.</li>
-      </ul>
-
-      <h4>Your presets</h4>
-      <ul>
-        <li>Saved presets live in this browser profile only. Clearing site data deletes them, and they don't sync between browsers or computers: use <strong>Export mine</strong> in the preset browser to keep them in a file, and <strong>Import…</strong> to add them elsewhere.</li>
-      </ul>
     </section>
   </div>
 
@@ -167,14 +99,11 @@
   h2 { margin: 0 0 6px; font-size: 20px; color: var(--accent); }
   h3 { margin: 18px 0 6px; font-size: 14px; color: var(--text); }
   h3:first-child { margin-top: 0; }
-  h4 { margin: 12px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); }
   p { margin: 0 0 8px; }
   .lead { font-size: 15px; color: var(--text); max-width: 75ch; }
   .columns { display: grid; grid-template-columns: 1fr 1fr; gap: 36px; }
   ul, ol { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
   strong { color: var(--text); font-weight: 600; }
-  .tag { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #ffcc33; border: 1px solid #ffcc3366; border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: 2px; }
-  .later { color: var(--dim); }
   .keys { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; }
   .keys dt { color: var(--text); white-space: nowrap; }
   .keys dd { margin: 0; font: inherit; color: inherit; }
@@ -182,7 +111,6 @@
   dt { color: var(--dim); }
   dd { margin: 0; font-family: var(--mono); font-size: 12px; color: var(--accent); }
   dd.bad { color: #ff6b6b; }
-  .note { color: var(--dim); font-size: 12.5px; max-width: 60ch; }
   footer { border-top: 1px solid var(--line); padding-top: 12px; color: var(--dim); font-size: 12.5px; }
   .small { font-size: 11.5px; margin: 0; }
   @media (max-width: 900px) { .columns { grid-template-columns: 1fr; } }
