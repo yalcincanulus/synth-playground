@@ -73,7 +73,7 @@
       {#if pg.explain}<button class="more" onclick={() => (more = !more)}>{more ? "Less" : "More"}</button>{/if}
     </div>
     <div class="knobmap">
-      <div class="title">MiniLab knobs · encoder picks the table</div>
+      <div class="title" title="The MiniLab encoder picks the table">MiniLab knobs</div>
       <ol>
         {#if harmonics}
           {#each harmonics as amp, i (i)}
@@ -142,11 +142,11 @@
 
     <div class="side">
       <div class="panel">
-        <div class="title">The wave right now</div>
+        <div class="title">Waveform</div>
         <LiveCanvas height={editor ? 54 : 70} draw={draw.current(engine, color)} />
       </div>
       <div class="panel">
-        <div class="title">Its harmonics</div>
+        <div class="title">Harmonics</div>
         <LiveCanvas height={editor ? 44 : 54} draw={draw.harmonics(engine, color)} />
         {#if pg.explain}<p class="note">Bar 1 is the note itself; the others are its overtones.</p>{/if}
       </div>
@@ -167,7 +167,7 @@
             </div>
           </div>
           <div class="group move">
-            <div class="title">Move the position {#if lfoOnPosition}<span class="on">● moving</span>{/if}</div>
+            <div class="title">Position LFO {#if lfoOnPosition}<span class="on">● moving</span>{/if}</div>
             {#if pg.explain}<p class="note">Set LFO 2 To <em>WT Pos</em> and raise Depth, or Mod To <em>WT Pos</em> for the strip.</p>{/if}
             <div class="params">
               <ParamControl {pg} id="lfo2Target" />
@@ -178,7 +178,7 @@
             </div>
           </div>
           <div class="group">
-            <div class="title">Then shape it</div>
+            <div class="title">Tone</div>
             <div class="params">
               <ParamControl {pg} id="cutoff" inline />
               <ParamControl {pg} id="resonance" inline />

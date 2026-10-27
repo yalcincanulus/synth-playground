@@ -181,7 +181,7 @@
 
   <div class="edit">
     <div class="panel">
-      <div class="title">Keyframe {editor.selected + 1}: click and drag to draw</div>
+      <div class="title">Keyframe {editor.selected + 1}{#if pg.explain}<span class="hint">click and drag to draw</span>{/if}</div>
       <canvas
         class="draw"
         use:surface={{ draw: drawKey, key: repaint }}
@@ -200,7 +200,7 @@
       </div>
     </div>
     <div class="panel">
-      <div class="title">Its harmonics: drag the bars · MiniLab knobs 1–8</div>
+      <div class="title">Harmonics{#if pg.explain}<span class="hint">drag the bars, or MiniLab knobs 1–8</span>{/if}</div>
       <canvas
         class="bars"
         use:surface={{ draw: drawBars, key: repaint }}
@@ -229,6 +229,8 @@
   .save { border-color: var(--accent); color: var(--accent); }
   .note { margin: 0; font-size: 11px; line-height: 1.4; color: #a9b6ba; }
   .title { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
+  /* How to use it, after the name while explanations are on. */
+  .title .hint { margin-left: 8px; text-transform: none; letter-spacing: 0; color: #6c777b; }
 
   .keys { display: flex; gap: 8px; align-items: stretch; }
   .key { display: flex; gap: 2px; }
