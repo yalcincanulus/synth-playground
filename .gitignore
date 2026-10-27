@@ -3,3 +3,4 @@ dist
 .svelte-check
 server/assets.gen.ts
 /synth
+.scratch
