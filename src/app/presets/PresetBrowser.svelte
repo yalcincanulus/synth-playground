@@ -138,7 +138,7 @@
                 <span class="ptags">{p.about ? p.about : p.tags?.join(" · ")}</span>
               </button>
               <button class="icon" onclick={() => pg.previewPreset(p.id)} title="Hear it first (a short note) without loading it" aria-label="Preview {p.name}">▷</button>
-              <button class="icon star" class:on={pg.isFavourite(p.id)} onclick={() => pg.toggleFavourite(p.id)} aria-pressed={pg.isFavourite(p.id)} title={pg.isFavourite(p.id) ? "Favourite (the first 8 are on pad bank B). Click to remove" : "Add to favourites (the first 8 are on pad bank B)"} aria-label="Favourite">★</button>
+              <button class="icon star" class:on={pg.isFavourite(p.id)} onclick={() => pg.toggleFavourite(p.id)} aria-pressed={pg.isFavourite(p.id)} title={pg.isFavourite(p.id) ? `Favourite${pg.hw(" (the first 8 are on pad bank B)")}. Click to remove` : `Add to favourites${pg.hw(" (the first 8 are on pad bank B)")}`} aria-label="Favourite">★</button>
               {#if user}
                 <button class="icon" onclick={() => rename(p)} title="Rename" aria-label="Rename {p.name}">✎</button>
                 <button class="icon" onclick={() => remove(p)} title="Delete" aria-label="Delete {p.name}">🗑</button>
@@ -161,7 +161,7 @@
   </div>
 
   {#if pg.explain}
-    <p class="foot">Click to load · ▷ hears it without loading · ↑ ↓ and Enter in the search box · ◀ ▶ and the MiniLab's encoder step through this list · ★ favourites: the first 8 are on pad bank B</p>
+    <p class="foot">Click to load · ▷ hears it without loading · ↑ ↓ and Enter in the search box · ◀ ▶ {pg.hasDevice ? "and the MiniLab's encoder step" : "step"} through this list · ★ favourites{pg.hw(": the first 8 are on pad bank B")}</p>
   {/if}
 </div>
 

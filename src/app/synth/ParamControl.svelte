@@ -45,10 +45,10 @@
   let def: ParamDef = $derived(PARAMS[id]);
   /** The choices; the wavetable list grows and shrinks with imports, so it is read from the playground. A course page may offer only the first few. */
   let options = $derived((id === "wtTable" ? pg.tables.map((t) => t.short) : def.options)?.slice(0, (pg.view === "course" && pg.course.choicesOf(id)) || undefined));
-  /** Which hardware knob (1-8) controls this right now, if any. */
-  let knob = $derived(pg.knobParams.indexOf(id) + 1);
+  /** Which hardware knob (1-8) controls this right now, if any (only while a MiniLab is connected). */
+  let knob = $derived(pg.hasDevice ? pg.knobParams.indexOf(id) + 1 : 0);
   /** A course page's amp envelope control: the MiniLab fader (1-4) it is on. */
-  let fader = $derived(pg.view === "course" && pg.course.lesson.faders?.includes(id) ? FADERS.indexOf(id) + 1 : 0);
+  let fader = $derived(pg.hasDevice && pg.view === "course" && pg.course.lesson.faders?.includes(id) ? FADERS.indexOf(id) + 1 : 0);
   /** A recipe step (or a course step) asks for this control. */
   let target = $derived(pg.targetParams.includes(id));
 </script>

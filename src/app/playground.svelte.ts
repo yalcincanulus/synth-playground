@@ -275,6 +275,14 @@ export class Playground {
   timing = $state<TimingReport>({ midiAverage: null, midiWorst: null, longestFreeze: 0, sequencer: null });
   midiStatus = $state<MidiStatus>("idle");
   deviceName = $state("");
+  /** A MiniLab is connected right now. Hardware hints (knob numbers, Shift combinations, the encoder) show only then. */
+  get hasDevice() {
+    return this.midiStatus === "connected";
+  }
+  /** A hardware hint: `text` while a MiniLab is connected, nothing without one. */
+  hw(text: string) {
+    return this.hasDevice ? text : "";
+  }
   program = $state<Program | null>(null);
   bank = $state<PadBank>("A");
   shift = $state(false);
@@ -2039,6 +2047,9 @@ export class Playground {
         this.device?.close();
         this.device = null;
         this.midiStatus = "not-found";
+        // Unplugged: Shift can't be released any more, and sequencer edit only works on the device.
+        this.shift = false;
+        if (this.seqEdit) this.setSeqEdit(false);
         return;
       }
       if (this.device?.input.id === input.id && this.midiStatus === "connected") return;

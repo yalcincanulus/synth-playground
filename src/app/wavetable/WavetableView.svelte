@@ -57,13 +57,13 @@
   ondrop={drop}
   aria-label="Wavetable"
 >
-  <aside class="detail">
+  <aside class="detail" class:solo={!pg.hasDevice}>
     <div class="about">
       {#if pg.explain}
         <p class:clamped={!more}>
           <strong class="h">Wavetable</strong> A wavetable is a stack of single waves ("frames"). <strong>Position</strong> picks a place in the stack and blends the
           frames next to it, so turning it morphs the sound smoothly from one wave to another. The magic is moving it while a note
-          plays: send an LFO (or the mod strip) to <em>WT Pos</em>.
+          plays: send an LFO{pg.hw(" (or the mod strip)")} to <em>WT Pos</em>.
         </p>
       {/if}
       <p class:clamped={!more}>
@@ -72,6 +72,7 @@
       </p>
       {#if pg.explain}<button class="more" onclick={() => (more = !more)}>{more ? "Less" : "More"}</button>{/if}
     </div>
+    {#if pg.hasDevice}
     <div class="knobmap">
       <div class="title" title="The MiniLab encoder picks the table">MiniLab knobs</div>
       <ol>
@@ -88,6 +89,7 @@
         {/if}
       </ol>
     </div>
+    {/if}
   </aside>
 
   <div class="main">
@@ -168,7 +170,7 @@
           </div>
           <div class="group move">
             <div class="title">Position LFO {#if lfoOnPosition}<span class="on">● moving</span>{/if}</div>
-            {#if pg.explain}<p class="note">Set LFO 2 To <em>WT Pos</em> and raise Depth, or Mod To <em>WT Pos</em> for the strip.</p>{/if}
+            {#if pg.explain}<p class="note">Set LFO 2 To <em>WT Pos</em> and raise Depth{pg.hw(", or Mod To WT Pos for the strip")}.</p>{/if}
             <div class="params">
               <ParamControl {pg} id="lfo2Target" />
               <ParamControl {pg} id="lfo2Wave" />
@@ -199,6 +201,7 @@
     background: #10171a; border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px; font-size: 12px; line-height: 1.4;
   }
   .about { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; position: relative; padding-right: 50px; }
+  .detail.solo { grid-template-columns: 1fr; }
   .about p { margin: 0; color: #b9c5c8; }
   .about p:only-of-type { grid-column: 1 / -1; }
   .h { color: var(--accent); font-size: 13px; margin-right: 4px; }

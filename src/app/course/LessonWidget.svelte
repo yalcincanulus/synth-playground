@@ -53,7 +53,7 @@
     <div class="big-knob">
       <Knob
         size={112}
-        number={course.lesson.knobs.indexOf(id) + 1}
+        number={pg.hasDevice ? course.lesson.knobs.indexOf(id) + 1 : undefined}
         label={PARAMS[id].label}
         display={formatValue(id, pg.values[id])}
         position={course.knobPosition(id, pg.values[id])}

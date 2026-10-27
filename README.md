@@ -1,7 +1,8 @@
-# MiniLab 3 Playground
+# Synth Playground
 
-A browser synth playground built for the Arturia MiniLab 3. It uses every control on the device and
-drives its pad LEDs and OLED screen.
+A synth in the browser for learning synthesis by playing: a playground, a course, recipes and wavetables.
+It works with the mouse and the computer keyboard. An Arturia MiniLab 3 is optional: connected, every
+control on the device does something, and the app drives its pad LEDs and OLED screen.
 
 ```sh
 bun install
@@ -12,7 +13,7 @@ bun run typecheck
 Use a Chromium browser (Chrome, Brave, Edge, Helium). Firefox and Safari lack full Web MIDI with SysEx.
 Pad lights and the screen need the device in **DAW mode** (Shift + Prog).
 
-## Controls
+## MiniLab controls (optional)
 
 | MiniLab | Does |
 |---|---|

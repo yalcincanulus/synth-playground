@@ -200,7 +200,7 @@
       </div>
     </div>
     <div class="panel">
-      <div class="title">Harmonics{#if pg.explain}<span class="hint">drag the bars, or MiniLab knobs 1–8</span>{/if}</div>
+      <div class="title">Harmonics{#if pg.explain}<span class="hint">drag the bars{pg.hw(", or MiniLab knobs 1–8")}</span>{/if}</div>
       <canvas
         class="bars"
         use:surface={{ draw: drawBars, key: repaint }}

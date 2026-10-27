@@ -232,7 +232,7 @@
 
     <div class="tabpage">
       {#if tab === "matrix"}
-        <MatrixPanel {pg} colors={COLORS} hint="Drag a modulator's ○ (in the tabs) onto a knob to add a route; ✕ removes one. Knobs 1–8 (Matrix page) set the amounts." />
+        <MatrixPanel {pg} colors={COLORS} hint="Drag a modulator's ○ (in the tabs) onto a knob to add a route; ✕ removes one." />
       {:else if tab === "fx"}
         <div class="fxrack" bind:this={fxRow.row} ondragover={fxRow.over} ondragleave={fxRow.leave} ondrop={fxRow.drop} role="list">
           {#each order as fx, i (fx)}
@@ -288,12 +288,14 @@
     {:else}
       <span class="about"><b>{focusDef.title}</b> {focusDef.short}</span>
     {/if}
-    <span class="knobmap" title="Click a panel to put the MiniLab knobs on it · the encoder switches knob pages">
-      <span class="dim">Knobs → {page.name}</span>
-      {#each page.knobs as id, i (i)}
-        <span class="k" class:hot={id && pg.touched?.param === id}><i>{i + 1}</i>{#if id}{paramLabel(id, pg.values, PARAMS[id].label)} <small>{formatValue(id, pg.values[id])}</small>{:else}—{/if}</span>
-      {/each}
-    </span>
+    {#if pg.hasDevice}
+      <span class="knobmap" title="Click a panel to put the MiniLab knobs on it · the encoder switches knob pages">
+        <span class="dim">Knobs → {page.name}</span>
+        {#each page.knobs as id, i (i)}
+          <span class="k" class:hot={id && pg.touched?.param === id}><i>{i + 1}</i>{#if id}{paramLabel(id, pg.values, PARAMS[id].label)} <small>{formatValue(id, pg.values[id])}</small>{:else}—{/if}</span>
+        {/each}
+      </span>
+    {/if}
   </footer>
 
   {#if drag.state}

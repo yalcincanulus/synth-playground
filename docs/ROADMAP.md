@@ -534,6 +534,33 @@ Postponed on 2026-10-25 until Phase F was done; started 2026-10-26. Modelled on 
   - **Checked in the browser** (Helium, headless, 1280 x 720): the tooltip on a plain mention, Contents and Continue, a glossary link, the end of Chapter 1, the encoder closing Contents, a recipe started from the chapter end (the Synth view on Init, and undo gave back the sound from before Learn), and Learn reopening on the same page. No sideways scrolling at 1280, 900 or 600 px wide. No errors.
   - **Tests:** every bold word is a term or a control's label; every term is introduced somewhere and has a short definition; no word belongs to two terms; marking keeps the text and marks a term at most once a page, only from an earlier chapter; each chapter's recipes exist.
 
+## Phase H: a general app, the MiniLab optional
+
+Added 2026-10-27. The app works fully with nothing connected, but it talks about the MiniLab everywhere, and the course text names knobs and faders by number. Without a MiniLab, that is noise. From now on the MiniLab is an optional extra: its hints show only while it is connected.
+
+- **Connected now:** the hints follow `midiStatus === "connected"`. They disappear the moment the MiniLab is unplugged, and come back when it reconnects.
+- **Internal names stay:** the `minilab3.*` storage keys, the IndexedDB name, the export file names and `src/minilab/`. Renaming the keys would lose saved settings.
+
+### 30. Hardware hints only with a MiniLab
+
+- One flag, `pg.hasDevice`, and one small way to show a hardware hint only when it is set, so each tooltip doesn't need its own check.
+- **Knob numbers:** without a MiniLab, no knob page numbers anywhere. The 1–8 and F1–F4 badges on controls (`ParamControl`), the "MiniLab knobs → page" panel in the Synth view, the "Knobs →" strip in the Panel view, the knob list in the Wavetable view, "On the MiniLab" in the course and in recipes, and the numbers on the Play view's knobs. Clicking a block still selects it; the space goes to the explanation.
+- **Tooltips and notes:** the Shift combinations, the encoder, the pads and pad banks, "Shift + Prog" (App, ArpBar, PresetBrowser, the Play surface note, the recipe play hint) say only what works without the device.
+- **Device-only controls:** hidden without a MiniLab ("Edit on MiniLab" in the sequencer). The Pitch and Mod strips in the Play view only show the hardware, so they are hidden too.
+- **The Play view's knobs and faders** become "the preset's main controls", not "the MiniLab's knobs and faders".
+- Status: done 2026-10-27 (to be checked by the user).
+  - `pg.hasDevice` and `pg.hw(text)` (the text with a MiniLab, "" without). Unplugging also lets go of Shift and leaves sequencer edit, since neither can be undone without the device.
+  - Without a MiniLab, the Synth, Wavetable and recipe panels drop their knob column and the explanation takes the width.
+  - **Connecting is an extra, not a must** (the user's request): "Connect MiniLab" was a bright button that made the app look unusable without one. It is now a quiet outlined pill, "○ Connect a MiniLab · optional", in the place where the connected device's pill shows; its tooltip says everything works without one. When no MiniLab is found, nothing is said: the pill just stays (it connects by itself once one is plugged in). The start screen adds "Everything works with the mouse, and your computer keyboard plays notes".
+  - **Kept on purpose:** the connect pill and its messages, the About page's MiniLab parts (getting started, shortcuts, troubleshooting), the Pitch strip and Mod strip routes in the Synth view's fixed wiring (they are part of the synth), and the course and recipe text (slice 31).
+  - **Checked in the browser** (Helium, headless, 1280 x 800): with nothing connected, every view shows no knob numbers and no hardware tooltips; with a MiniLab (simulated) they all come back; after an unplug they go again. No errors.
+
+### 31. Course and recipe text without knob numbers
+
+- The course and recipe text names the control, not where it is on the MiniLab: "Turn knob 1 (Cutoff) down…" becomes a control reference, "Turn [[cutoff]] down…". Without a MiniLab it shows **Cutoff**; with one, **Cutoff** and a small "knob 1" chip. The knob comes from the page's `knobs`, the fader from `FADERS`, a recipe's from the `hw` it already works out.
+- Encoder lines ("click B, or click the encoder", "the MiniLab's play button") show their hardware part only with a MiniLab.
+- **Tests:** every reference names a control the page (or recipe step) has, so the text can't drift from the knob layout. This replaces keeping "knob N" in the text in step with `knobs` by hand.
+
 ## Notes on the order
 
 - **The engine (1–6) comes first** so that sound changes don't force re-tuning presets, recipes and course pages later. Slices 2–3 are the big rewrite; 1 makes it safe.
@@ -558,4 +585,5 @@ Ideas without a place in the order yet. Any of them can slot in between phases.
 - Looper/recorder, with WAV export.
 - MiniLab: small drawings on the OLED (if the protocol allows it), MIDI learn, remembering the knob page and settings for each view.
 - Firefox: lost note-offs when releasing chords (postponed 2026-10-24; Chromium is the target for now). Likely cause: the MIDI input assumes one complete message per event, so bundled messages or running status drop note-offs. Fix: split each event into messages and restore missing status bytes (`src/minilab/protocol.ts`, `src/minilab/device.ts`), then update the About page. The new engine (slices 2–3) removes the other Firefox gap, the missing `cancelAndHoldAtTime`.
+- Other MIDI keyboards: let any MIDI keyboard play notes, not only the MiniLab (`findPorts` looks for the MiniLab only). Out of scope for Phase H, kept for later (decided with the user, 2026-10-27).
 - Not planned: playing notes on the MiniLab's pads (and pad pressure as a source). The user finds the pads unpleasant to play (2026-10-25); they stay drums, sequencer steps and shortcuts.

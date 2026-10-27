@@ -22,9 +22,11 @@
 <section class="panel seq" class:off={!s.enabled}>
   <div class="head">
     <button class:active={s.enabled} onclick={() => pg.setSeqEnabled(!s.enabled)}>{s.enabled ? "On" : "Off"}</button>
-    <button class:active={pg.seqEdit} onclick={() => pg.setSeqEdit(!pg.seqEdit)} title="Shift + encoder click (twice: drum steps, then sequencer)">
-      Edit on MiniLab
-    </button>
+    {#if pg.hasDevice}
+      <button class:active={pg.seqEdit} onclick={() => pg.setSeqEdit(!pg.seqEdit)} title="Shift + encoder click (twice: drum steps, then sequencer)">
+        Edit on MiniLab
+      </button>
+    {/if}
     <div class="keys" role="group" aria-label="What the keys do while the sequencer plays" title="Encoder click in sequencer edit">
       <span>Keys:</span>
       {#each KEYS_MODES as mode (mode)}

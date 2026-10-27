@@ -21,7 +21,7 @@
 </script>
 
 <div class="arp">
-  <Switch on={a.on} label="Arp" title="Arpeggiator: hold notes or a chord and it plays them one at a time, in time with the drums. On the MiniLab: Shift + fader 1" onchange={() => pg.setArp({ on: !a.on })} />
+  <Switch on={a.on} label="Arp" title="Arpeggiator: hold notes or a chord and it plays them one at a time, in time with the drums.{pg.hw(' On the MiniLab: Shift + fader 1')}" onchange={() => pg.setArp({ on: !a.on })} />
 
   {#if a.on}
     <div class="settings">
@@ -31,7 +31,7 @@
       }}>
         {#each ARP_PATTERNS as name, i (i)}<option value={i}>{name}</option>{/each}
       </select>
-      <select value={a.octaves} aria-label="Octaves" title="How many octaves the pattern climbs through (Shift + fader 2)" onchange={(e) => {
+      <select value={a.octaves} aria-label="Octaves" title="How many octaves the pattern climbs through{pg.hw(' (Shift + fader 2)')}" onchange={(e) => {
         pg.setArp({ octaves: +e.currentTarget.value });
         blur(e);
       }}>

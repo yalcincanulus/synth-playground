@@ -168,6 +168,7 @@
       {/if}
       <p class="hidden-note">The rest of the synth is hidden and held still, so only what this page explains changes the sound.</p>
 
+      {#if pg.hasDevice}
       <div class="title">On the MiniLab</div>
       {#if controls.length}
         <ul class="knobmap">
@@ -186,6 +187,7 @@
         <p class="dim">Only the keys on this page: the knobs and faders do nothing.</p>
       {/if}
       <p class="dim">Turn the encoder for the next or previous page{lesson.widget.kind === "compare" ? "; click it to switch A/B" : ""}.</p>
+      {/if}
     </aside>
   </div>
   {/if}

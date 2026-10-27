@@ -11,7 +11,7 @@
     /** How to patch by dragging, in the view it is in. */
     hint?: string;
   }
-  let { pg, colors, hint = "Drag from a modulator's ○ socket to a block to add a route; drag a cable's ● end away to remove it. Knobs 1–8 (Matrix page) set the amounts." }: Props = $props();
+  let { pg, colors, hint = "Drag from a modulator's ○ socket to a block to add a route; drag a cable's ● end away to remove it." }: Props = $props();
 
   let open = $state(true);
 
@@ -57,7 +57,7 @@
     {:else if typeof pg.patch === "number"}
       <span class="step">From <strong style:color={colors[SOURCE_BLOCK[MOD_SOURCES[pg.patch] as keyof typeof SOURCE_BLOCK]]}>{SOURCE_NAMES[MOD_SOURCES[pg.patch]]}</strong>: now click what it should move (an oscillator, the mixer, a filter, the amp, an effect or an LFO).</span>
     {:else if pg.explain}
-      <span class="step dim">{hint}</span>
+      <span class="step dim">{hint}{pg.hw(" Knobs 1–8 (Matrix page) set the amounts.")}</span>
     {/if}
     {#if pg.routes.length < MOD_SLOTS}
       <button class="add" onclick={(e) => { e.stopPropagation(); pg.addRoute(); }}>Add route</button>

@@ -41,7 +41,7 @@
       <button onclick={() => pg.selectPart("keys")}>Back to Keys</button></p>
   {/if}
   {#if step}
-    <div class="body">
+    <div class="body" class:solo={!pg.hasDevice}>
       <div class="what">
         <p class="text">{step.text}</p>
         <p class="why">{step.why}</p>
@@ -63,7 +63,7 @@
         {:else if run.hint}
           <p class="hint">
             {#each step.checks as c, i (i)}
-              {#if isPlay(c)}Play on the MiniLab keys, the on-screen keyboard, or your computer keyboard (A to ').{:else}Set {PARAMS[c.param].label} to about {formatValue(c.param, aimOf(c))}.{/if}
+              {#if isPlay(c)}Play {pg.hw("on the MiniLab keys, ")}on the on-screen keyboard{pg.hasDevice ? "," : ""} or your computer keyboard (A to ').{:else}Set {PARAMS[c.param].label} to about {formatValue(c.param, aimOf(c))}.{/if}
               {#if i < step.checks.length - 1}{" "}{/if}
             {/each}
             The highlighted block in the diagram has the control.
@@ -73,6 +73,7 @@
         {/if}
       </div>
 
+      {#if pg.hasDevice}
       <div class="where">
         <div class="title">On the MiniLab</div>
         {#if hw}
@@ -100,6 +101,7 @@
           <p class="pointer"><strong>The keys</strong></p>
         {/if}
       </div>
+      {/if}
     </div>
   {:else}
     <div class="body">
@@ -141,6 +143,7 @@
   header button { font-size: 12px; padding: 3px 10px; }
 
   .body { display: grid; grid-template-columns: 1fr 300px; gap: 20px; align-items: start; }
+  .body.solo { grid-template-columns: 1fr; }
   .text { margin: 0; font-size: 16px; line-height: 1.35; color: var(--text); }
   .why { margin: 4px 0 0; color: #b9c5c8; line-height: 1.45; }
   .checks { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 3px; }

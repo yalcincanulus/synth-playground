@@ -147,7 +147,7 @@
   {#if pg.recipeList}<RecipeList {pg} />{/if}
   {#if pg.listening}
     <button class="listening" onclick={() => pg.listenTo(null)}>
-      🎧 Listening to <strong>{TAP_NAMES[pg.listening]}</strong> only · click (or the encoder) for the full sound
+      🎧 Listening to <strong>{TAP_NAMES[pg.listening]}</strong> only · click{pg.hw(" (or the encoder)")} for the full sound
     </button>
   {/if}
 
@@ -158,7 +158,7 @@
   {#if pg.recipe}
     <RecipePanel {pg} />
   {:else}
-    <aside class="detail" class:explained={pg.explain}>
+    <aside class="detail" class:explained={pg.explain} class:solo={!pg.hasDevice}>
       <div class="about">
         <h3>{focusDef.title}</h3>
         {#if pg.explain}
@@ -166,9 +166,14 @@
           <p class="try" class:clamped={!more}><strong>Try this:</strong> {focusDef.tryThis}</p>
           <button class="more" onclick={() => (more = !more)}>{more ? "Less" : "More"}</button>
         {:else}
-          <p class="hint">Click a block to put the MiniLab knobs on it. The encoder switches knob pages; 🎧 or an encoder click listens at that point.</p>
+          {#if pg.hasDevice}
+            <p class="hint">Click a block to put the MiniLab knobs on it. The encoder switches knob pages; 🎧 or an encoder click listens at that point.</p>
+          {:else}
+            <p class="hint">Click a block to select it; 🎧 listens at that point.</p>
+          {/if}
         {/if}
       </div>
+      {#if pg.hasDevice}
       <div class="knobmap">
         <div class="title" title="Click a block to put the MiniLab knobs on it · the encoder switches knob pages">MiniLab knobs → {page.name}</div>
         <ol>
@@ -180,6 +185,7 @@
           {/each}
         </ol>
       </div>
+      {/if}
     </aside>
   {/if}
 
@@ -335,6 +341,7 @@
   /* Two lines each until "More" opens the whole text. */
   .clamped { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .more { position: absolute; top: 0; right: 0; font-size: 11px; padding: 0 8px; color: var(--dim); }
+  .detail.solo { grid-template-columns: 1fr; }
   .try strong { color: var(--text); }
   .knobmap .title { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
   /* Two rows of four, like the knobs on the MiniLab. */

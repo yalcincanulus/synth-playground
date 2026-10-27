@@ -115,7 +115,7 @@
     idle: "",
     unsupported: "This browser has no Web MIDI. Use a Chromium browser (Chrome, Brave, Edge).",
     denied: "MIDI access was blocked. Allow MIDI (with SysEx) for this site and reconnect.",
-    "not-found": "MiniLab 3 not found. Plug it in: it connects automatically.",
+    "not-found": "",
     connected: "",
   };
 </script>
@@ -126,24 +126,25 @@
 <div class="app" style:--accent={accent}>
   <!-- Row 1: where you are (the views) and the app's state (MiniLab, CPU, help). -->
   <header class="top">
-    <h1>MiniLab 3 <span>Playground</span></h1>
+    <h1>Synth <span>Playground</span></h1>
     <nav class="views" aria-label="View">
-      <button data-label="Play" class:active={pg.view === "playground"} onclick={() => pg.setView("playground")} title="Play: the MiniLab's knobs and faders, the pads, drums and step sequencer (Shift + encoder)">Play</button>
-      <button data-label="Synth" class:active={pg.view === "synth"} onclick={() => pg.setView("synth")} title="The whole synth as blocks: see and change every part of the sound (Shift + encoder)">Synth</button>
-      <button data-label="Wavetable" class:active={pg.view === "wavetable"} onclick={() => pg.setView("wavetable")} title="Pick, import and draw wavetables (Shift + encoder)">Wavetable</button>
+      <button data-label="Play" class:active={pg.view === "playground"} onclick={() => pg.setView("playground")} title="Play: the preset's main controls, the pads, drums and step sequencer{pg.hw(' (Shift + encoder)')}">Play</button>
+      <button data-label="Synth" class:active={pg.view === "synth"} onclick={() => pg.setView("synth")} title="The whole synth as blocks: see and change every part of the sound{pg.hw(' (Shift + encoder)')}">Synth</button>
+      <button data-label="Wavetable" class:active={pg.view === "wavetable"} onclick={() => pg.setView("wavetable")} title="Pick, import and draw wavetables{pg.hw(' (Shift + encoder)')}">Wavetable</button>
       <button data-label="Learn" class:active={pg.view === "course"} onclick={() => pg.setView("course")} title="The course: how sound and synths work, one idea per page, with only the controls each page needs">Learn</button>
     </nav>
     <button class="recipes-link" class:active={!!pg.recipe || pg.recipeList} onclick={() => pg.openRecipes()} title="Build a classic sound step by step">Recipes</button>
 
     <div class="midi">
-      {#if pg.midiStatus === "connected"}
+      {#if pg.hasDevice}
         <span class="pill ok">● {pg.deviceName}{pg.program ? ` · ${pg.program === "daw" ? "DAW" : "Arturia"} mode` : ""}</span>
         <span class="shift" class:on={pg.shift} title="Shift button on the MiniLab">Shift</span>
         {#if pg.program === "arturia"}
           <span class="hint" title="Pad lights and the screen need DAW mode: hold Shift and tap Prog.">Lights and screen need DAW mode: Shift + Prog.</span>
         {/if}
       {:else}
-        <button class="primary" onclick={() => pg.connectMidi()}>Connect MiniLab</button>
+        <!-- Quiet on purpose: the app works fully without a MiniLab; connecting one is an extra. -->
+        <button class="pill connect" onclick={() => pg.connectMidi()} title="Optional: play and control the app from an Arturia MiniLab 3. Everything works without one: the mouse, the on-screen keyboard and the computer keys.">○ Connect a MiniLab <span class="opt">optional</span></button>
         <span class="hint" title={MIDI_TEXT[pg.midiStatus]}>{MIDI_TEXT[pg.midiStatus]}</span>
       {/if}
     </div>
@@ -164,14 +165,14 @@
       </span>
     {/if}
     <Switch on={pg.explain} label="Explanations" title="Plain-English explanations on every view" onchange={() => pg.setExplain(!pg.explain)} />
-    <button class="about-link" class:active={pg.view === "about"} onclick={() => pg.setView("about")} title="What this is, the MiniLab and keyboard shortcuts, and this browser's limits">About & shortcuts</button>
+    <button class="about-link" class:active={pg.view === "about"} onclick={() => pg.setView("about")} title="What this is, the shortcuts, and this browser's limits">About & shortcuts</button>
   </header>
 
   <!-- Row 2: the sound being edited, and time (shared by the drums and the sequencer). The course has its own sound for each page. -->
   {#if pg.view !== "course"}
   <section class="soundbar">
     <div class="group sound">
-      <div class="parts" role="group" aria-label="Part" title="Which sound the knobs, faders and presets edit (Shift + any key on the MiniLab)">
+      <div class="parts" role="group" aria-label="Part" title="Which sound the controls and presets edit{pg.hw(' (Shift + any key on the MiniLab)')}">
         {#each ["keys", "seq"] as const as part (part)}
           <button class:active={pg.part === part} onclick={() => pg.selectPart(part)}>
             <span class="part-name">{PART_NAMES[part]}</span>
@@ -179,7 +180,7 @@
           </button>
         {/each}
       </div>
-      <button onclick={() => pg.stepPreset(-1)} aria-label="Previous preset" title="Previous preset in the browser's list (or turn the encoder)">◀</button>
+      <button onclick={() => pg.stepPreset(-1)} aria-label="Previous preset" title="Previous preset in the browser's list{pg.hw(' (or turn the encoder)')}">◀</button>
       <div class="preset-wrap">
         <button class="preset-btn" class:open={pg.browserOpen} onclick={() => (pg.browserOpen = !pg.browserOpen)} aria-expanded={pg.browserOpen} title="Browse presets: search, categories, favourites, preview">
           <span class="pdot" style:background={accent}></span>
@@ -189,11 +190,11 @@
         </button>
         {#if pg.browserOpen}<PresetBrowser {pg} onclose={() => (pg.browserOpen = false)} />{/if}
       </div>
-      <button onclick={() => pg.stepPreset(1)} aria-label="Next preset" title="Next preset in the browser's list (or turn the encoder)">▶</button>
-      <button onclick={() => pg.dice()} title="Random patch (hold the encoder down)">🎲 Dice</button>
+      <button onclick={() => pg.stepPreset(1)} aria-label="Next preset" title="Next preset in the browser's list{pg.hw(' (or turn the encoder)')}">▶</button>
+      <button onclick={() => pg.dice()} title="Random patch{pg.hw(' (hold the encoder down)')}">🎲 Dice</button>
       <div class="undo" role="group" aria-label="Undo and redo">
-        <button disabled={!pg.canUndo} onclick={() => pg.undo()} aria-label="Undo" title={pg.undoLabel ? `Undo ${pg.undoLabel} (Ctrl+Z · Shift + pitch strip down)` : "Nothing to undo"}>↶</button>
-        <button disabled={!pg.canRedo} onclick={() => pg.redo()} aria-label="Redo" title={pg.redoLabel ? `Redo ${pg.redoLabel} (Ctrl+Shift+Z · Shift + pitch strip up)` : "Nothing to redo"}>↷</button>
+        <button disabled={!pg.canUndo} onclick={() => pg.undo()} aria-label="Undo" title={pg.undoLabel ? `Undo ${pg.undoLabel} (Ctrl+Z${pg.hw(" · Shift + pitch strip down")})` : "Nothing to undo"}>↶</button>
+        <button disabled={!pg.canRedo} onclick={() => pg.redo()} aria-label="Redo" title={pg.redoLabel ? `Redo ${pg.redoLabel} (Ctrl+Shift+Z${pg.hw(" · Shift + pitch strip up")})` : "Nothing to redo"}>↷</button>
       </div>
       {#if pg.browseId !== null}
         <span class="browse">Encoder: {pg.presets.find((p) => p.id === pg.browseId)?.name}, click to load</span>
@@ -230,20 +231,22 @@
     </div>
 
     <div class="group transport" role="group" aria-label="Transport">
-      <button class:active={pg.playing} onclick={() => pg.togglePlay()} title="Play / stop the drums and the step sequencer (Shift + ▶)">{pg.playing ? "■" : "▶"}</button>
-      <button class="rec" class:active={pg.recording} onclick={() => pg.toggleRecord()} title="Record pads into the drum loop (Shift + ●)">●</button>
-      <label class="bpm" title="Shift + knobs 2–8 on the MiniLab">
+      <button class:active={pg.playing} onclick={() => pg.togglePlay()} title="Play / stop the drums and the step sequencer{pg.hw(' (Shift + ▶)')}">{pg.playing ? "■" : "▶"}</button>
+      <button class="rec" class:active={pg.recording} onclick={() => pg.toggleRecord()} title="Record pads into the drum loop{pg.hw(' (Shift + ●)')}">●</button>
+      <label class="bpm" title={pg.hw("Shift + knobs 2–8 on the MiniLab") || undefined}>
         <input type="number" min="40" max="240" value={pg.bpm} onchange={(e) => pg.setBpm(+e.currentTarget.value)} />
         BPM
       </label>
-      <button onclick={() => pg.tap()} title="Tap tempo (Shift + Tap)">Tap</button>
+      <button onclick={() => pg.tap()} title="Tap tempo{pg.hw(' (Shift + Tap)')}">Tap</button>
     </div>
   </section>
   {/if}
 
   {#if pg.view === "playground"}
     <div class="play">
-      <section class="surface panel" aria-label="The MiniLab's knobs and faders">
+      <section class="surface panel" aria-label={pg.hasDevice ? "The MiniLab's knobs and faders" : "The preset's main controls"}>
+        <!-- The strips only show what the MiniLab's strips do: no MiniLab, no strips. -->
+        {#if pg.hasDevice}
         <div class="strips">
           <div class="strip" title="Pitch bend strip">
             <div class="bend" style:top="{50 - Math.max(0, pg.bend) * 50}%" style:bottom="{50 + Math.min(0, pg.bend) * 50}%"></div>
@@ -255,11 +258,12 @@
             <span>Mod</span>
           </div>
         </div>
+        {/if}
 
         <div class="knobs">
           {#each pg.preset.knobs as id, i (i)}
             <Knob
-              number={i + 1}
+              number={pg.hasDevice ? i + 1 : undefined}
               label={PARAMS[id].label}
               display={display(id)}
               position={toControl(id, pg.values[id])}
@@ -290,7 +294,7 @@
           {/each}
         </div>
         {#if pg.explain}
-          <p class="surface-note">The MiniLab's knobs and faders. Each preset puts its main controls on the knobs; the <b>Synth</b> view has the rest.</p>
+          <p class="surface-note">{#if pg.hasDevice}The MiniLab's knobs and faders. Each preset puts its main controls on the knobs{:else}Each preset puts its main controls here, and the amp envelope on the faders{/if}; the <b>Synth</b> view has the rest.</p>
         {/if}
       </section>
 
@@ -299,7 +303,7 @@
           <button class:active={pg.vizMode === "scope"} onclick={() => (pg.vizMode = "scope")}>Waveform</button>
           <button class:active={pg.vizMode === "spectrum"} onclick={() => (pg.vizMode = "spectrum")}>Spectrum</button>
           <button class:active={pg.vizMode === "spectrogram"} onclick={() => (pg.vizMode = "spectrogram")} title="The spectrum over time: time runs right to left, higher pitches higher up, brighter is louder">Spectrogram</button>
-          <span class="hint" class:shifted={pg.shift}>Shift + encoder: next view</span>
+          {#if pg.hasDevice}<span class="hint" class:shifted={pg.shift}>Shift + encoder: next view</span>{/if}
         </div>
         <div class="canvas">
           {#if pg.vizMode === "scope"}
@@ -338,17 +342,17 @@
                 {:else if pg.stepMode}
                   <span class="shifted">Step edit · {pg.drumName(pg.stepTrack)} · steps {pg.bank === "A" ? "1–8" : "9–16"}</span>
                 {:else}
-                  Pads <span class="bank">A: drums · B: favourite presets</span>
+                  Pads{#if pg.hasDevice}{" "}<span class="bank">A: drums · B: favourite presets</span>{/if}
                 {/if}
               </div>
               <div class="pad-modes">
-                <button class:active={pg.stepMode} onclick={() => pg.toggleStepMode()} title="Shift + encoder click">Step edit</button>
+                <button class:active={pg.stepMode} onclick={() => pg.toggleStepMode()} title={pg.hw("Shift + encoder click") || undefined}>Step edit</button>
                 {#if pg.seqEdit}
                   <button class:active={pg.bank === "A"} onclick={() => (pg.bank = "A")} title="Pad bank A">Steps</button>
                   <button class:active={pg.bank === "B"} onclick={() => (pg.bank = "B")} title="Pad bank B">Slides</button>
                 {:else if pg.stepMode}
-                  <button class:active={pg.bank === "A"} onclick={() => (pg.bank = "A")} title="Pad bank A">1–8</button>
-                  <button class:active={pg.bank === "B"} onclick={() => (pg.bank = "B")} title="Pad bank B">9–16</button>
+                  <button class:active={pg.bank === "A"} onclick={() => (pg.bank = "A")} title={pg.hw("Pad bank A") || undefined}>1–8</button>
+                  <button class:active={pg.bank === "B"} onclick={() => (pg.bank = "B")} title={pg.hw("Pad bank B") || undefined}>9–16</button>
                 {:else}
                   <button class:active={pg.spectrumPads} onclick={() => pg.setSpectrumPads(!pg.spectrumPads)} title="Pad lights follow the sound">Spectrum lights</button>
                 {/if}
@@ -389,7 +393,7 @@
               <button class:active={pg.drumsOn} onclick={() => pg.setDrumsOn(!pg.drumsOn)} title="Mute the drum loop (the sequencer keeps playing)">
                 {pg.drumsOn ? "On" : "Off"}
               </button>
-              <button class="clear" onclick={() => pg.clearPattern()} title="Clear the drum loop (Shift + ⟲)">Clear</button>
+              <button class="clear" onclick={() => pg.clearPattern()} title="Clear the drum loop{pg.hw(' (Shift + ⟲)')}">Clear</button>
             </div>
             <SeqGrid
               pattern={pg.pattern}
@@ -422,7 +426,7 @@
         <ArpBar {pg} />
         <ScaleBar {pg} />
       {/if}
-      {#if pg.midiStatus !== "connected"}
+      {#if !pg.hasDevice}
         <!-- Without a MiniLab, the computer keyboard plays: which notes, and Z / X to move them. -->
         <div class="qwerty" title="The computer keyboard plays notes: A to ' (W, E, T… are the black keys). Z / X move it an octave.">
           <span class="label">Computer keys</span>
@@ -431,7 +435,7 @@
           <button onclick={(e) => { pg.shiftKeyOctave(1); e.currentTarget.blur(); }} disabled={pg.keyOctave >= 3} aria-label="Octave up (X)">▶ <kbd>X</kbd></button>
         </div>
       {/if}
-      <button class="fold" onclick={toggleKeys} aria-expanded={keysOpen} title="{keysOpen ? 'Hide' : 'Show'} the on-screen keyboard. The MiniLab and the computer keyboard (A–' row) play either way">
+      <button class="fold" onclick={toggleKeys} aria-expanded={keysOpen} title="{keysOpen ? 'Hide' : 'Show'} the on-screen keyboard. {pg.hasDevice ? 'The MiniLab and the computer keyboard' : 'The computer keyboard'} (A–' row) play{pg.hasDevice ? '' : 's'} either way">
         Keyboard <span class="chev">{keysOpen ? "▾" : "▴"}</span>
       </button>
     </div>
@@ -451,6 +455,7 @@
     <button class="start" onclick={() => pg.startAudio()}>
       <span class="big">Click to start audio</span>
       <span>Browsers only allow sound after a click.</span>
+      <span>Everything works with the mouse, and your computer keyboard plays notes (A to ').</span>
     </button>
   {/if}
 </div>
@@ -483,6 +488,9 @@
   .midi button { flex: none; }
   .pill { border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: 12px; white-space: nowrap; }
   .pill.ok { color: var(--accent); border-color: var(--accent); }
+  .pill.connect { background: none; color: var(--dim); }
+  .pill.connect:hover { color: var(--text); border-color: var(--dim); }
+  .connect .opt { font-size: 10px; opacity: 0.7; margin-left: 4px; }
   .shift { border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px; font-size: 12px; color: var(--dim); transition: all 0.08s; }
   .shift.on { background: var(--accent); border-color: var(--accent); color: #0b1314; font-weight: 600; box-shadow: 0 0 12px var(--accent); }
   .cpu {

@@ -11,9 +11,9 @@
   <section class="intro">
     <h2>About</h2>
     <p class="lead">
-      MiniLab 3 Playground is a synthesizer in the browser, made for the Arturia MiniLab 3: every knob, fader, pad and strip
-      does something, and the pad lights and screen follow along. It is for learning synthesis by playing, in the spirit of
-      Ableton's Learning Synths. Nothing to install.
+      Synth Playground is a synthesizer in the browser, for learning synthesis by playing, in the spirit of Ableton's Learning
+      Synths. Nothing to install, and nothing to plug in: the mouse and your computer keyboard are enough. With an Arturia
+      MiniLab 3 connected, every knob, fader, pad and strip does something, and the pad lights and screen follow along.
     </p>
   </section>
 
@@ -21,7 +21,7 @@
     <section>
       <h3>What's inside</h3>
       <ul>
-        <li><strong>Play:</strong> the MiniLab's controls on screen, presets, Dice for a random patch, a drum loop, and live pictures of the sound.</li>
+        <li><strong>Play:</strong> the preset's main controls, presets, Dice for a random patch, a drum loop, and live pictures of the sound.</li>
         <li><strong>Two parts:</strong> the keys and an 8-step sequencer each have their own sound, say a pad over a bass line.</li>
         <li><strong>Synth:</strong> the whole synth with plain-English explanations, as blocks joined by cables or as a plugin-style panel. "Listen here" plays any stage on its own.</li>
         <li><strong>Wavetable:</strong> eight built-in wavetables in 3D; import your own or draw one.</li>
@@ -33,9 +33,9 @@
 
       <h3>Getting started</h3>
       <ol>
-        <li>Click <strong>Connect MiniLab</strong> and allow MIDI access.</li>
+        <li>Play notes on the computer keyboard (A row; Z / X change octave) or the on-screen keys. Every control works with the mouse.</li>
+        <li>Have a MiniLab 3? Click <strong>Connect a MiniLab</strong> and allow MIDI access.</li>
         <li>On the MiniLab, hold <strong>Shift</strong> and tap <strong>Prog</strong> to switch to DAW mode. The pads light up and the screen follows the app.</li>
-        <li>No MiniLab? The computer keyboard plays notes (A row; Z / X change octave), and every control works with the mouse.</li>
       </ol>
     </section>
 
