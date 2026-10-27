@@ -2,8 +2,8 @@
   import type { Snippet } from "svelte";
   import type { Playground } from "../playground.svelte";
   import type { KnobRing } from "../components/Knob.svelte";
-  import { EFFECT_ON, effectOrder, type ParamId } from "../../audio/params";
-  import { BLOCK_TAPS, blockSource, BLOCKS, isEffect, KNOB_PAGES, SHOWN_WHEN, type BlockId } from "./blocks";
+  import { EFFECT_ON, effectOrder, PARAMS, type ParamDef, type ParamId } from "../../audio/params";
+  import { BLOCK_TAPS, blockSource, BLOCKS, isEffect, IDLE_WHEN, KNOB_PAGES, type BlockId } from "./blocks";
   import { PARAM_DEST } from "./modRings";
   import ParamControl from "./ParamControl.svelte";
 
@@ -25,7 +25,13 @@
   let { pg, id, inactive = null, compact = false, wide = false, rings, tags, children }: Props = $props();
 
   let def = $derived(BLOCKS[id]);
-  let params = $derived(def.params.filter((p) => SHOWN_WHEN[id]?.[p]?.(pg.values) ?? true));
+  // Every control, always: one that does nothing right now is dimmed in its place, so nothing jumps around.
+  let params = $derived(def.params);
+  const idle = (p: ParamId) => IDLE_WHEN[id]?.[p]?.(pg.values) ?? null;
+  /** Lists of three or more choices (button rows, dropdowns) get rows of their own; knobs and on/off pairs share one. */
+  const isChoice = (p: ParamId) => ((PARAMS[p] as ParamDef).options?.length ?? 0) > 2;
+  let choices = $derived(params.filter(isChoice));
+  let knobs = $derived(params.filter((p) => !isChoice(p)));
   let focused = $derived(pg.focusBlock === id);
   let onPage = $derived(KNOB_PAGES[pg.focusPage].blocks.includes(id));
   let effect = $derived(isEffect(id) ? id : null);
@@ -108,9 +114,18 @@
       {#if children}<div class="viz">{@render children()}</div>{/if}
       {#if params.length}
         <div class="params">
-          {#each params as param (param)}
-            <ParamControl {pg} id={param} size={44} rings={rings(param)} dest={PARAM_DEST[param]} />
-          {/each}
+          {#if choices.length}
+            <div class="choices">
+              {#each choices as param (param)}<ParamControl {pg} id={param} idle={idle(param)} />{/each}
+            </div>
+          {/if}
+          {#if knobs.length}
+            <div class="knobs">
+              {#each knobs as param (param)}
+                <ParamControl {pg} id={param} size={44} rings={rings(param)} dest={PARAM_DEST[param]} idle={idle(param)} />
+              {/each}
+            </div>
+          {/if}
         </div>
       {/if}
     </div>
@@ -149,10 +164,23 @@
   .switch { padding: 0 6px; font-size: 9.5px; line-height: 14px; border-radius: 7px; color: var(--dim); }
   .switch.on { background: var(--accent); border-color: var(--accent); color: #0b1314; }
 
-  .body { display: flex; flex-direction: column; gap: 8px; padding: 8px 10px 10px; flex: 1; }
-  .wide .body { flex-direction: row; align-items: flex-start; gap: 16px; }
-  .wide .viz { flex: 1 1 45%; min-width: 0; }
-  .wide .params { flex: 1 1 55%; }
-  .viz { display: flex; flex-direction: column; gap: 4px; }
-  .params { display: grid; grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); gap: 10px 2px; align-items: start; justify-items: center; padding-top: 4px; }
+  .body { display: flex; flex-direction: column; gap: 10px; padding: 8px 10px 10px; flex: 1; }
+  /* The first picture takes the panel's spare height, so a short panel beside a tall one has no hole under its controls. */
+  .viz { display: flex; flex-direction: column; gap: 4px; flex: 1 0 auto; }
+  .viz > :global(.live:first-child) { flex: 1 0 auto; }
+  .wide .body { flex-direction: row; align-items: stretch; gap: 24px; }
+  .wide .viz { flex: 1 1 42%; min-width: 0; }
+
+  /* Choices above the knobs, all centred; in a wide panel, choices in a column beside the knobs. */
+  .params { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .wide .params { flex: 1 1 58%; flex-direction: row; justify-content: center; align-items: center; gap: 32px; }
+  .choices { display: flex; flex-direction: column; align-items: center; gap: 6px; align-self: stretch; }
+  .wide .choices { align-items: stretch; align-self: center; width: 210px; }
+  .choices > :global(.enum) { align-items: center; }
+  .wide .choices > :global(.enum) { align-items: flex-start; }
+  .choices > :global(.select) { width: 100%; max-width: 200px; }
+  .wide .choices > :global(.select) { width: 100%; }
+  .knobs { display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: 10px 14px; }
+  .knobs > :global(.knob-wrap) { min-width: 60px; }
+  .knobs > :global(.enum.short) { padding-top: 6px; }
 </style>

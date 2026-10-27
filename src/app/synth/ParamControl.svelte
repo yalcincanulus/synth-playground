@@ -16,8 +16,10 @@
     rings?: KnobRing[];
     /** Panel view: the mod destination this knob is, by MOD_DESTS index, so a cable can be dropped (or clicked) on it. */
     dest?: number;
+    /** Panel view: why it does nothing right now; it stays in place, dimmed. */
+    idle?: string | null;
   }
-  let { pg, id, inline = false, size, rings, dest }: Props = $props();
+  let { pg, id, inline = false, size, rings, dest, idle = null }: Props = $props();
 
   const drag = usePatchDrag();
   /** A cable is being dragged, or a source was clicked, and this knob can take it. */
@@ -53,7 +55,7 @@
 
 {#if options && options.length > 4 && !BUTTONS.has(id)}
   <!-- Long choice lists as a compact dropdown, so blocks stay short. -->
-  <label class="select" class:hot={pg.touched?.param === id} class:target>
+  <label class="select" class:hot={pg.touched?.param === id} class:target class:idle={!!idle} title={idle}>
     <span class="label">{#if knob}<span class="k" title="MiniLab knob {knob}">{knob}</span>{/if}{def.label}</span>
     <select value={Math.round(pg.values[id])} onchange={(e) => pg.setParam(id, +e.currentTarget.value)} onclick={(e) => e.stopPropagation()}>
       {#each options as option, i}<option value={i}>{SHORT[option] ?? option}</option>{/each}
@@ -61,7 +63,7 @@
   </label>
 {:else if options}
   <!-- Two-way switches fit in one cell, next to a knob; longer lists take the whole row. -->
-  <div class="enum" class:short={options.length <= 2} class:hot={pg.touched?.param === id} class:target>
+  <div class="enum" class:short={options.length <= 2} class:hot={pg.touched?.param === id} class:target class:idle={!!idle} title={idle}>
     <div class="label">{#if knob}<span class="k" title="MiniLab knob {knob}">{knob}</span>{/if}{def.label}</div>
     <div class="options">
       {#each options as option, i}
@@ -73,12 +75,13 @@
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <div
     class="knob-wrap"
+    class:idle={!!idle && !droppable}
     class:target
     class:inline
     class:droppable
     class:over={dest !== undefined && drag?.state?.over === dest}
     data-dest={dest}
-    title={droppable ? `Patch to ${DEST_NAMES[MOD_DESTS[dest!]]}` : undefined}
+    title={droppable ? `Patch to ${DEST_NAMES[MOD_DESTS[dest!]]}` : (idle ?? undefined)}
     onclickcapture={pick}
   >
     {#if knob}<span class="k knob-k" title="MiniLab knob {knob}">{knob}</span>{:else if fader}<span class="k knob-k fader-k" title="MiniLab fader {fader}">F{fader}</span>{/if}
@@ -117,6 +120,9 @@
   }
   .knob-k { position: absolute; top: 0; right: 2px; margin: 0; }
   .fader-k { width: auto; padding: 0 4px; border-radius: 7px; }
+  /* Panel view: does nothing right now (the title says why), but stays in place and can be set ahead. */
+  .idle { opacity: 0.35; transition: opacity 0.15s; }
+  .idle:hover { opacity: 0.6; }
   /* Panel view patching: the knobs a cable can go to. */
   .droppable { outline: 1px dashed #ffcc3388; outline-offset: 3px; border-radius: 8px; cursor: crosshair; }
   .over { outline: 2px solid #ffcc33; background: #ffcc3322; }

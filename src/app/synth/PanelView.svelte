@@ -316,7 +316,7 @@
   }
   .engine { display: grid; gap: 8px; align-items: stretch; }
   .engine.top { grid-template-columns: 1fr 1fr 1fr; }
-  .engine.bottom { grid-template-columns: 0.75fr 1.45fr 1.1fr 0.75fr 0.9fr; }
+  .engine.bottom { grid-template-columns: 0.7fr 1.8fr 1.1fr 0.7fr 0.8fr; }
 
   .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
   .pair > div { position: relative; }

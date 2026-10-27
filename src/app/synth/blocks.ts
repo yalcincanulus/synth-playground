@@ -215,6 +215,25 @@ export const SHOWN_WHEN: Partial<Record<BlockId, Partial<Record<ParamId, (v: Par
   perf: { stereoWidth: (v) => v.unison > 1 },
 };
 
+/**
+ * The Panel view keeps every control in its place: the ones in SHOWN_WHEN stay, dimmed, while they do
+ * nothing, and say why. The wavetable controls (one table and position, shared by both oscillators) show
+ * on both, each lit while its own oscillator plays Table.
+ */
+export const IDLE_WHEN: Partial<Record<BlockId, Partial<Record<ParamId, (v: ParamValues) => string | null>>>> = {
+  filter2: Object.fromEntries((["filter2Morph", "filter2Cutoff", "filter2Resonance"] as const).map((p) => [p, (v: ParamValues) => (v.filter2Mode > 0 ? null : "Filter 2 is off: pick Series or Parallel")])),
+  osc1: {
+    pulseWidth: (v) => (v.osc1Wave === 3 || v.osc2Wave === 3 ? null : "Only the square wave has a pulse width (on either oscillator)"),
+    wtTable: (v) => (v.osc1Wave === 4 ? null : "Osc 1 isn't playing Table"),
+    wtPos: (v) => (v.osc1Wave === 4 ? null : "Osc 1 isn't playing Table"),
+  },
+  osc2: {
+    wtTable: (v) => (v.osc2Wave === 4 ? null : "Osc 2 isn't playing Table"),
+    wtPos: (v) => (v.osc2Wave === 4 ? null : "Osc 2 isn't playing Table"),
+  },
+  perf: { stereoWidth: (v) => (v.unison > 1 ? null : "Unison is at 1 voice: nothing to spread") },
+};
+
 /** The Wavetable tab's knobs. */
 export const WAVETABLE_KNOBS: ParamId[] = ["wtPos", "wtTable", "osc1Wave", "osc2Wave", "lfo2Rate", "lfo2Depth", "cutoff", "resonance"];
 
