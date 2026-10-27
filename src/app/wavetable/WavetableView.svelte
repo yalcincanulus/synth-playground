@@ -265,4 +265,23 @@
   @media (max-width: 1100px) {
     .detail { grid-template-columns: 1fr; }
   }
+  /* Narrower: the wave and the harmonics move under the picture, side by side. */
+  @media (max-width: 1000px) {
+    .main { grid-template-columns: 180px minmax(0, 1fr); }
+    .left { grid-row: 1 / 4; }
+    .side { grid-template-columns: 1fr 1fr; }
+    .lower { grid-column: 2; }
+  }
+  /* Phones: one column, the tables a row that scrolls sideways. */
+  @media (max-width: 700px) {
+    .about { grid-template-columns: 1fr; gap: 6px; }
+    .main { grid-template-columns: minmax(0, 1fr); }
+    .left, .lower { grid-row: auto; grid-column: auto; }
+    .tables { flex-direction: row; max-height: none; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+    .tables .row { flex: none; }
+    .tables .imported { align-self: center; margin: 0 4px; }
+    .pick { grid-template-columns: 44px auto; padding: 6px 10px; }
+    .notice { position: static; flex-wrap: wrap; }
+    .controls { grid-template-columns: 1fr; }
+  }
 </style>

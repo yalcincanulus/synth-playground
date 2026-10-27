@@ -200,4 +200,14 @@
   .knobs { display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: 10px 14px; }
   .knobs > :global(.knob-wrap) { min-width: 60px; }
   .knobs > :global(.enum.short) { padding-top: 6px; }
+  /* Phones: a wide panel (a modulator's page) stacks its picture over its controls. */
+  @media (max-width: 600px) {
+    .wide .body { flex-direction: column; gap: 10px; }
+    .wide .params { flex-direction: column; gap: 10px; }
+    .wide .choices { width: auto; align-self: stretch; }
+  }
+  /* Touch screens: fingers need bigger targets than a mouse. */
+  @media (pointer: coarse) {
+    .listen { padding: 3px 8px; font-size: 13px; }
+  }
 </style>

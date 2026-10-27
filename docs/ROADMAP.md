@@ -568,6 +568,31 @@ Added 2026-10-27. The app works fully with nothing connected, but it talks about
   - **Tests:** paragraphs have no marks and no hardware; step text read without a MiniLab names no knob, fader, encoder, strip or MiniLab; every marked control is on the page (course) or on a Synth view block (recipes); `stepPieces` and `stepPlain` themselves.
   - **Checked in the browser** (Helium, headless, 1280 x 800): course pages and a recipe step read cleanly with nothing connected, and show the chips with a MiniLab (simulated). No errors.
 
+### 32. Phones and touch screens
+
+Added 2026-10-27 after an audit at 360, 390, 768 and 1024 px. Tablets mostly hold up. On a phone, the Synth (cables), Wavetable and Play views and the open preset browser are wider than the screen, the keyboard's keys are 13 px wide, and the top bars take about 40% of the first screen.
+
+- **No sideways scrolling** on any view at 360 px and up, popups included.
+- **Header on narrow screens:** the title and the view tabs on one row; Recipes, Explanations, CPU, About and Connect go into a "⋯" menu. The sound bar and the transport fit in fewer rows; the part buttons shrink to the width.
+- **Keyboard:** on narrow screens 1½–2 octaves, with octave buttons. Several fingers at once (chords by touch). The "Z / X" labels only on computers with a keyboard.
+- **Synth view:** below about 800 px, the panel only (the Cables/Panel switch hides; the saved choice comes back on wide screens). On a phone the panel is one column: scopes and curves no taller than about 100 px, the wave buttons on one row, the modulator tabs one row that scrolls sideways. No empty cells in the two-column grid at tablet width.
+- **Wavetable view:** stacked on narrow screens; the table list becomes a row that scrolls sideways.
+- **Preset browser and the changes list:** full width on a phone; the categories become a row of chips.
+- **Learn:** the page's controls come first (grouped by block, including the controls on the signal-chain blocks); "The synth on this page" becomes one line (`Oscillator 1 → Amp → Output`). On narrow screens a dock at the bottom holds the page's controls and the keyboard, so you read a step and turn its control without scrolling.
+- **Touch:** tap targets at least about 36–40 px tall on touch screens (`pointer: coarse`), and the start screen speaks of tapping, not clicking and the computer keyboard.
+- **Done when:** every view can be used on a 390 x 844 phone without zooming or scrolling sideways, and a Learn page's step and its control are on screen together.
+- Status: done 2026-10-27 (to be checked by the user).
+  - **Breakpoints** (`src/app/media.svelte.ts`): `narrow` (700 px: phone header, small keyboard, Learn dock), `noCables` (800 px), `touch` (`pointer: coarse`). The CSS `@media` rules use the same numbers.
+  - **Header:** below 700 px, the views and a ⋯ button; the menu holds Recipes, the MiniLab pill, CPU, Explanations and About. Below 560 px the title goes, so the four views fit. The part buttons share the width; ◀ preset ▶ get a row of their own. Below 1000 px the transport takes a short row instead of a tall box beside the sound controls.
+  - **Keyboard:** each finger (or the mouse) has its own note, so chords and sliding work by touch. Below 700 px it shows C4–F5, the same notes as the computer keyboard's octave, and the octave buttons move both. "Z" / "X" show only without a touch screen. Keys are taller on touch screens.
+  - **Synth:** below 800 px the panel only (the saved Cables choice comes back when wider). Below 1100 px an odd block out (Mixer, Output) takes the whole row. Below 600 px one block a row, the modulator tabs a row that scrolls sideways, and a modulator's page stacks its picture over its knobs. The recipe panel goes to one column.
+  - **Wavetable:** below 1000 px the wave and harmonics sit under the 3D picture; below 700 px one column, the tables a row that scrolls sideways, the "not playing" notice above the picture; the drawing editor stacks too.
+  - **Preset browser:** full screen on a phone, groups and describing words as rows that scroll sideways. The changes list is a sheet along the bottom.
+  - **Learn:** the side panel starts with **Controls** (each block with controls on this page, signal path first, then the modulators). "The synth on this page" is one line of names (`Oscillator 1 → Amp → Output`, modulators dashed); each name's tooltip has its short description, and the block the step is about lights up. Below 700 px, the controls and the keyboard sit in a dock fixed to the bottom of the screen (about a third of a 390 x 844 screen on an envelope page); the control the step asks for is scrolled into view in the dock. The page buttons are a row that scrolls sideways and keeps the open page in view.
+  - **Touch:** bigger targets on touch screens for the wave and mode buttons, menus, tabs, sequencer steps, undo/redo, the octave and fold buttons, the course buttons. The start screen says "Tap to start audio" on a touch screen.
+  - **Checked in the browser** (Helium, headless, touch emulated): no sideways scrolling at 360 and 390 px in 20 states (arp and scale on, drums, changes list, preset browser, recipe list and a running recipe, the Matrix, Effects and LFO tabs, the drawing editor, four Learn pages, Contents, Glossary, About), nor at 768 or 1280 px. A two-finger chord on the phone keyboard plays both notes, a finger slides to the next key, and letting go stops them. Desktop layouts unchanged apart from the Learn side panel.
+  - **Known limits:** a step that asks for a low or high note ("below C3") needs the octave buttons on a phone. The recipe panel stays at the top while you scroll (about a quarter of a phone screen). The Synth view on a phone is long (one column of every block).
+
 ## Notes on the order
 
 - **The engine (1–6) comes first** so that sound changes don't force re-tuning presets, recipes and course pages later. Slices 2–3 are the big rewrite; 1 makes it safe.

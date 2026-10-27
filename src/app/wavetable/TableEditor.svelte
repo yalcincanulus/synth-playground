@@ -249,4 +249,13 @@
   .tools { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
   .tools button { font-size: 11px; padding: 3px 9px; }
   .sep { width: 8px; }
+  /* Phones: the keyframes a row that scrolls sideways, the drawing over the harmonics. */
+  @media (max-width: 700px) {
+    .keys { overflow-x: auto; scrollbar-width: none; }
+    .key, .add { flex: none; }
+    .pick { grid-template-columns: 50px auto; padding: 6px 10px 6px 6px; }
+    .pick canvas { width: 50px; }
+    .name input { width: 120px; }
+    .edit { grid-template-columns: minmax(0, 1fr); }
+  }
 </style>

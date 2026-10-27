@@ -14,6 +14,7 @@
   import { EffectRow } from "./effectRow.svelte";
   import PanelView from "./PanelView.svelte";
   import { spectrogram } from "../components/spectrogram";
+  import { noCables } from "../media.svelte";
 
   let { pg, accent }: { pg: Playground; accent: string } = $props();
 
@@ -29,11 +30,13 @@
 
   // Two looks: the cables, drawn between the blocks, or a plugin-style panel. Remembered per browser.
   const LAYOUT_KEY = "minilab3.synthLayout";
-  let layout = $state<"cables" | "panel">(localStorage.getItem(LAYOUT_KEY) === "panel" ? "panel" : "cables");
+  let chosen = $state<"cables" | "panel">(localStorage.getItem(LAYOUT_KEY) === "panel" ? "panel" : "cables");
   function setLayout(to: "cables" | "panel") {
-    layout = to;
+    chosen = to;
     localStorage.setItem(LAYOUT_KEY, to);
   }
+  // The cables need a wide screen: narrower than that, the panel, and the choice comes back when there is room.
+  let layout = $derived(noCables.current ? "panel" : chosen);
 
   let container = $state<HTMLElement>();
   const drag = new PatchDrag(() => pg, () => container);
@@ -137,6 +140,7 @@
 </script>
 
 <section class="synth">
+  {#if !noCables.current}
   <div class="layout" role="group" aria-label="Synth view mode">
     <span class="label">View</span>
     <div class="modes">
@@ -144,6 +148,7 @@
       <button data-label="Panel" class:active={layout === "panel"} aria-pressed={layout === "panel"} title="A plugin-style panel: modulation shows as rings around the knobs it moves" onclick={() => setLayout("panel")}>Panel</button>
     </div>
   </div>
+  {/if}
   {#if pg.recipeList}<RecipeList {pg} />{/if}
   {#if pg.listening}
     <button class="listening" onclick={() => pg.listenTo(null)}>
@@ -317,7 +322,7 @@
 </section>
 
 <style>
-  .synth { display: grid; gap: 8px; }
+  .synth { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
   /* The look switch, top right; the view below starts level with it. */
   .layout { justify-self: end; display: flex; align-items: center; }
   .layout .label { margin-right: 8px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }

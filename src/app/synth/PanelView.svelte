@@ -405,6 +405,22 @@
   @media (max-width: 1100px) {
     .engine.top { grid-template-columns: 1fr 1fr; }
     .engine.bottom { grid-template-columns: 1fr 1fr; }
+    /* An odd block out (the Mixer, the Output) takes the whole row instead of leaving a hole beside it. */
+    .engine > :global(:last-child) { grid-column: 1 / -1; }
     .knobmap { display: none; }
+  }
+  /* Phones: one block a row, and the modulator tabs one row that scrolls sideways. */
+  @media (max-width: 600px) {
+    .plugin { padding: 6px; grid-template-columns: minmax(0, 1fr); }
+    .engine.top, .engine.bottom { grid-template-columns: minmax(0, 1fr); }
+    .tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+    .tab { flex: none; }
+    .tabs .gap { flex: 0 0 12px; }
+    .tabpage { padding: 6px; }
+  }
+  /* Touch screens: fingers need bigger targets than a mouse. */
+  @media (pointer: coarse) {
+    .tab button[role="tab"] { padding: 9px 6px 9px 12px; font-size: 12.5px; }
+    .status button { padding: 4px 10px; }
   }
 </style>

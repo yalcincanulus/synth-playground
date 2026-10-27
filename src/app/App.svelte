@@ -21,9 +21,11 @@
   import WavetableView from "./wavetable/WavetableView.svelte";
   import AboutPage from "./about/AboutPage.svelte";
   import CourseView from "./course/CourseView.svelte";
+  import CourseControls from "./course/CourseControls.svelte";
   import SequencerPanel from "./sequencer/SequencerPanel.svelte";
   import PresetBrowser from "./presets/PresetBrowser.svelte";
   import Marquee from "./components/Marquee.svelte";
+  import { narrow, touch } from "./media.svelte";
 
   const pg = new Playground();
   if (import.meta.env.DEV) Object.assign(window, { pg });
@@ -62,7 +64,12 @@
   $effect(() => {
     if (!pg.dirty) showChanges = false;
   });
+  // Narrow screens: Recipes, MiniLab, CPU, Explanations and About sit in the header's ⋯ menu.
+  let menuOpen = $state(false);
+  // Learn on a phone: the page's controls and the keyboard sit in a dock along the bottom.
+  let docked = $derived(pg.view === "course" && narrow.current);
   function closeChanges(e: MouseEvent) {
+    if (menuOpen && !(e.target instanceof Element && e.target.closest(".more, .extras"))) menuOpen = false;
     if (showChanges && !(e.target instanceof Element && e.target.closest(".changes-wrap"))) showChanges = false;
     if (pg.browserOpen && !(e.target instanceof Element && e.target.closest(".preset-wrap"))) pg.browserOpen = false;
   }
@@ -133,7 +140,10 @@
       <button data-label="Wavetable" class:active={pg.view === "wavetable"} onclick={() => pg.setView("wavetable")} title="Pick, import and draw wavetables{pg.hw(' (Shift + encoder)')}">Wavetable</button>
       <button data-label="Learn" class:active={pg.view === "course"} onclick={() => pg.setView("course")} title="The course: how sound and synths work, one idea per page, with only the controls each page needs">Learn</button>
     </nav>
-    <button class="recipes-link" class:active={!!pg.recipe || pg.recipeList} onclick={() => pg.openRecipes()} title="Build a classic sound step by step">Recipes</button>
+    <!-- On a narrow screen the rest of the row folds into a menu; on a wide one the wrapper takes no space of its own. -->
+    <button class="more" class:open={menuOpen} onclick={() => (menuOpen = !menuOpen)} aria-expanded={menuOpen} aria-label="More">⋯</button>
+    <div class="extras" class:open={menuOpen}>
+    <button class="recipes-link" class:active={!!pg.recipe || pg.recipeList} onclick={() => { menuOpen = false; pg.openRecipes(); }} title="Build a classic sound step by step">Recipes</button>
 
     <div class="midi">
       {#if pg.hasDevice}
@@ -165,7 +175,8 @@
       </span>
     {/if}
     <Switch on={pg.explain} label="Explanations" title="Plain-English explanations on every view" onchange={() => pg.setExplain(!pg.explain)} />
-    <button class="about-link" class:active={pg.view === "about"} onclick={() => pg.setView("about")} title="What this is, the shortcuts, and this browser's limits">About & shortcuts</button>
+    <button class="about-link" class:active={pg.view === "about"} onclick={() => { menuOpen = false; pg.setView("about"); }} title="What this is, the shortcuts, and this browser's limits">About & shortcuts</button>
+    </div>
   </header>
 
   <!-- Row 2: the sound being edited, and time (shared by the drums and the sequencer). The course has its own sound for each page. -->
@@ -191,6 +202,7 @@
         {#if pg.browserOpen}<PresetBrowser {pg} onclose={() => (pg.browserOpen = false)} />{/if}
       </div>
       <button onclick={() => pg.stepPreset(1)} aria-label="Next preset" title="Next preset in the browser's list{pg.hw(' (or turn the encoder)')}">▶</button>
+      <span class="break"></span>
       <button onclick={() => pg.dice()} title="Random patch{pg.hw(' (hold the encoder down)')}">🎲 Dice</button>
       <div class="undo" role="group" aria-label="Undo and redo">
         <button disabled={!pg.canUndo} onclick={() => pg.undo()} aria-label="Undo" title={pg.undoLabel ? `Undo ${pg.undoLabel} (Ctrl+Z${pg.hw(" · Shift + pitch strip down")})` : "Nothing to undo"}>↶</button>
@@ -419,20 +431,23 @@
     <AboutPage {pg} />
   {/if}
 
+  <!-- Learn on a phone: the page's controls and the keyboard stay along the bottom of the screen while the page scrolls. -->
+  <div class="dock" class:docked>
+  {#if docked}<CourseControls {pg} docked />{/if}
   <section class="panel keys" class:folded={!keysOpen}>
     <div class="keys-head">
-      <ChordDisplay {pg} />
+      {#if !docked}<ChordDisplay {pg} />{/if}
       {#if pg.view !== "course"}
         <ArpBar {pg} />
         <ScaleBar {pg} />
       {/if}
-      {#if !pg.hasDevice}
-        <!-- Without a MiniLab, the computer keyboard plays: which notes, and Z / X to move them. -->
-        <div class="qwerty" title="The octave the computer keyboard plays: A to ' (W, E, T… are the black keys) play the notes shown here. Z / X move it down or up an octave.">
+      {#if !pg.hasDevice || narrow.current}
+        <!-- Without a MiniLab, the computer keyboard plays: which notes, and Z / X to move them. On a phone the on-screen keys show the same notes. -->
+        <div class="qwerty" title={touch.current ? undefined : "The octave the computer keyboard plays: A to ' (W, E, T… are the black keys) play the notes shown here. Z / X move it down or up an octave."}>
           <span class="label">Octave</span>
-          <button onclick={(e) => { pg.shiftKeyOctave(-1); e.currentTarget.blur(); }} disabled={pg.keyOctave <= -3} aria-label="Computer keyboard octave down (Z)"><kbd>Z</kbd> ◀</button>
+          <button onclick={(e) => { pg.shiftKeyOctave(-1); e.currentTarget.blur(); }} disabled={pg.keyOctave <= -3} aria-label="Octave down (Z)">{#if !touch.current}<kbd>Z</kbd> {/if}◀</button>
           <span class="range">{noteName(60 + pg.keyOctave * 12)}–{noteName(77 + pg.keyOctave * 12)}</span>
-          <button onclick={(e) => { pg.shiftKeyOctave(1); e.currentTarget.blur(); }} disabled={pg.keyOctave >= 3} aria-label="Computer keyboard octave up (X)">▶ <kbd>X</kbd></button>
+          <button onclick={(e) => { pg.shiftKeyOctave(1); e.currentTarget.blur(); }} disabled={pg.keyOctave >= 3} aria-label="Octave up (X)">▶{#if !touch.current} <kbd>X</kbd>{/if}</button>
         </div>
       {/if}
       <button class="fold" onclick={toggleKeys} aria-expanded={keysOpen} title="{keysOpen ? 'Hide' : 'Show'} the on-screen keyboard. {pg.hasDevice ? 'The MiniLab and the computer keyboard' : 'The computer keyboard'} (A–' row) play{pg.hasDevice ? '' : 's'} either way">
@@ -440,7 +455,10 @@
       </button>
     </div>
     {#if keysOpen}
+      <!-- A phone has room for an octave and a half: the same notes as the computer keyboard's octave. -->
       <Keyboard
+        from={narrow.current ? 60 + pg.keyOctave * 12 : 36}
+        to={narrow.current ? 77 + pg.keyOctave * 12 : 84}
         notes={keyboardNotes}
         held={heldNotes}
         onnoteon={(n) => pg.noteOn(n, 100)}
@@ -450,12 +468,18 @@
       />
     {/if}
   </section>
+  </div>
 
   {#if !pg.audioRunning}
     <button class="start" onclick={() => pg.startAudio()}>
-      <span class="big">Click to start audio</span>
-      <span>Browsers only allow sound after a click.</span>
-      <span>Everything works with the mouse, and your computer keyboard plays notes (A to ').</span>
+      {#if touch.current}
+        <span class="big">Tap to start audio</span>
+        <span>Browsers only allow sound after a tap.</span>
+      {:else}
+        <span class="big">Click to start audio</span>
+        <span>Browsers only allow sound after a click.</span>
+        <span>Everything works with the mouse, and your computer keyboard plays notes (A to ').</span>
+      {/if}
     </button>
   {/if}
 </div>
@@ -472,7 +496,9 @@
   .top { display: flex; align-items: center; gap: 14px; min-width: 0; }
   h1 { margin: 0; font-size: 17px; letter-spacing: 0.02em; white-space: nowrap; }
   h1 span { color: var(--accent); font-weight: 400; }
-  .top > :not(.midi) { flex: none; }
+  .top > :not(.midi, .extras), .extras > :not(.midi) { flex: none; }
+  .extras { display: contents; }
+  .more { display: none; }
   .views { display: flex; gap: 2px; background: #0b0e10; border: 1px solid var(--line); border-radius: 6px; padding: 2px; }
   .views button { border: none; background: none; font-size: 13px; padding: 4px 16px; border-radius: 4px; color: var(--dim); }
   /* Room for the bold label is kept on every tab, so picking one doesn't change the bar's width. */
@@ -575,7 +601,7 @@
   .tabs .active { border-color: var(--accent); color: var(--accent); }
   .tabs .hint { margin-left: auto; font-size: 11px; }
 
-  .rhythm { display: grid; gap: 6px; }
+  .rhythm { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
   .rhythm-bar { display: flex; align-items: center; gap: 12px; }
   .seg { display: flex; gap: 2px; background: #0b0e10; border: 1px solid var(--line); border-radius: 6px; padding: 2px; }
   .seg button { border: none; background: none; font-size: 12px; padding: 2px 12px; border-radius: 4px; color: var(--dim); display: flex; align-items: center; gap: 6px; }
@@ -610,6 +636,14 @@
   .pad-modes .active { border-color: var(--accent); color: var(--accent); }
 
   /* ---- the keyboard, on every view */
+  .dock { display: grid; gap: 6px; min-width: 0; }
+  .dock.docked {
+    position: sticky; bottom: 0; z-index: 5; margin: 0 -10px -12px; padding: 6px 10px 8px;
+    background: var(--bg); border-top: 1px solid var(--line); box-shadow: 0 -8px 20px #0008;
+  }
+  .docked .keys { padding: 6px 8px; }
+  .docked .keys-head { min-height: 0; margin-bottom: 6px; justify-content: space-between; }
+  .docked .qwerty { margin-left: 0; }
   .keys { padding: 8px 10px; }
   /* One row when it fits; with the arpeggiator and the scale both open on a narrow window, the scale wraps below. */
   .keys { min-width: 0; }
@@ -629,7 +663,8 @@
     .top { flex-wrap: wrap; }
   }
   @media (max-width: 1000px) {
-    .sound { flex-wrap: wrap; }
+    /* The sound controls wrap, so the transport takes a short row of its own instead of a tall box beside them. */
+    .sound { flex-wrap: wrap; flex-basis: 100%; }
     .play { grid-template-columns: 1fr; }
     .main-viz { height: 200px; }
     .drums { grid-template-columns: 1fr; }
@@ -638,7 +673,47 @@
     .surface { grid-template-columns: 1fr; justify-items: center; row-gap: 12px; }
     .sound { flex-wrap: wrap; }
   }
+  .break { display: none; }
+  /* Phones: one header row (the views and ⋯), the sound bar in rows that fill the width. Matches `narrow` in media.svelte.ts. */
+  @media (max-width: 700px) {
+    .app { padding: 8px 10px 12px; }
+    .top { flex-wrap: nowrap; gap: 8px; position: relative; }
+    h1 { font-size: 15px; }
+    .views { flex: 1 1 auto; min-width: 0; }
+    .views button { flex: 1 1 auto; padding: 6px 8px; }
+    .more { display: block; flex: none; font-size: 18px; line-height: 1; padding: 5px 12px; }
+    .more.open { border-color: var(--accent); color: var(--accent); }
+    .extras { display: none; }
+    .extras.open {
+      display: flex; flex-direction: column; align-items: flex-start; gap: 12px; position: absolute; top: calc(100% + 6px); right: 0; z-index: 25;
+      width: min(320px, calc(100vw - 20px)); padding: 12px; background: #10171a; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 10px 30px #000a;
+    }
+    .extras .midi { margin-left: 0; flex-wrap: wrap; min-width: 0; }
+    .extras .midi .hint { white-space: normal; }
+    .about-link { padding: 4px 0; font-size: 13px; }
 
+    .soundbar { gap: 6px; }
+    .parts { flex: 1 1 100%; margin-right: 0; }
+    .parts button { flex: 1 1 0; width: auto; min-width: 0; }
+    .preset-wrap { flex: 1 1 0; min-width: 0; }
+    .break { display: block; flex-basis: 100%; height: 0; }
+    .transport { flex: 1 1 auto; }
+    /* The changes list: a sheet along the bottom of the screen. */
+    .changes { position: fixed; top: auto; left: 10px; right: 10px; bottom: 10px; width: auto; max-height: 60vh; }
+    .rhythm-bar .hint { display: none; }
+  }
+  @media (max-width: 560px) {
+    h1 { display: none; }
+  }
+
+  /* Touch screens: fingers need bigger targets than a mouse. */
+  @media (pointer: coarse) {
+    .tabs button, .seg button, .pad-modes button, .seq-title button { padding: 7px 12px; }
+    .undo button { min-width: 40px; padding: 6px; }
+    .qwerty button, .fold { padding: 6px 12px; }
+    .changes li { padding: 4px 0; }
+    .c-revert { padding: 4px 10px; }
+  }
   .start {
     position: fixed; inset: 0; background: #0b0e10e0; border: none; border-radius: 0; display: flex; flex-direction: column;
     align-items: center; justify-content: center; gap: 8px; color: var(--dim); cursor: pointer; z-index: 10;

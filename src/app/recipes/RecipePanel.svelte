@@ -169,4 +169,10 @@
   li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dim); }
   ol li.target { color: var(--accent); font-weight: 600; }
   .n { font: 600 10px var(--mono); margin-right: 6px; }
+  /* Phones: one column and a little smaller, since it stays at the top of the screen while you scroll to the control. */
+  @media (max-width: 700px) {
+    .recipe { padding: 8px 10px; gap: 6px; }
+    .body { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+    .text { font-size: 14.5px; }
+  }
 </style>

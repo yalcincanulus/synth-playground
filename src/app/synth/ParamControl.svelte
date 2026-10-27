@@ -127,4 +127,9 @@
   .droppable { outline: 1px dashed #ffcc3388; outline-offset: 3px; border-radius: 8px; cursor: crosshair; }
   .over { outline: 2px solid #ffcc33; background: #ffcc3322; }
   .inline .knob-k { top: -3px; left: -3px; right: auto; }
+  /* Touch screens: fingers need bigger targets than a mouse. */
+  @media (pointer: coarse) {
+    .options button { font-size: 12px; padding: 6px 9px; }
+    .select select { font-size: 13px; padding: 6px; }
+  }
 </style>

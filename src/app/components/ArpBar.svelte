@@ -64,4 +64,9 @@
   .value { font: 11px var(--mono); color: var(--text); min-width: 28px; }
   .latch { font-size: 11.5px; padding: 3px 9px; color: var(--dim); }
   .latch.active { border-color: var(--accent); color: var(--accent); }
+  /* Phones: the settings wrap under the switch. */
+  @media (max-width: 700px) {
+    .arp { flex: 1 1 100%; flex-wrap: wrap; }
+    .settings { flex-wrap: wrap; }
+  }
 </style>

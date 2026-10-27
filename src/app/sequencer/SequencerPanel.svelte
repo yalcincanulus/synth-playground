@@ -156,4 +156,17 @@
     .body, .body.explained { grid-template-columns: 1fr; justify-items: center; }
     .steps { grid-template-columns: repeat(4, 1fr); }
   }
+  /* Phones: the clock and the faders a little closer, so they fit beside each other. */
+  @media (max-width: 700px) {
+    .body, .body.explained { grid-template-columns: minmax(0, 1fr); }
+    .controls { gap: 8px; }
+    .clock { width: 132px; }
+    .faders { grid-template-columns: repeat(3, 56px); }
+  }
+  /* Touch screens: fingers need bigger targets than a mouse. */
+  @media (pointer: coarse) {
+    .head button { padding: 6px 12px; }
+    .step { padding: 8px 0; }
+    .slide { padding: 6px 0; }
+  }
 </style>

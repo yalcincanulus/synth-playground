@@ -8,7 +8,8 @@
   import type { Playground } from "../playground.svelte";
   import { BLOCKS } from "../synth/blocks";
   import StepText from "../recipes/StepText.svelte";
-  import ParamControl from "../synth/ParamControl.svelte";
+  import CourseControls from "./CourseControls.svelte";
+  import { narrow } from "../media.svelte";
   import ChapterRecipes from "./ChapterRecipes.svelte";
   import CourseContents from "./CourseContents.svelte";
   import CourseGlossary from "./CourseGlossary.svelte";
@@ -45,6 +46,17 @@
   }
   const hideTip = () => (tip = null);
 
+  // On a phone the page buttons scroll sideways: keep the open page's in view.
+  let chips = $state<HTMLElement>();
+  $effect(() => {
+    void course.index;
+    requestAnimationFrame(() => {
+      const now = chips?.querySelector<HTMLElement>(".now");
+      // Sideways only: scrollIntoView would also move the page up to the buttons.
+      if (chips && now) chips.scrollLeft = now.offsetLeft - chips.offsetLeft - (chips.clientWidth - now.offsetWidth) / 2;
+    });
+  });
+
   const togglePanel = (panel: "contents" | "glossary") => (course.panel = course.panel === panel ? null : panel);
   const pageNumber = (id: string) => PAGES.findIndex((p) => p.lesson.id === id);
   /** Where step i stands: done, being done now, or still to come. */
@@ -57,7 +69,7 @@
       <span class="kicker">Learn · Chapter {chapterNumber}</span>
       <h2>{course.chapter.title}</h2>
     </div>
-    <ol class="chips">
+    <ol class="chips" bind:this={chips}>
       {#each course.chapter.lessons as l (l.id)}
         {@const n = pageNumber(l.id)}
         <li>
@@ -142,37 +154,21 @@
     </article>
 
     <aside class="mini" aria-label="The synth on this page">
-      <div class="title">The synth on this page</div>
-      <div class="blocks">
-        {#each lesson.blocks as b, i (b)}
-          {@const own = controls.filter((id) => lessonBlockOf(id) === b)}
-          {#if i > 0}<div class="arrow" aria-hidden="true">↓</div>{/if}
-          <div class="block" class:target={b === targetBlock}>
-            <h4>{BLOCKS[b].title}</h4>
-            <p>{BLOCKS[b].short}</p>
-            {#if own.length}
-              <div class="controls">
-                {#each own as id (id)}<ParamControl {pg} {id} />{/each}
-              </div>
-            {/if}
-          </div>
-        {/each}
-      </div>
-      {#if lesson.modulators?.length}
-        <div class="title">Shaping it</div>
-        {#each lesson.modulators as b (b)}
-          {@const own = controls.filter((id) => lessonBlockOf(id) === b)}
-          <div class="block mod" class:target={b === targetBlock}>
-            <h4>{BLOCKS[b].title}</h4>
-            <p>{BLOCKS[b].short}</p>
-            {#if own.length}
-              <div class="controls" class:four={own.length > 2}>
-                {#each own as id (id)}<ParamControl {pg} {id} />{/each}
-              </div>
-            {/if}
-          </div>
-        {/each}
+      <!-- The controls first: they are what the steps ask for. On a phone they sit in the dock along the bottom instead. -->
+      {#if controls.length && !narrow.current}
+        <div class="title">Controls</div>
+        <CourseControls {pg} />
       {/if}
+      <div class="title">The synth on this page</div>
+      <ol class="chain">
+        {#each lesson.blocks as b, i (b)}
+          {#if i > 0}<li class="arrow" aria-hidden="true">→</li>{/if}
+          <li class="link" class:target={b === targetBlock} title={BLOCKS[b].short}>{BLOCKS[b].title}</li>
+        {/each}
+        {#each lesson.modulators ?? [] as b (b)}
+          <li class="link mod" class:target={b === targetBlock} title={BLOCKS[b].short}>{BLOCKS[b].title}</li>
+        {/each}
+      </ol>
       <p class="hidden-note">The rest of the synth is hidden and held still, so only what this page explains changes the sound.</p>
 
       {#if pg.hasDevice}
@@ -215,7 +211,8 @@
 {/if}
 
 <style>
-  .course { display: grid; gap: 10px; }
+  /* One column that may be narrower than its content, so the page buttons scroll instead of widening the page. */
+  .course { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .pages { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
   .chapter { flex: none; }
   .kicker { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); }
@@ -273,17 +270,13 @@
 
   .mini { display: grid; gap: 8px; position: sticky; top: 8px; }
   .title { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; }
-  .blocks { display: grid; justify-items: stretch; }
-  .arrow { text-align: center; color: var(--accent); line-height: 18px; font-size: 14px; }
-  .block { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; transition: border-color 0.2s, box-shadow 0.2s; }
-  .block.target { border-color: #ffcc33; box-shadow: 0 0 0 1px #ffcc33, 0 0 14px #ffcc3340; }
-  h4 { margin: 0; font-size: 13px; }
-  .block p { margin: 2px 0 0; font-size: 11.5px; color: var(--dim); line-height: 1.35; }
-  .controls { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 8px; align-items: start; }
-  .controls.four { grid-template-columns: repeat(4, 1fr); }
-  /* A knob's box is only as wide as the knob, so its number badge sits at the knob, not at the edge of a wide cell. */
-  .controls :global(.knob-wrap) { justify-self: center; }
-  .block.mod { border-style: dashed; }
+  /* The signal path in one line; the modulators after it, dashed. The block a step is about lights up. */
+  .chain { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 12px; }
+  .chain .link { padding: 2px 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: #b9c5c8; cursor: help; }
+  .chain .link.mod { border-style: dashed; }
+  .chain .link:not(.mod) + .mod { margin-left: 8px; }
+  .chain .link.target { border-color: #ffcc33; color: #ffe08a; }
+  .arrow { color: var(--accent); }
   .hidden-note { margin: 0; font-size: 11.5px; color: var(--dim); }
   .knobmap { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 13px; }
   .knobmap li { display: flex; gap: 8px; align-items: baseline; }
@@ -294,5 +287,20 @@
   @media (max-width: 1000px) {
     .layout { grid-template-columns: 1fr; }
     .mini { position: static; }
+  }
+  /* Phones: the chapter's pages in one row that scrolls sideways, and Back / Next at the right edge. */
+  @media (max-width: 700px) {
+    .pages { gap: 8px; }
+    .chips { flex: 1 1 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+    .chips li { flex: none; }
+    .nav { flex: 1 1 100%; }
+    .nav .gap { flex: 1; }
+    .page { padding: 12px 14px; }
+  }
+  /* Touch screens: fingers need bigger targets than a mouse. */
+  @media (pointer: coarse) {
+    .chips button { padding: 7px 12px 7px 6px; }
+    .nav button { padding: 8px 14px; }
+    .skip { padding: 6px 12px; }
   }
 </style>

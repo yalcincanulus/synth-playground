@@ -210,4 +210,22 @@
   .empty { color: var(--dim); font-size: 13px; margin: 12px 4px; }
   .link { border: none; background: none; padding: 0; color: var(--accent); text-decoration: underline; font-size: 13px; }
   .foot { margin: 0; font-size: 11.5px; color: var(--dim); }
+
+  /* Phones: the whole screen, with the groups and the describing words as rows that scroll sideways. */
+  @media (max-width: 700px) {
+    .browser { position: fixed; inset: 8px; width: auto; max-height: none; }
+    .top { flex-wrap: wrap; }
+    .search { flex: 1 1 100%; width: auto; order: -1; }
+    .message { flex: 1 1 100%; order: 0; }
+    .body { flex-direction: column; gap: 8px; }
+    nav { flex-direction: row; width: auto; overflow-x: auto; scrollbar-width: none; }
+    nav button { flex: none; gap: 6px; white-space: nowrap; border: 1px solid var(--line); }
+    hr { display: none; }
+    .tags { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; flex: none; }
+    .tags button { flex: none; }
+    .name { flex: 0 1 auto; width: auto; }
+    .cat { display: none; }
+    .load { padding: 8px; }
+    .icon { padding: 8px 10px; font-size: 15px; }
+  }
 </style>

@@ -87,4 +87,9 @@
     margin: 0; flex: 1; min-width: 0; color: #a9b6ba; font-size: 11.5px; line-height: 1.35;
     display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
+  /* Phones: the settings wrap under the switch. */
+  @media (max-width: 700px) {
+    .scale { flex-wrap: wrap; row-gap: 6px; }
+    .settings { flex-wrap: wrap; }
+  }
 </style>

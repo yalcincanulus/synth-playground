@@ -27,25 +27,30 @@
     return { out, whiteWidth: 100 / whites };
   });
 
-  let mouseNote: number | null = null;
+  // The note under each finger (or the mouse), so several fingers play a chord and each slides on its own.
+  const pointers = new Map<number, number>();
   function down(note: number, e: PointerEvent) {
+    // Let go of the capture a touch takes by itself, so sliding a finger moves onto the next key.
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-    mouseNote = note;
+    pointers.set(e.pointerId, note);
     onnoteon(note);
   }
   function enter(note: number, e: PointerEvent) {
-    if (mouseNote === null || e.buttons === 0) return;
-    onnoteoff(mouseNote);
-    mouseNote = note;
+    const from = pointers.get(e.pointerId);
+    if (from === undefined || from === note || e.buttons === 0) return;
+    onnoteoff(from);
+    pointers.set(e.pointerId, note);
     onnoteon(note);
   }
-  function up() {
-    if (mouseNote !== null) onnoteoff(mouseNote);
-    mouseNote = null;
+  function up(e: PointerEvent) {
+    const note = pointers.get(e.pointerId);
+    if (note === undefined) return;
+    pointers.delete(e.pointerId);
+    onnoteoff(note);
   }
 </script>
 
-<svelte:window onpointerup={up} />
+<svelte:window onpointerup={up} onpointercancel={up} />
 
 <div class="keyboard">
   {#each keys.out as k (k.note)}
@@ -80,4 +85,7 @@
   .key.root::after { content: ""; position: absolute; left: 25%; right: 25%; bottom: 16px; height: 3px; border-radius: 2px; background: var(--accent); }
   .key.black.root::after { bottom: 6px; }
   .key.on::after { background: #0b1314; }
+  @media (pointer: coarse) {
+    .keyboard { height: 104px; }
+  }
 </style>
