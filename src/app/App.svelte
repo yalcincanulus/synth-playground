@@ -8,6 +8,7 @@
   import ArpBar from "./components/ArpBar.svelte";
   import ChordDisplay from "./components/ChordDisplay.svelte";
   import { playable } from "../audio/scale";
+  import { noteName } from "../audio/stepSequencer";
   import Knob from "./components/Knob.svelte";
   import Scope from "./components/Scope.svelte";
   import SeqGrid from "./components/SeqGrid.svelte";
@@ -422,6 +423,15 @@
         <ArpBar {pg} />
         <ScaleBar {pg} />
       {/if}
+      {#if pg.midiStatus !== "connected"}
+        <!-- Without a MiniLab, the computer keyboard plays: which notes, and Z / X to move them. -->
+        <div class="qwerty" title="The computer keyboard plays notes: A to ' (W, E, T… are the black keys). Z / X move it an octave.">
+          <span class="label">Computer keys</span>
+          <button onclick={(e) => { pg.shiftKeyOctave(-1); e.currentTarget.blur(); }} disabled={pg.keyOctave <= -3} aria-label="Octave down (Z)"><kbd>Z</kbd> ◀</button>
+          <span class="range">{noteName(60 + pg.keyOctave * 12)}–{noteName(77 + pg.keyOctave * 12)}</span>
+          <button onclick={(e) => { pg.shiftKeyOctave(1); e.currentTarget.blur(); }} disabled={pg.keyOctave >= 3} aria-label="Octave up (X)">▶ <kbd>X</kbd></button>
+        </div>
+      {/if}
       <button class="fold" onclick={toggleKeys} aria-expanded={keysOpen} title="{keysOpen ? 'Hide' : 'Show'} the on-screen keyboard. The MiniLab and the computer keyboard (A–' row) play either way">
         Keyboard <span class="chev">{keysOpen ? "▾" : "▴"}</span>
       </button>
@@ -601,6 +611,12 @@
   .fold { flex: none; display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 3px 10px; color: var(--dim); }
   .fold:hover { color: var(--text); }
   .chev { font-size: 10px; }
+  .qwerty { flex: none; display: flex; align-items: center; gap: 6px; font-size: 12px; margin-left: auto; }
+  .qwerty .label { color: var(--dim); }
+  .qwerty button { padding: 1px 6px; font-size: 11px; color: var(--dim); }
+  .qwerty button:hover:not(:disabled) { color: var(--text); }
+  .qwerty kbd { font: 600 10px var(--mono); color: var(--text); }
+  .qwerty .range { min-width: 58px; text-align: center; font: 12px var(--mono); color: var(--accent); }
 
   @media (max-width: 1100px) {
     .top { flex-wrap: wrap; }

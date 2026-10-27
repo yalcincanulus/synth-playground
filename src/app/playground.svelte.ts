@@ -1988,7 +1988,13 @@ export class Playground {
   // ------------------------------------------------------------------ QWERTY fallback
 
   private static KEYMAP = "awsedftgyhujkolp;'";
-  private keyOctave = 0;
+  /** The computer keyboard's octave, -3..3: its A key plays C4 at 0. */
+  keyOctave = $state(0);
+
+  /** Z / X: the computer keyboard an octave down or up. */
+  shiftKeyOctave(delta: number) {
+    this.keyOctave = Math.max(-3, Math.min(3, this.keyOctave + delta));
+  }
 
   handleKey(e: KeyboardEvent, down: boolean) {
     if (e.target instanceof Element && e.target.closest("input, select, textarea")) return;
@@ -2005,7 +2011,7 @@ export class Playground {
     if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
     const k = e.key.toLowerCase();
     if (down && (k === "z" || k === "x")) {
-      this.keyOctave = Math.max(-3, Math.min(3, this.keyOctave + (k === "z" ? -1 : 1)));
+      this.shiftKeyOctave(k === "z" ? -1 : 1);
       return;
     }
     const i = Playground.KEYMAP.indexOf(k);
