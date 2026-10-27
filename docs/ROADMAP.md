@@ -560,6 +560,13 @@ Added 2026-10-27. The app works fully with nothing connected, but it talks about
 - The course and recipe text names the control, not where it is on the MiniLab: "Turn knob 1 (Cutoff) down…" becomes a control reference, "Turn [[cutoff]] down…". Without a MiniLab it shows **Cutoff**; with one, **Cutoff** and a small "knob 1" chip. The knob comes from the page's `knobs`, the fader from `FADERS`, a recipe's from the `hw` it already works out.
 - Encoder lines ("click B, or click the encoder", "the MiniLab's play button") show their hardware part only with a MiniLab.
 - **Tests:** every reference names a control the page (or recipe step) has, so the text can't drift from the knob layout. This replaces keeping "knob N" in the text in step with `knobs` by hand.
+- Status: done 2026-10-27 (to be checked by the user).
+  - **Marks** (`stepPieces` in `src/recipes/recipe.ts`, shown by `StepText.svelte`): `[[cutoff]]` shows the control's label in bold, with a "knob 1" / "fader 3" chip while a MiniLab is connected; `{{…}}` is an aside shown only with one ("click B{{, or click the encoder}}"). They work in a step's text and its why.
+  - **Course:** every step that names a control marks it (follow-ups like "Now Square." stay as they are). The paragraphs name controls without saying where they are ("Knob 1, **LFO To**, picks…" is now "**LFO To** picks…"; "It is on fader 1." is gone). The first step of the course says how to play without a MiniLab.
+  - **Recipes keep plain names** (decided while building it): their steps name controls in their own words ("LFO 1's Rate"), and with a MiniLab the "On the MiniLab" box already says where each one is. Marking all 152 steps would mean rewording them. The "(fader 3)" notes are gone, and the strip tips ("Try the pitch strip for bends") are MiniLab asides.
+  - **Block texts:** "Faders 1–4" (Amp Envelope) and "Knobs 1–8 set the amounts" (Mod Matrix) are gone from the Synth view's explanations, which the course shows too.
+  - **Tests:** paragraphs have no marks and no hardware; step text read without a MiniLab names no knob, fader, encoder, strip or MiniLab; every marked control is on the page (course) or on a Synth view block (recipes); `stepPieces` and `stepPlain` themselves.
+  - **Checked in the browser** (Helium, headless, 1280 x 800): course pages and a recipe step read cleanly with nothing connected, and show the chips with a MiniLab (simulated). No errors.
 
 ## Notes on the order
 

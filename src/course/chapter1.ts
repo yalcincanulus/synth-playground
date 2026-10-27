@@ -25,7 +25,7 @@ export const CHAPTER_1: Chapter = {
       sound: {},
       steps: [
         {
-          text: "Play a note on the MiniLab's keys and hold it.",
+          text: "Play a note and hold it: on the keys at the bottom of the page, or A to ' on your computer keyboard{{, or on the MiniLab's keys}}.",
           why: "The wave appears while the note sounds. Let go and it stops: no movement, no sound.",
           checks: [{ play: "note" }],
         },
@@ -61,7 +61,7 @@ export const CHAPTER_1: Chapter = {
       title: "Loudness",
       text: [
         "How loud a sound is comes from how far the air moves: how tall the wave is. This height is the wave's **amplitude**.",
-        "Knob 1 sets the synth's **Volume**. The wave is drawn at a fixed size here, so you can see it shrink and grow. Its shape and its speed stay the same: only its height changes, so the pitch doesn't move.",
+        "**Volume** sets how loud the synth is. The wave is drawn at a fixed size here, so you can see it shrink and grow. Its shape and its speed stay the same: only its height changes, so the pitch doesn't move.",
         "The keys change the loudness too: play softly, then hard. How hard you press is the note's **velocity**.",
       ],
       widget: { kind: "knob", param: "volume" },
@@ -70,7 +70,7 @@ export const CHAPTER_1: Chapter = {
       sound: { volume: 0.5 },
       steps: [
         {
-          text: "Hold a note and turn knob 1 (Volume) down to about 25%.",
+          text: "Hold a note and turn [[volume]] down to about 25%.",
           why: "The wave gets much shorter and the note quieter, but it is still the same note.",
           checks: [{ param: "volume", max: 0.3, aim: 0.25 }],
         },
@@ -87,7 +87,7 @@ export const CHAPTER_1: Chapter = {
       text: [
         "The part of a synth that makes the wave is the **oscillator**. Besides the sine, it can make other shapes, and each has its own character, even at the same pitch and loudness.",
         "**Triangle**: straight lines up and down. Like a sine with a little edge, soft like a flute. **Sawtooth**: a slow ramp up, then a sudden drop. Bright and buzzy, like brass or strings. **Square**: up, flat, down, flat. Hollow, like a clarinet or an old video game.",
-        "Knob 1 picks the wave. Hold a note while you switch, and hear how its colour changes while its pitch stays put.",
+        "Osc1 Wave picks the wave. Hold a note while you switch, and hear how its colour changes while its pitch stays put.",
       ],
       widget: { kind: "wave" },
       blocks: ["osc1", "output"],
@@ -96,7 +96,7 @@ export const CHAPTER_1: Chapter = {
       sound: {},
       steps: [
         {
-          text: "Turn knob 1 to Triangle.",
+          text: "Turn [[osc1Wave]] to Triangle.",
           why: "Almost as soft as the sine, with a slightly reedy edge.",
           checks: [{ param: "osc1Wave", is: 1 }],
         },
@@ -118,7 +118,7 @@ export const CHAPTER_1: Chapter = {
       text: [
         "Why do the shapes sound so different? Every wave, however jagged, can be built from sine waves stacked on top of each other.",
         "The lowest sine sets the pitch: the **fundamental**. The others swing exactly 2, 3, 4… times as fast. They are the **harmonics**, and the mix of them is what you hear as the sound's colour, or **timbre**.",
-        "The bars show the harmonics in the wave on knob 1: bar 1 is the fundamental, bar 2 the harmonic twice as fast, and so on. More and taller bars to the right mean a brighter sound.",
+        "The bars show the harmonics in Osc 1's wave: bar 1 is the fundamental, bar 2 the harmonic twice as fast, and so on. More and taller bars to the right mean a brighter sound.",
       ],
       widget: { kind: "harmonics" },
       blocks: ["osc1", "output"],
@@ -127,7 +127,7 @@ export const CHAPTER_1: Chapter = {
       sound: {},
       steps: [
         {
-          text: "Turn knob 1 to Sawtooth.",
+          text: "Turn [[osc1Wave]] to Sawtooth.",
           why: "Every harmonic is there, each a little weaker than the one before. That is why the saw is so bright.",
           checks: [{ param: "osc1Wave", is: 2 }],
         },
@@ -166,12 +166,12 @@ export const CHAPTER_1: Chapter = {
       sound: { osc1Wave: 2, osc2Wave: 2, oscMix: 0, osc2Detune: 0 },
       steps: [
         {
-          text: "Hold a low note, and switch to B (click B, or click the encoder).",
+          text: "Hold a low note, and switch to B (click B{{, or click the encoder}}).",
           why: "Two sawtooth waves, 12 cents apart. Hear the slow swirl? That is the beating.",
           checks: [{ param: "oscMix", min: 0.35, max: 0.65, aim: 0.5 }, { param: "osc2Detune", min: 8, aim: 12 }],
         },
         {
-          text: "Turn knob 2 (Detune) down to 0.",
+          text: "Turn [[osc2Detune]] down to 0.",
           why: "In tune, the beating stops: the two oscillators sound like one again.",
           checks: [{ param: "osc2Detune", max: 0.5, aim: 0 }],
         },

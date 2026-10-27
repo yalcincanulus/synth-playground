@@ -1,7 +1,7 @@
 // Guided recipes: build a sound step by step from a blank "Init" patch.
 //
 // A recipe is a list of steps. Each step says in plain English what to do, points at the control to
-// touch (its block in the Synth view, and its MiniLab knob or fader), and has a check: conditions on the
+// touch (its block in the Synth view, and its MiniLab knob or fader when one is connected), and has a check: conditions on the
 // settings, or on what you play, that move you on by themselves once they hold.
 
 import { defaultValues, formatValue, PARAMS, type ParamId, type ParamValues } from "../audio/params";
@@ -26,9 +26,9 @@ export interface PlayCheck {
 export type Check = SettingCheck | PlayCheck;
 
 export interface RecipeStep {
-  /** What to do. */
+  /** What to do. `[[cutoff]]` names a control, `{{…}}` is an aside only for MiniLab players (see `stepPieces`). */
   text: string;
-  /** What it does, or what to listen for. */
+  /** What it does, or what to listen for. Same marks as `text`. */
   why: string;
   /** All of these must hold. The first setting's control is the one pointed out. */
   checks: Check[];
@@ -135,6 +135,24 @@ export function stepParam(step: RecipeStep): ParamId | null {
   const c = step.checks.find((c) => !isPlay(c)) as SettingCheck | undefined;
   return c?.param ?? null;
 }
+
+/**
+ * A piece of a step's text: plain words, a control (`[[cutoff]]`: shown by its label, with its knob or fader
+ * while a MiniLab is connected), or an aside only for MiniLab players (`{{, or click the encoder}}`).
+ */
+export type StepPiece = { t: string } | { param: ParamId } | { hw: string };
+
+export const stepPieces = (text: string): StepPiece[] =>
+  text
+    .split(/(\[\[\w+\]\]|\{\{.+?\}\})/)
+    .filter(Boolean)
+    .map((s) => (s.startsWith("[[") ? { param: s.slice(2, -2) as ParamId } : s.startsWith("{{") ? { hw: s.slice(2, -2) } : { t: s }));
+
+/** A step's text as read without a MiniLab: controls by their labels, MiniLab asides left out. */
+export const stepPlain = (text: string): string =>
+  stepPieces(text)
+    .map((p) => ("param" in p ? PARAMS[p.param].label : "hw" in p ? "" : p.t))
+    .join("");
 
 /** Controls a recipe may ask for that no MiniLab knob reaches in the Synth view: you set them on screen. */
 export const SCREEN_ONLY: ParamId[] = ["wtTable"];

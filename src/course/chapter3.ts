@@ -25,7 +25,7 @@ export const CHAPTER_3: Chapter = {
       sound: { ...SAW },
       steps: [
         {
-          text: "Hold a note and turn knob 1 (Cutoff) down to about 300 Hz.",
+          text: "Hold a note and turn [[cutoff]] down to about 300 Hz.",
           why: "The lines above the cutoff fade out of the right picture, and the buzz turns into a soft, muffled tone.",
           checks: [{ param: "cutoff", max: 450, aim: 300 }],
         },
@@ -50,12 +50,12 @@ export const CHAPTER_3: Chapter = {
       sound: { ...SAW, cutoff: 1200, resonance: 0.7 },
       steps: [
         {
-          text: "Hold a note and raise knob 2 (Resonance) to about 8.",
+          text: "Hold a note and raise [[resonance]] to about 8.",
           why: "A sharp peak grows at the cutoff, and you hear a whistle on top of the note.",
           checks: [{ param: "resonance", min: 6, aim: 8 }],
         },
         {
-          text: "Now sweep the cutoff (knob 1) down to about 300 Hz.",
+          text: "Now sweep [[cutoff]] down to about 300 Hz.",
           why: "The whistle follows the cutoff down, through the harmonics: 'yow'.",
           checks: [{ param: "cutoff", max: 450, aim: 300 }],
         },
@@ -71,7 +71,7 @@ export const CHAPTER_3: Chapter = {
       title: "Filter types",
       text: [
         "A low-pass is the most used filter, but not the only one. A **high-pass** does the opposite: it turns down everything below the cutoff, so the sound gets thin and airy. A **band-pass** keeps only a band around the cutoff and turns down both sides, which sounds nasal, like a telephone.",
-        "Knob 3, **Filt Morph**, slides smoothly from low-pass, through band-pass, to high-pass. Watch the shape of the response change.",
+        "**Filt Morph** slides smoothly from low-pass, through band-pass, to high-pass. Watch the shape of the response change.",
       ],
       widget: { kind: "response" },
       blocks: ["osc1", "filter", "amp", "output"],
@@ -79,7 +79,7 @@ export const CHAPTER_3: Chapter = {
       sound: { ...SAW, cutoff: 900, resonance: 2, filterMorph: 0 },
       steps: [
         {
-          text: "Hold a note and turn knob 3 (Filt Morph) all the way up, to high-pass.",
+          text: "Hold a note and turn [[filterMorph]] all the way up, to high-pass.",
           why: "The bass is gone: only the bright upper harmonics are left. Thin, buzzy, and far away.",
           checks: [{ param: "filterMorph", min: 0.95, aim: 1 }],
         },
@@ -89,7 +89,7 @@ export const CHAPTER_3: Chapter = {
           checks: [{ param: "filterMorph", min: 0.45, max: 0.55, aim: 0.5 }],
         },
         {
-          text: "Keep the band-pass, and sweep the cutoff (knob 1) up to about 2.5 kHz.",
+          text: "Keep the band-pass, and sweep [[cutoff]] up to about 2.5 kHz.",
           why: "The band moves up through the harmonics: it sounds like someone saying 'ooh', then 'eeh'.",
           checks: [{ param: "cutoff", min: 2000, aim: 2500 }],
         },
@@ -108,7 +108,7 @@ export const CHAPTER_3: Chapter = {
       sound: { ...SAW, cutoff: 500, keyTrack: 0.5 },
       steps: [
         {
-          text: "Turn knob 2 (Key Track) down to 0%.",
+          text: "Turn [[keyTrack]] down to 0%.",
           why: "The cutoff now stays at 500 Hz whatever you play.",
           checks: [{ param: "keyTrack", max: 0.03, aim: 0 }],
         },
@@ -118,7 +118,7 @@ export const CHAPTER_3: Chapter = {
           checks: [{ play: "low" }, { play: "high" }],
         },
         {
-          text: "Turn Key Track up to 100%, and play a high note again.",
+          text: "Turn [[keyTrack]] up to 100%, and play a high note again.",
           why: "The cutoff jumps up with the note, and the high note keeps its brightness.",
           checks: [{ param: "keyTrack", min: 0.95, aim: 1 }, { play: "high" }],
         },
@@ -138,12 +138,12 @@ export const CHAPTER_3: Chapter = {
       sound: { osc1Wave: 0, drive: 0, cutoff: 18000 },
       steps: [
         {
-          text: "Hold a note and turn knob 1 (Drive) up to about 70%.",
+          text: "Hold a note and turn [[drive]] up to about 70%.",
           why: "New lines appear above the sine in the right picture: the drive made harmonics. The pure tone turns buzzy.",
           checks: [{ param: "drive", min: 0.55, aim: 0.7 }],
         },
         {
-          text: "Now bring the cutoff (knob 2) down to about 800 Hz.",
+          text: "Now bring [[cutoff]] down to about 800 Hz.",
           why: "The filter takes the highest of the new harmonics away again: what is left is warm and thick, not harsh.",
           checks: [{ param: "cutoff", max: 1100, aim: 800 }],
         },
@@ -155,7 +155,7 @@ export const CHAPTER_3: Chapter = {
       text: [
         "Filters are built in different ways, and each has its own sound. The **clean** filter turns frequencies above the cutoff down gently and stays polite even with a lot of resonance.",
         "The **ladder** filter copies the circuit in Moog's synths from the 1960s. It cuts much more steeply, sounds fatter, and with high resonance it starts to ring on its own, like a sine wave at the cutoff. This is **self-oscillation**.",
-        "Knob 1 switches between them (Filt Model). Compare the two at the same settings.",
+        "Filt Model switches between them. Compare the two at the same settings.",
       ],
       widget: {
         kind: "compare",
@@ -168,17 +168,17 @@ export const CHAPTER_3: Chapter = {
       sound: { ...SAW, filterModel: 0, cutoff: 800, resonance: 3 },
       steps: [
         {
-          text: "Play a low note on A, then switch to B (click B, or click the encoder).",
+          text: "Play a low note on A, then switch to B (click B{{, or click the encoder}}).",
           why: "The ladder takes more of the highs away at the same cutoff: deeper, rounder, heavier.",
           checks: [{ param: "filterModel", is: 1 }, { play: "low" }],
         },
         {
-          text: "Turn Resonance (knob 3) almost all the way up, to about 19, and hold a note.",
+          text: "Turn [[resonance]] almost all the way up, to about 19, and hold a note.",
           why: "Listen for a pure whistle at the cutoff: the filter is singing on its own, on top of the note. It only does this near the top of the knob.",
           checks: [{ param: "resonance", min: 17.5, aim: 19 }],
         },
         {
-          text: "Sweep the cutoff (knob 2) up to about 2 kHz.",
+          text: "Sweep [[cutoff]] up to about 2 kHz.",
           why: "The whistle slides up with it, squelching through the note: the sound of acid house.",
           checks: [{ param: "cutoff", min: 1600, aim: 2000 }],
         },

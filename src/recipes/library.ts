@@ -82,12 +82,12 @@ const pluck: Recipe = {
       checks: [{ play: "note" }],
     },
     {
-      text: "Turn Sustain all the way down (fader 3).",
+      text: "Turn Sustain all the way down.",
       why: "Sustain is the level while you hold the key. At zero, every note fades out even while held.",
       checks: [{ param: "sustain", max: 0.05, aim: 0 }],
     },
     {
-      text: "Shorten the fade: bring Decay down to about 300 ms (fader 2).",
+      text: "Shorten the fade: bring Decay down to about 300 ms.",
       why: "Decay is how long the note takes to fade. Short and it's a pluck; longer and it rings like a bell.",
       checks: [{ param: "decay", max: 0.5, aim: 0.3 }],
     },
@@ -163,12 +163,12 @@ const supersaw: Recipe = {
       checks: [{ param: "stereoWidth", min: 0.9, aim: 1 }],
     },
     {
-      text: "Make it swell in: raise Attack to about 600 ms (fader 1).",
+      text: "Make it swell in: raise Attack to about 600 ms.",
       why: "Attack is the fade-in. Pads rise slowly instead of starting with a hit.",
       checks: [{ param: "attack", min: 0.3, aim: 0.6 }],
     },
     {
-      text: "Make it fade away slowly: raise Release to about 2 seconds (fader 4).",
+      text: "Make it fade away slowly: raise Release to about 2 seconds.",
       why: "Release is the fade-out after you let go. Long releases let chords blur into each other.",
       checks: [{ param: "release", min: 1.2, aim: 2 }],
     },
@@ -441,7 +441,7 @@ const syncLead: Recipe = {
     },
     {
       text: "Play a melody.",
-      why: "Each note screams in. Try the pitch strip for bends.",
+      why: "Each note screams in.{{ Try the pitch strip for bends.}}",
       checks: [{ play: "note" }],
     },
   ],
@@ -507,7 +507,7 @@ const vowelLead: Recipe = {
     },
     {
       text: "Play a melody and hold some notes.",
-      why: "Long notes sing through the vowels. Push the mod strip for vibrato.",
+      why: "Long notes sing through the vowels.{{ Push the mod strip for vibrato.}}",
       checks: [{ play: "note" }],
     },
   ],
@@ -567,12 +567,12 @@ const pwmStrings: Recipe = {
       checks: [{ param: "osc2Detune", min: 5, max: 20, aim: 9 }],
     },
     {
-      text: "Bow it in: Attack to about 450 ms (fader 1).",
+      text: "Bow it in: Attack to about 450 ms.",
       why: "Strings swell in rather than start with a hit.",
       checks: [{ param: "attack", min: 0.3, aim: 0.45 }],
     },
     {
-      text: "Let it ring out: Release to about 1.3 s (fader 4).",
+      text: "Let it ring out: Release to about 1.3 s.",
       why: "Chords now fade away after you let go.",
       checks: [{ param: "release", min: 0.9, aim: 1.3 }],
     },
@@ -638,12 +638,12 @@ const scanPad: Recipe = {
       checks: [{ param: "unison", is: 3 }],
     },
     {
-      text: "Swell in: Attack to about 800 ms (fader 1).",
+      text: "Swell in: Attack to about 800 ms.",
       why: "Pads rise slowly.",
       checks: [{ param: "attack", min: 0.5, aim: 0.8 }],
     },
     {
-      text: "Fade out slowly: Release to about 2.5 s (fader 4).",
+      text: "Fade out slowly: Release to about 2.5 s.",
       why: "Chords blur into each other.",
       checks: [{ param: "release", min: 1.5, aim: 2.5 }],
     },
@@ -674,12 +674,12 @@ const laser: Recipe = {
       checks: [{ play: "note" }],
     },
     {
-      text: "Make it short: Sustain down to 0 (fader 3).",
+      text: "Make it short: Sustain down to 0.",
       why: "Every note now fades out by itself.",
       checks: [{ param: "sustain", max: 0.05, aim: 0 }],
     },
     {
-      text: "Shorten the fade: Decay to about 350 ms (fader 2).",
+      text: "Shorten the fade: Decay to about 350 ms.",
       why: "A quick zap, not a long tone.",
       checks: [{ param: "decay", max: 0.5, aim: 0.35 }],
     },
@@ -765,7 +765,7 @@ const wind: Recipe = {
       checks: [{ param: "lfoDepth", min: 0.4, aim: 0.6 }],
     },
     {
-      text: "Fade it in and out: Attack to about 1.2 s (fader 1) and Release to about 3 s (fader 4).",
+      text: "Fade it in and out: Attack to about 1.2 s and Release to about 3 s.",
       why: "Wind doesn't start or stop suddenly.",
       checks: [
         { param: "attack", min: 0.8, aim: 1.2 },
@@ -804,12 +804,12 @@ const toms: Recipe = {
       checks: [{ param: "osc1Wave", is: 0 }],
     },
     {
-      text: "Make it a hit: Sustain down to 0 (fader 3).",
+      text: "Make it a hit: Sustain down to 0.",
       why: "Every note fades out by itself, like a struck drum.",
       checks: [{ param: "sustain", max: 0.05, aim: 0 }],
     },
     {
-      text: "Shorten it: Decay to about 450 ms (fader 2).",
+      text: "Shorten it: Decay to about 450 ms.",
       why: "A drum's ring is short.",
       checks: [{ param: "decay", max: 0.6, aim: 0.45 }],
     },
@@ -880,12 +880,12 @@ const ePiano: Recipe = {
       checks: [{ param: "oscMix", min: 0.2, max: 0.45, aim: 0.3 }],
     },
     {
-      text: "Let notes fade while held: Sustain to about 25% (fader 3).",
+      text: "Let notes fade while held: Sustain to about 25%.",
       why: "A piano note dies away even if you hold the key, but not to silence straight away.",
       checks: [{ param: "sustain", min: 0.1, max: 0.4, aim: 0.25 }],
     },
     {
-      text: "A long fade: Decay to about 1.6 s (fader 2).",
+      text: "A long fade: Decay to about 1.6 s.",
       why: "The note rings, then settles.",
       checks: [{ param: "decay", min: 1.2, aim: 1.6 }],
     },
@@ -961,17 +961,17 @@ const bell: Recipe = {
       checks: [{ param: "fmAmount", min: 0.3, max: 0.7, aim: 0.45 }],
     },
     {
-      text: "Strike and ring: Sustain down to 0 (fader 3).",
+      text: "Strike and ring: Sustain down to 0.",
       why: "A bell is struck once and rings out.",
       checks: [{ param: "sustain", max: 0.05, aim: 0 }],
     },
     {
-      text: "A long ring: Decay to about 2.5 s (fader 2).",
+      text: "A long ring: Decay to about 2.5 s.",
       why: "Bells ring for a long time.",
       checks: [{ param: "decay", min: 1.8, aim: 2.5 }],
     },
     {
-      text: "Keep ringing after you let go: Release to about 2 s (fader 4).",
+      text: "Keep ringing after you let go: Release to about 2 s.",
       why: "A real bell doesn't stop when you lift your finger.",
       checks: [{ param: "release", min: 1.2, aim: 2 }],
     },
@@ -1058,7 +1058,7 @@ const stadiumBrass: Recipe = {
       checks: [{ param: "filterSustain", min: 0.4, max: 0.7, aim: 0.55 }],
     },
     {
-      text: "Let chords ring a little after you let go: Release to about 350 ms (fader 4).",
+      text: "Let chords ring a little after you let go: Release to about 350 ms.",
       why: "A short tail makes the stabs sound full instead of chopped off.",
       checks: [{ param: "release", min: 0.25, max: 0.8, aim: 0.35 }],
     },

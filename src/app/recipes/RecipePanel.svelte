@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { formatValue, PARAMS } from "../../audio/params";
+  import { formatValue, PARAMS, type ParamId } from "../../audio/params";
   import { aimOf, describe, hardwareFor, isPlay, LINGER_MS } from "../../recipes/recipe";
   import type { Playground } from "../playground.svelte";
   import { KNOB_PAGES, paramLabel } from "../synth/blocks";
+  import StepText from "./StepText.svelte";
 
   let { pg }: { pg: Playground } = $props();
 
@@ -12,6 +13,11 @@
   /** Every control the step asks for, and where each is on the MiniLab. */
   let controls = $derived(pg.recipeParams.map((id) => ({ id, hw: hardwareFor(id) })));
   let page = $derived(KNOB_PAGES[pg.focusPage]);
+  /** Where a control is on the MiniLab in the Synth view: its fader, or its knob on its block's page. */
+  const where = (id: ParamId) => {
+    const at = hardwareFor(id);
+    return at && `${at.kind} ${at.index + 1}`;
+  };
 
   function save() {
     const name = prompt("Preset name", `My ${run.recipe.name}`);
@@ -43,8 +49,8 @@
   {#if step}
     <div class="body" class:solo={!pg.hasDevice}>
       <div class="what">
-        <p class="text">{step.text}</p>
-        <p class="why">{step.why}</p>
+        <p class="text"><StepText {pg} text={step.text} {where} /></p>
+        <p class="why"><StepText {pg} text={step.why} {where} /></p>
         <ul class="checks">
           {#each step.checks as c, i (i)}
             <li class:ok={run.holds(i)}>

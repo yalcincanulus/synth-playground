@@ -170,8 +170,8 @@ export const BLOCKS: Record<BlockId, BlockDef> = {
   },
   ampEnv: {
     title: "Amp Envelope",
-    short: "The volume shape of each note. Faders 1–4.",
-    explain: "The volume shape of each note: Attack (fade in), Decay (fall), Sustain (level while held), Release (fade out after you let go). Faders 1–4.",
+    short: "The volume shape of each note.",
+    explain: "The volume shape of each note: Attack (fade in), Decay (fall), Sustain (level while held), Release (fade out after you let go).",
     tryThis: "A long Attack makes a slow swell. Sustain 0 with a short Decay makes a pluck.",
     params: ["attack", "decay", "sustain", "release"],
   },
@@ -193,7 +193,7 @@ export const BLOCKS: Record<BlockId, BlockDef> = {
     title: "Mod Matrix",
     short: "Extra connections: any source to any destination.",
     explain: "Each route connects a source (an LFO, an envelope, how hard you play, which key, the mod strip, or a random value per note) to a destination (pitch, cutoff, wavetable position…), by an Amount. Negative amounts move the destination the other way. Routes add to the synth's fixed wiring, which is listed greyed out underneath, and show as cables in the source's colour. Make a route by dragging from a modulator's ○ socket to a block; drag a cable's end ● to another block to move it, or into empty space to remove it.",
-    tryThis: "Drag from the Velocity socket (in Playing) to the Filter and let go on Cutoff, then play soft and hard notes: harder notes are brighter. Knobs 1–8 set the amounts of routes 1–8.",
+    tryThis: "Drag from the Velocity socket (in Playing) to the Filter and let go on Cutoff, then play soft and hard notes: harder notes are brighter.",
     params: [],
   },
   perf: {

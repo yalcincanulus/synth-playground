@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { formatValue, PARAMS } from "../../audio/params";
+  import { formatValue, PARAMS, type ParamId } from "../../audio/params";
   import { introducedOn, markTerms, type Piece, type Term } from "../../course/glossary";
   import { controlsOf, lessonBlockOf } from "../../course/lesson";
   import { FADERS } from "../../presets/presets";
@@ -7,6 +7,7 @@
   import { describe, isPlay, LINGER_MS } from "../../recipes/recipe";
   import type { Playground } from "../playground.svelte";
   import { BLOCKS } from "../synth/blocks";
+  import StepText from "../recipes/StepText.svelte";
   import ParamControl from "../synth/ParamControl.svelte";
   import ChapterRecipes from "./ChapterRecipes.svelte";
   import CourseContents from "./CourseContents.svelte";
@@ -26,6 +27,12 @@
   let chapterNumber = $derived(CHAPTERS.indexOf(course.chapter) + 1);
   /** The last page of its chapter: it offers the chapter's recipes once done. */
   let chapterEnd = $derived(course.chapter.lessons.at(-1) === lesson);
+  /** Where a control is on the MiniLab on this page: knobs in the page's order, the amp envelope on its faders. */
+  const where = (id: ParamId) => {
+    const knob = lesson.knobs.indexOf(id);
+    if (knob >= 0) return `knob ${knob + 1}`;
+    return faders.includes(id) ? `fader ${FADERS.indexOf(id) + 1}` : null;
+  };
 
   /** The glossary tooltip: the term pointed at, and where it shows (under the word, or over it near the bottom). */
   let tip = $state.raw<{ term: Term; left: number; top?: number; bottom?: number } | null>(null);
@@ -93,9 +100,9 @@
             <li class={state}>
               <span class="tick">{state === "done" ? "✓" : i + 1}</span>
               <div>
-                <p class="text">{step.text}</p>
+                <p class="text"><StepText {pg} text={step.text} {where} /></p>
                 {#if state === "now" && run}
-                  <p class="why">{step.why}</p>
+                  <p class="why"><StepText {pg} text={step.why} {where} /></p>
                   {#if !run.complete}
                     <ul class="checks">
                       {#each step.checks as c, k (k)}
@@ -113,7 +120,7 @@
                     </p>
                   {/if}
                 {:else if state === "done"}
-                  <p class="why done-why">{step.why}</p>
+                  <p class="why done-why"><StepText {pg} text={step.why} {where} /></p>
                 {/if}
               </div>
             </li>

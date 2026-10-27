@@ -1,8 +1,27 @@
 import { describe, expect, test } from "bun:test";
 import { PARAMS } from "../audio/params";
 import { RECIPES } from "./library";
-import { aimOf, blockOf, describe as say, hardwareFor, initValues, isPlay, SCREEN_ONLY, settingHolds, type SettingCheck } from "./recipe";
+import { aimOf, blockOf, describe as say, hardwareFor, initValues, isPlay, SCREEN_ONLY, settingHolds, stepPieces, stepPlain, type SettingCheck } from "./recipe";
 import { SHOWN_WHEN } from "../app/synth/blocks";
+
+/** Where something is on the MiniLab: only in a step's `{{…}}` asides, never in the plain text. */
+const HARDWARE = /\b(knobs? \d|faders? \d|MiniLab|encoder|(mod|pitch) strip)\b/i;
+
+describe("step text", () => {
+  test("splits into words, controls and MiniLab asides", () => {
+    expect(stepPieces("Turn [[cutoff]] down (click B{{, or the encoder}}).")).toEqual([
+      { t: "Turn " },
+      { param: "cutoff" },
+      { t: " down (click B" },
+      { hw: ", or the encoder" },
+      { t: ")." },
+    ]);
+  });
+
+  test("reads plainly without a MiniLab", () => {
+    expect(stepPlain("Turn [[cutoff]] down (click B{{, or the encoder}}).")).toBe("Turn Cutoff down (click B).");
+  });
+});
 
 describe("recipes", () => {
   test("ids are unique", () => {
@@ -44,6 +63,15 @@ describe("recipes", () => {
             if (isPlay(c)) continue;
             expect(blockOf(c.param), c.param).not.toBeNull();
             if (!SCREEN_ONLY.includes(c.param)) expect(hardwareFor(c.param), c.param).not.toBeNull();
+          }
+        }
+      });
+
+      test("names controls, not where they are on the MiniLab; every named control is on a Synth view block", () => {
+        for (const step of recipe.steps) {
+          for (const t of [step.text, step.why]) {
+            expect(stepPlain(t)).not.toMatch(HARDWARE);
+            for (const piece of stepPieces(t)) if ("param" in piece) expect(blockOf(piece.param), t).not.toBeNull();
           }
         }
       });

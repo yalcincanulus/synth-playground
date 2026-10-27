@@ -27,7 +27,7 @@ export const CHAPTER_5: Chapter = {
       sound: { osc1Wave: 3, pulseWidth: 0.5 },
       steps: [
         {
-          text: "Hold a note and turn knob 1 (Pulse Width) down to about 25%.",
+          text: "Hold a note and turn [[pulseWidth]] down to about 25%.",
           why: "Less hollow, more nasal. In the spectrogram, new harmonics fill the gaps between the old ones.",
           checks: [{ param: "pulseWidth", max: 0.3, aim: 0.25 }],
         },
@@ -53,12 +53,12 @@ export const CHAPTER_5: Chapter = {
       sound: { osc1Wave: 3, pulseWidth: 0.3, lfo2Target: 3, lfo2Wave: 0, lfo2Rate: 0.8, lfo2Depth: 0 },
       steps: [
         {
-          text: "Hold a note and turn knob 2 (LFO2 Depth) up to about 50%.",
+          text: "Hold a note and turn [[lfo2Depth]] up to about 50%.",
           why: "The pulse in the picture widens and narrows by itself, and the note starts to shimmer.",
           checks: [{ param: "lfo2Depth", min: 0.35, aim: 0.5 }],
         },
         {
-          text: "Speed it up: turn knob 3 (LFO2 Rate) to about 4 Hz.",
+          text: "Speed it up: turn [[lfo2Rate]] to about 4 Hz.",
           why: "A fast, watery warble, close to the chorus effect.",
           checks: [{ param: "lfo2Rate", min: 3, aim: 4 }],
         },
@@ -83,12 +83,12 @@ export const CHAPTER_5: Chapter = {
       sound: { osc1Wave: 2, osc2Wave: 2, oscMix: 1, osc2Semi: 0, osc2Detune: 0, oscSync: 0 },
       steps: [
         {
-          text: "Turn knob 1 (Sync) on.",
+          text: "Turn [[oscSync]] on.",
           why: "Nothing changes yet: at the same pitch, Osc 2 finishes each cycle just as it is restarted.",
           checks: [{ param: "oscSync", is: 1 }],
         },
         {
-          text: "Hold a note and turn knob 2 (Osc2 Pitch) up to +7 st.",
+          text: "Hold a note and turn [[osc2Semi]] up to +7 st.",
           why: "The note stays where it was, but its tone changes: Osc 2 now fits one and a half of its cycles into each of Osc 1's.",
           checks: [{ param: "osc2Semi", min: 5, max: 9, aim: 7 }],
         },
@@ -113,12 +113,12 @@ export const CHAPTER_5: Chapter = {
       sound: { osc1Wave: 0, osc2Wave: 0, oscMix: 0, osc2Semi: 0, osc2Detune: 0, fmAmount: 0 },
       steps: [
         {
-          text: "Hold a note and turn knob 1 (FM Amount) up to about 40%.",
+          text: "Hold a note and turn [[fmAmount]] up to about 40%.",
           why: "The sine bends and gets brighter, though only two sines are playing.",
           checks: [{ param: "fmAmount", min: 0.3, aim: 0.4 }],
         },
         {
-          text: "Turn knob 2 (Osc2 Pitch) up to +12 st, an octave.",
+          text: "Turn [[osc2Semi]] up to +12 st, an octave.",
           why: "Osc 2 now swings twice for each of Osc 1's cycles: other harmonics, a hollower tone, still in tune.",
           checks: [{ param: "osc2Semi", is: 12 }],
         },
@@ -144,17 +144,17 @@ export const CHAPTER_5: Chapter = {
       sound: { osc1Wave: 4, wtTable: 0, wtPos: 0 },
       steps: [
         {
-          text: "Hold a note and turn knob 1 (WT Pos) slowly up to about 50%.",
+          text: "Hold a note and turn [[wtPos]] slowly up to about 50%.",
           why: "This table holds the four basic waves: the sine morphs into a triangle, then on toward a sawtooth.",
           checks: [{ param: "wtPos", min: 0.4, max: 0.6, aim: 0.5 }],
         },
         {
-          text: "Turn knob 2 (Wavetable) to Vowels.",
+          text: "Turn [[wtTable]] to Vowels.",
           why: "Another table, another row of waves. These are made from the peaks a voice makes for each vowel.",
           checks: [{ param: "wtTable", is: 5 }],
         },
         {
-          text: "Hold a note and sweep knob 1 (WT Pos) all the way up.",
+          text: "Hold a note and sweep [[wtPos]] all the way up.",
           why: "The synth talks: the vowel changes as you turn.",
           checks: [{ param: "wtPos", min: 0.9, aim: 1 }],
         },
@@ -175,17 +175,17 @@ export const CHAPTER_5: Chapter = {
       sound: { osc1Wave: 4, wtTable: 4, wtPos: 0.5, lfo2Target: 4, lfo2Wave: 0, lfo2Rate: 1.5, lfo2Depth: 0 },
       steps: [
         {
-          text: "Hold a note and turn knob 2 (LFO2 Depth) up to about 70%.",
+          text: "Hold a note and turn [[lfo2Depth]] up to about 70%.",
           why: "The lit wave travels back and forth through the table, and the sound rises and falls with it.",
           checks: [{ param: "lfo2Depth", min: 0.5, aim: 0.7 }],
         },
         {
-          text: "Slow it down: turn knob 3 (LFO2 Rate) to about 0.2 Hz.",
+          text: "Slow it down: turn [[lfo2Rate]] to about 0.2 Hz.",
           why: "One trip every five seconds: the sound evolves slowly while you hold it, like a wavetable pad.",
           checks: [{ param: "lfo2Rate", max: 0.3, aim: 0.2 }],
         },
         {
-          text: "Turn knob 1 (WT Pos) down to about 20%.",
+          text: "Turn [[wtPos]] down to about 20%.",
           why: "The knob sets the middle of the movement, and the LFO swings around it: now it stays in the darker, lower part of the table.",
           checks: [{ param: "wtPos", max: 0.3, aim: 0.2 }],
         },

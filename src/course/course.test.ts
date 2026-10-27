@@ -1,12 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { PARAMS, toControl } from "../audio/params";
 import { FADERS } from "../presets/presets";
-import { aimOf, describe as say, isPlay, settingHolds, type SettingCheck } from "../recipes/recipe";
+import { aimOf, describe as say, isPlay, settingHolds, stepPieces, stepPlain, type SettingCheck } from "../recipes/recipe";
 import { SHOWN_WHEN } from "../app/synth/blocks";
 import { RECIPES } from "../recipes/library";
 import { CHAPTERS, PAGES } from "./course";
 import { GLOSSARY, introducedOn, markTerms, termFor } from "./glossary";
 import { controlsOf, lessonBlockOf, lessonValues } from "./lesson";
+
+/** Where something is on the MiniLab: only in a step's `{{…}}` asides, never in the plain text. */
+const HARDWARE = /\b(knobs? \d|faders? \d|MiniLab|encoder|(mod|pitch) strip)\b/i;
 
 /** Bold words that are the page's control labels, not terms: the reduced synth and the page explain them. */
 const NOT_TERMS = ["Volume", "Filt Env", "F Decay", "Filt Morph", "Depth", "Rate", "LFO To", "Random", "LFO Sync", "Amount", "LFO 2", "LFO 3", "FM Amount", "WT Pos", "Synth view"];
@@ -77,6 +80,17 @@ describe("course", () => {
         for (const id of lesson.faders ?? []) {
           expect(FADERS).toContain(id);
           expect(lesson.knobs).not.toContain(id);
+        }
+      });
+
+      test("names controls, not where they are on the MiniLab, and only the page's controls", () => {
+        for (const p of lesson.text) expect(p).not.toMatch(/\[\[|\{\{/);
+        for (const p of lesson.text) expect(p).not.toMatch(HARDWARE);
+        for (const step of lesson.steps) {
+          for (const t of [step.text, step.why]) {
+            expect(stepPlain(t)).not.toMatch(HARDWARE);
+            for (const piece of stepPieces(t)) if ("param" in piece) expect(controlsOf(lesson), t).toContain(piece.param);
+          }
         }
       });
 
