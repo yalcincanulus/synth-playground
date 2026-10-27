@@ -75,8 +75,8 @@
     localStorage.setItem(KEYS_OPEN_KEY, keysOpen ? "open" : "closed");
   }
 
-  // Play view: the drums or the step sequencer below the knobs. Editing either on the MiniLab brings its tab up.
-  let rhythm = $state<"drums" | "seq">("drums");
+  // Play view: the step sequencer or the drums below the knobs. Editing either on the MiniLab brings its tab up.
+  let rhythm = $state<"drums" | "seq">("seq");
   $effect(() => {
     if (pg.seqEdit) rhythm = "seq";
   });
@@ -320,11 +320,11 @@
     <section class="rhythm">
       <div class="rhythm-bar">
         <div class="seg" role="tablist" aria-label="Rhythm">
-          <button role="tab" aria-selected={rhythm === "drums"} class:active={rhythm === "drums"} onclick={() => (rhythm = "drums")}>
-            Drums <i class="dot" class:on={pg.drumsOn}></i>
-          </button>
           <button role="tab" aria-selected={rhythm === "seq"} class:active={rhythm === "seq"} onclick={() => (rhythm = "seq")}>
             Step sequencer <i class="dot" class:on={pg.noteSeq.enabled}></i>
+          </button>
+          <button role="tab" aria-selected={rhythm === "drums"} class:active={rhythm === "drums"} onclick={() => (rhythm = "drums")}>
+            Drums <i class="dot" class:on={pg.drumsOn}></i>
           </button>
         </div>
         <span class="hint">Both play together with ▶, in time with each other.</span>
@@ -555,9 +555,10 @@
   .bpm input::-webkit-inner-spin-button, .bpm input::-webkit-outer-spin-button { appearance: none; margin: 0; }
 
   /* ---- Play view: the MiniLab's controls and the sound, then the rhythm */
-  .play { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 10px; }
+  /* The controls take the width they need; the visualiser gets the rest. */
+  .play { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; }
   .surface { display: grid; grid-template-columns: auto 1fr auto; column-gap: 24px; align-items: center; padding: 8px 14px; }
-  .surface-note { grid-column: 1 / -1; margin: 4px 0 0; font-size: 11.5px; color: #a9b6ba; }
+  .surface-note { grid-column: 1 / -1; width: 0; min-width: 100%; margin: 4px 0 0; font-size: 11.5px; color: #a9b6ba; }
   .strips { display: flex; gap: 8px; }
   .strip { width: 28px; height: 136px; background: #0b0e10; border-radius: 5px; position: relative; overflow: hidden; }
   .strip span { position: absolute; bottom: 4px; width: 100%; text-align: center; font-size: 10px; color: var(--dim); }
@@ -567,8 +568,8 @@
   .knobs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px 8px; }
   .faders { display: grid; grid-template-columns: repeat(4, 58px); }
   .main-viz { display: flex; flex-direction: column; min-height: 200px; }
-  .canvas { position: relative; flex: 1; min-height: 0; }
-  .spectrogram { position: absolute; inset: 0; width: 100%; height: 100%; display: block; border-radius: 4px; background: #0b0e10; }
+  .canvas { position: relative; flex: 1; min-height: 0; border-radius: 4px; background: #0b0e10; }
+  .spectrogram { position: absolute; inset: 0; width: 100%; height: 100%; display: block; border-radius: 4px; }
   .tabs { display: flex; gap: 4px; align-items: center; margin-bottom: 6px; }
   .tabs button { font-size: 12px; padding: 2px 10px; }
   .tabs .active { border-color: var(--accent); color: var(--accent); }
