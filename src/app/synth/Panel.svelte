@@ -18,11 +18,13 @@
     wide?: boolean;
     /** The modulations around each knob. */
     rings: (id: ParamId) => KnobRing[] | undefined;
+    /** The light in the header: lit while the panel is shaping the sound (always, unless given), dark while it isn't. An effect's light is its switch. */
+    power?: boolean;
     /** Extra things in the header, after the title (tags for destinations without a knob). */
     tags?: Snippet;
     children?: Snippet;
   }
-  let { pg, id, inactive = null, compact = false, wide = false, rings, tags, children }: Props = $props();
+  let { pg, id, inactive = null, compact = false, wide = false, power = true, rings, tags, children }: Props = $props();
 
   let def = $derived(BLOCKS[id]);
   // Every control, always: one that does nothing right now is dimmed in its place, so nothing jumps around.
@@ -81,20 +83,24 @@
         }}>⠿</button
       >
     {/if}
-    <h3>{def.title}</h3>
     {#if effect}
       <button
-        class="switch"
+        class="bulb"
         class:on={effectOn}
         aria-pressed={effectOn}
-        title={effectOn ? `Switch ${def.title} off (it is taken out of the chain)` : `Switch ${def.title} on`}
+        aria-label="{def.title} on"
+        title={effectOn ? `On: click to switch ${def.title} off (it is taken out of the chain)` : `Off: click to switch ${def.title} on`}
         onclick={(e) => {
           e.stopPropagation();
           pg.toggleEffect(effect!);
-        }}>{effectOn ? "On" : "Off"}</button
-      >
+        }}
+      ></button>
+    {:else}
+      <span class="bulb" class:on={power} title={power ? `On: ${def.title} is shaping the sound` : `Off${inactive ? `: ${inactive}` : ""}`}></span>
     {/if}
-    {#if inactive && !effect}<span class="note">{inactive}</span>{/if}
+    <h3>{def.title}</h3>
+    <!-- The light already says "off"; a note is kept when it says more (e.g. "FM only"). -->
+    {#if inactive && !effect && inactive !== "off"}<span class="note">{inactive}</span>{/if}
     {@render tags?.()}
     {#if tap}
       <button
@@ -161,8 +167,19 @@
   .listen.on { opacity: 1; background: #ffcc33; border-color: #ffcc33; }
   .grip { padding: 0 2px; margin: 0 -4px 0 -3px; font-size: 12px; line-height: 16px; background: none; border: none; color: var(--dim); cursor: grab; }
   .grip:hover, .grip:focus-visible { color: var(--text); }
-  .switch { padding: 0 6px; font-size: 9.5px; line-height: 14px; border-radius: 7px; color: var(--dim); }
-  .switch.on { background: var(--accent); border-color: var(--accent); color: #0b1314; }
+  /* A little light: dark when off, glowing when on. */
+  .bulb {
+    flex: none; width: 9px; height: 9px; padding: 0; border-radius: 50%; border: 1px solid #0006;
+    background: radial-gradient(circle at 35% 35%, #3a4448, #1c2326 70%); box-shadow: inset 0 1px 1px #0008;
+    transition: background 0.15s, box-shadow 0.15s;
+  }
+  button.bulb { cursor: pointer; }
+  button.bulb:hover { box-shadow: inset 0 1px 1px #0008, 0 0 0 2px #ffffff18; }
+  .bulb.on {
+    background: radial-gradient(circle at 35% 35%, #fff, var(--accent) 45%, color-mix(in srgb, var(--accent) 70%, #000));
+    box-shadow: 0 0 4px var(--accent), 0 0 10px color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+  button.bulb.on:hover { box-shadow: 0 0 4px var(--accent), 0 0 10px color-mix(in srgb, var(--accent) 55%, transparent), 0 0 0 2px #ffffff18; }
 
   .body { display: flex; flex-direction: column; gap: 10px; padding: 8px 10px 10px; flex: 1; }
   /* The first picture takes the panel's spare height, so a short panel beside a tall one has no hole under its controls. */

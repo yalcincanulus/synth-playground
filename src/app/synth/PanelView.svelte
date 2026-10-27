@@ -148,11 +148,12 @@
 
 <div class="plugin" bind:this={container}>
   <div class="engine top">
-    <Panel {pg} id="osc1" rings={ringsOf}>
+    <!-- Mixed out (Osc Mix at 0/100), Osc 1 is silent, but with Sync on it still restarts Osc 2's wave. -->
+    <Panel {pg} id="osc1" power={pg.values.oscMix <= 0.99 || pg.values.oscSync === 1} rings={ringsOf} inactive={pg.values.oscMix > 0.99 ? (pg.values.oscSync ? "sync only" : "mixed out") : null}>
       {#snippet tags()}{@render destTag("pitch", "Pitch (both)")}{/snippet}
       <LiveCanvas height={56} draw={viz.scope(() => taps.osc1, color, () => viz.oscIdeal(pg.values, 0, engine))} />
     </Panel>
-    <Panel {pg} id="osc2" rings={ringsOf} inactive={pg.values.oscMix < 0.01 ? (pg.values.fmAmount >= 0.01 ? "FM only" : "mixed out") : null}>
+    <Panel {pg} id="osc2" power={pg.values.oscMix >= 0.01 || pg.values.fmAmount >= 0.01} rings={ringsOf} inactive={pg.values.oscMix < 0.01 ? (pg.values.fmAmount >= 0.01 ? "FM only" : "mixed out") : null}>
       <LiveCanvas height={56} draw={viz.scope(() => taps.osc2, color, () => viz.oscIdeal(pg.values, 1, engine))} />
     </Panel>
     <Panel {pg} id="mixer" rings={ringsOf}>
@@ -178,14 +179,14 @@
   </div>
 
   <div class="engine bottom">
-    <Panel {pg} id="drive" rings={ringsOf} inactive={pg.values.drive < 0.01 ? "off" : null}>
+    <Panel {pg} id="drive" power={pg.values.drive >= 0.01} rings={ringsOf} inactive={pg.values.drive < 0.01 ? "off" : null}>
       <LiveCanvas height={56} draw={viz.drive(values, color)} />
     </Panel>
     <Panel {pg} id="filter" rings={ringsOf}>
       <LiveCanvas height={70} draw={viz.filter(engine, color)} />
       <LiveCanvas height={34} draw={spectrogram(() => taps.filter, color, () => ({ hz: viz.liveCutoff(engine), label: "cutoff" }))} />
     </Panel>
-    <Panel {pg} id="filter2" rings={ringsOf} inactive={pg.values.filter2Mode === 0 ? "off" : null}>
+    <Panel {pg} id="filter2" power={pg.values.filter2Mode > 0} rings={ringsOf} inactive={pg.values.filter2Mode === 0 ? "off" : null}>
       <LiveCanvas height={56} draw={viz.filter2(engine, color)} />
     </Panel>
     <Panel {pg} id="amp" rings={ringsOf}>
@@ -252,7 +253,7 @@
         </div>
       {:else}
         {#key tab}
-          <Panel {pg} id={tab} wide rings={ringsOf}>
+          <Panel {pg} id={tab} wide power={moves.some((m) => m.amount !== 0)} rings={ringsOf}>
             {#if tab === "ampEnv"}<LiveCanvas height={100} draw={viz.envelope(engine, "amp", () => AENV)} />
             {:else if tab === "filterEnv"}<LiveCanvas height={100} draw={viz.envelope(engine, "filter", () => FENV)} />
             {:else if tab === "modEnv"}<LiveCanvas height={100} draw={viz.envelope(engine, "mod", () => MENV)} />

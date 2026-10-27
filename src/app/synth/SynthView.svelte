@@ -137,9 +137,12 @@
 </script>
 
 <section class="synth">
-  <div class="layout" role="group" aria-label="Synth view look">
-    <button class:on={layout === "cables"} aria-pressed={layout === "cables"} title="The blocks with cables between them: what moves what, drawn" onclick={() => setLayout("cables")}>Cables</button>
-    <button class:on={layout === "panel"} aria-pressed={layout === "panel"} title="A plugin-style panel: modulation shows as rings around the knobs it moves" onclick={() => setLayout("panel")}>Panel</button>
+  <div class="layout" role="group" aria-label="Synth view mode">
+    <span class="label">View</span>
+    <div class="modes">
+      <button data-label="Cables" class:active={layout === "cables"} aria-pressed={layout === "cables"} title="The blocks with cables between them: what moves what, drawn" onclick={() => setLayout("cables")}>Cables</button>
+      <button data-label="Panel" class:active={layout === "panel"} aria-pressed={layout === "panel"} title="A plugin-style panel: modulation shows as rings around the knobs it moves" onclick={() => setLayout("panel")}>Panel</button>
+    </div>
   </div>
   {#if pg.recipeList}<RecipeList {pg} />{/if}
   {#if pg.listening}
@@ -184,7 +187,7 @@
 
   <div class="diagram" bind:this={container}>
     <div class="col">
-      <Block {pg} id="osc1"><LiveCanvas height={32} draw={viz.scope(() => taps.osc1, color, () => viz.oscIdeal(pg.values, 0, engine))} /></Block>
+      <Block {pg} id="osc1" inactive={pg.values.oscMix > 0.99 ? (pg.values.oscSync ? "sync only" : "mixed out") : null}><LiveCanvas height={32} draw={viz.scope(() => taps.osc1, color, () => viz.oscIdeal(pg.values, 0, engine))} /></Block>
       <Block {pg} id="osc2" inactive={pg.values.oscMix < 0.01 ? (pg.values.fmAmount >= 0.01 ? "FM only" : "mixed out") : null}>
         <LiveCanvas height={32} draw={viz.scope(() => taps.osc2, color, () => viz.oscIdeal(pg.values, 1, engine))} />
       </Block>
@@ -310,11 +313,16 @@
 <style>
   .synth { display: grid; gap: 8px; }
   /* The look switch, top right; the view below starts level with it. */
-  .layout { justify-self: end; display: flex; margin-bottom: -4px; }
-  .layout button { font-size: 11px; padding: 1px 10px; border-radius: 0; color: var(--dim); }
-  .layout button:first-child { border-radius: 10px 0 0 10px; }
-  .layout button:last-child { border-radius: 0 10px 10px 0; margin-left: -1px; }
-  .layout .on { background: var(--accent); border-color: var(--accent); color: #0b1314; }
+  .layout { justify-self: end; display: flex; align-items: center; }
+  .layout .label { margin-right: 8px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
+  /* Styled like the main view switch in the header. */
+  .modes { display: flex; gap: 2px; background: #0b0e10; border: 1px solid var(--line); border-radius: 6px; padding: 2px; }
+  .modes button { border: none; background: none; font-size: 13px; padding: 4px 16px; border-radius: 4px; color: var(--dim); }
+  /* The bold label's width is kept, so the switch doesn't change size when clicked. */
+  .modes button { display: inline-grid; justify-items: center; }
+  .modes button::after { content: attr(data-label); font-weight: 600; height: 0; visibility: hidden; overflow: hidden; }
+  .modes button:hover { color: var(--text); }
+  .modes .active, .modes .active:hover { background: var(--accent); color: #0b1314; font-weight: 600; }
   .listening { text-align: left; background: #ffcc3322; border-color: #ffcc33; color: #ffe08a; font-size: 12px; }
   .detail {
     display: grid; grid-template-columns: 1fr 520px; gap: 20px; align-items: start;
