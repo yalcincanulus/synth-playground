@@ -90,6 +90,11 @@ export class Take {
     return pos * TICKS_PER_BEAT;
   }
 
+  /** Where a beat is in the clip, in whole ticks; -1 outside the take (automation from a knob goes there). */
+  tickAt(beat: number): number {
+    return this.covers(beat) ? Math.round(this.ticksAt(beat)) : -1;
+  }
+
   noteOn(pitch: number, velocity: number, beat: number) {
     if (!this.covers(beat)) return;
     this.held.set(pitch, { beat, velocity });

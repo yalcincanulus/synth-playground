@@ -30,9 +30,10 @@
 // mixer, drive, filter), so the Synth view can show and play each stage on its own.
 //
 // The main thread (engine.ts, voice.ts) sends messages. Note events carry a time and happen on their
-// exact sample; settings and controls apply from the next block.
+// exact sample; settings and controls apply from the next block, apart from automation ("set"), which
+// carries a time too.
 
-import { FILTER2_MODES, FILTER_MODELS, LFO_WAVES, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, SHARED_DESTS, slotIds, type ParamValues } from "../params";
+import { FILTER2_MODES, FILTER_MODELS, LFO_WAVES, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, SHARED_DESTS, slotIds, type ParamId, type ParamValues } from "../params";
 import { DRIVE_MIN, DriveAdaa, driveShape } from "./drive";
 import { Decimator2 } from "./halfband";
 import { Ladder, LADDER_MAX_K, ladderGain, ladderOutGain } from "./ladder";
@@ -47,6 +48,10 @@ export type BankMessage =
   | { type: "params"; values: ParamValues }
   /** The LFOs' speeds in Hz: the Rate knobs, or the tempo when synced. */
   | { type: "lfoRates"; rates: number[] }
+  /** Automation: one setting from a time (planned ahead by a playing clip); it glides there like a turned knob. */
+  | { type: "set"; t: number; id: ParamId; value: number }
+  /** Automation of an LFO's Rate: the speeds from a time. */
+  | { type: "lfoRatesAt"; t: number; rates: number[] }
   /** Pitch bend in cents and the mod strip (0..1), as played. */
   | { type: "controls"; bend: number; mod: number }
   /** `random` is the note's "random" mod source (-1..1); `phases` and `seed` its unison phases and noise. */
@@ -771,6 +776,12 @@ export class VoiceBank {
 
   private setParams(p: ParamValues) {
     this.values = { ...p };
+    this.aim(true);
+  }
+
+  /** Head for the settings in `values`; `routes`: the mod matrix may have changed too. */
+  private aim(routes: boolean) {
+    const p = this.values;
     const t = this.targets;
     t[G1] = 1 - p.oscMix;
     t[G2] = p.oscMix;
@@ -790,10 +801,12 @@ export class VoiceBank {
     t[PENV] = p.pitchEnvAmt * 100;
     t[STEREO] = p.stereoWidth;
     t[LK] = ladderK(p.resonance);
-    this.routes = activeRoutes(p);
-    this.sharedRoutes = this.routes.filter((r) => r.shared >= 0);
-    this.routeBySlot = Array(MOD_SLOTS).fill(null);
-    for (const r of this.routes) this.routeBySlot[r.slot] = r;
+    if (routes) {
+      this.routes = activeRoutes(p);
+      this.sharedRoutes = this.routes.filter((r) => r.shared >= 0);
+      this.routeBySlot = Array(MOD_SLOTS).fill(null);
+      for (const r of this.routes) this.routeBySlot[r.slot] = r;
+    }
     this.globals.aim(this.values);
     // Any change re-aims each voice's cutoff (key tracking follows its note).
     for (const v of this.voices) {
@@ -805,6 +818,11 @@ export class VoiceBank {
   private apply(msg: TimedMessage, frame: number) {
     const p = this.values;
     const sr = this.sampleRate;
+    if (msg.type === "set") {
+      p[msg.id] = msg.value;
+      return this.aim(msg.id.startsWith("mod"));
+    }
+    if (msg.type === "lfoRatesAt") return msg.rates.forEach((r, i) => this.globals.lfos[i]?.setRate(r));
     if (msg.type === "on") {
       const v = new Voice(this, msg);
       this.startEnvelopes(v, false);

@@ -7,7 +7,7 @@ import { clampWidth } from "./oscCore";
 import { FX_AMOUNTS, TAPS, type LfoState, type TapName } from "./dsp/voiceBank";
 import { keySource, MOD_RANGE } from "./dsp/voiceMath";
 import { envelopeAt } from "./envelope";
-import type { PartFx } from "./fx";
+import { FX_SIDE_PARAMS, type PartFx } from "./fx";
 import { Lfo } from "./lfo";
 import { LFO_SYNC_BEATS, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, defaultValues, slotIds, type Effect, type ModDest, type ModSource, type ParamId, type ParamValues } from "./params";
 import { Voice, type NoteOwner } from "./voice";
@@ -52,6 +52,10 @@ export class Part {
   private mod = 0;
   /** Most voices at once, below the preset's Max Voices (a song track's limit, to spare the CPU). */
   voiceCap = Infinity;
+  /** Automation: settings a playing clip moves, over the sound's own (the newest planned value of each). */
+  private auto: Partial<ParamValues> = {};
+  /** What the automation does when, for the Synth view: each setting's values from a time (null: the sound's own again), in order. */
+  private autoPlan = new Map<ParamId, { t: number; value: number | null }[]>();
 
   /** What the three LFOs (running in the voice processor) are doing, for the drawings. */
   readonly lfos: [Lfo, Lfo, Lfo];
@@ -154,9 +158,15 @@ export class Part {
     this.apply();
   }
 
+  /** The settings as heard: the sound's, with any automation over them. */
+  private get heard(): ParamValues {
+    for (const _ in this.auto) return { ...this.params, ...this.auto };
+    return this.params;
+  }
+
   /** Send the settings to the processor and the effects. */
   apply() {
-    const p = this.params;
+    const p = this.heard;
     this.applyFx();
     this.applyLfo();
     this.node?.port.postMessage({ type: "params", values: p });
@@ -165,7 +175,7 @@ export class Part {
 
   /** The effects' settings (the delay time follows the tempo). */
   applyFx() {
-    this.fx.set(this.params, this.host.bpm);
+    this.fx.set(this.heard, this.host.bpm);
   }
 
   /** The LFOs' speeds follow the tempo when synced (their depths and shapes come with the parameters). */
@@ -180,9 +190,51 @@ export class Part {
     this.node?.port.postMessage({ type: "lfoRates", rates });
   }
 
+  // --- automation
+
+  /** A playing clip sets a setting from audio time `t` (planned ahead), over the sound's own value. */
+  automate(id: ParamId, value: number, t: number) {
+    this.auto[id] = value;
+    this.sendAuto(id, value, t);
+  }
+
+  /** The setting goes back to the sound's own value at `t` (the clip stopped, or its lane went). */
+  release(id: ParamId, t: number) {
+    if (!(id in this.auto)) return;
+    delete this.auto[id];
+    this.sendAuto(id, this.params[id], t, null);
+  }
+
+  private sendAuto(id: ParamId, value: number, t: number, shown: number | null = value) {
+    let plan = this.autoPlan.get(id);
+    if (!plan) this.autoPlan.set(id, (plan = []));
+    plan.push({ t, value: shown });
+    this.overtaken(id, plan, this.host.ctx.currentTime);
+    this.node?.port.postMessage({ type: "set", t, id, value });
+    if (FX_SIDE_PARAMS.has(id)) this.fx.automate(this.heard, t);
+    if (id === "lfoRate" || id === "lfo2Rate" || id === "lfo3Rate") this.node?.port.postMessage({ type: "lfoRatesAt", t, rates: [0, 1, 2].map((i) => this.lfoRate(i)) });
+  }
+
+  /** The settings automation holds at audio time `now` (for the Synth view: the knobs follow them). */
+  automatedAt(now: number): Partial<ParamValues> {
+    const out: Partial<ParamValues> = {};
+    for (const [id, plan] of this.autoPlan) {
+      this.overtaken(id, plan, now);
+      const e = plan[0];
+      if (e.t <= now && e.value !== null) out[id] = e.value;
+    }
+    return out;
+  }
+
+  /** Forget a setting's planned values that are past and overtaken by a later one also past, by `now`. */
+  private overtaken(id: ParamId, plan: { t: number; value: number | null }[], now: number) {
+    while (plan.length > 1 && plan[1].t <= now) plan.shift();
+    if (plan.length === 1 && plan[0].value === null && plan[0].t <= now) this.autoPlan.delete(id);
+  }
+
   /** Effective LFO speed in Hz: the Rate knob, or the tempo when synced. */
   lfoRate(i: number) {
-    const p = this.params;
+    const p = this.heard;
     const [rate, sync] = [[p.lfoRate, p.lfoSync], [p.lfo2Rate, p.lfo2Sync], [p.lfo3Rate, p.lfo3Sync]][i];
     return sync ? this.host.bpm / 60 / LFO_SYNC_BEATS[sync] : rate;
   }

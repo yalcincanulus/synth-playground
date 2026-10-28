@@ -464,4 +464,16 @@ describe("VoiceBank stereo", () => {
     expect(peak(right.right)).toBeGreaterThan(0.1);
     for (let i = 0; i < right.mid.length; i++) expect(Math.abs(right.mid[i] - centre.mid[i])).toBeLessThan(1e-6);
   });
+
+  test("automation changes a setting at its exact time, gliding there", () => {
+    const at = 0.1;
+    const plain = render(bank({ cutoff: 300 }), [on(1, 0)], 0.3);
+    const moved = render(bank({ cutoff: 300 }), [on(1, 0), { type: "set", t: at, id: "cutoff", value: 8000 }], 0.3);
+    const frame = Math.round(at * SR);
+    // The same up to its time (to the sample), then brighter: much more change from one sample to the next.
+    for (let i = 0; i < frame; i++) expect(moved[i]).toBe(plain[i]);
+    expect(Math.abs(moved[frame + 5] - plain[frame + 5])).toBeGreaterThan(0);
+    const edge = (x: Float32Array) => rms(x.map((v, i) => (i ? v - x[i - 1] : 0)), frame + SR * 0.05, frame + SR * 0.15);
+    expect(edge(moved)).toBeGreaterThan(edge(plain) * 3);
+  });
 });

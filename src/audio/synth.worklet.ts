@@ -141,7 +141,8 @@ class SynthVoices extends AudioWorkletProcessor {
   }
 }
 
-type SlotMessage = { type: "params"; values: Parameters<SlotEffect["set"]>[0] } | { type: "on"; on: boolean } | { type: "ping"; n: number } | { type: "close" };
+/** `t`: from this audio time (automation, planned ahead), to the block; now when not given. */
+type SlotMessage = { type: "params"; values: Parameters<SlotEffect["set"]>[0]; t?: number } | { type: "on"; on: boolean } | { type: "ping"; n: number } | { type: "close" };
 
 class FxSlot extends AudioWorkletProcessor {
   private fx: SlotEffect;
@@ -154,6 +155,8 @@ class FxSlot extends AudioWorkletProcessor {
   /** Its part was removed: process() returns false, and the processor is gone for good. */
   private closed = false;
   private reportFrame = 0;
+  /** Settings planned ahead, by frame, in order. */
+  private planned: { frame: number; values: Parameters<SlotEffect["set"]>[0] }[] = [];
 
   constructor(options: AudioWorkletNodeOptions) {
     super();
@@ -164,12 +167,14 @@ class FxSlot extends AudioWorkletProcessor {
       if (e.data.type === "ping") this.port.postMessage({ type: "pong", n: e.data.n });
       else if (e.data.type === "on") this.on = e.data.on;
       else if (e.data.type === "close") this.closed = true;
-      else this.fx.set(e.data.values);
+      else if (e.data.t === undefined) this.fx.set(e.data.values);
+      else this.planned.push({ frame: Math.round(e.data.t * sampleRate), values: e.data.values });
     };
   }
 
   process(inputs: Float32Array[][], outputs: Float32Array[][]) {
     if (this.closed) return false;
+    while (this.planned.length && this.planned[0].frame < currentFrame + BLOCK) this.fx.set(this.planned.shift()!.values);
     if (!this.on) return true;
     const start = now();
     const [left, right] = outputs[0];

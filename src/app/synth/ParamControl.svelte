@@ -51,6 +51,9 @@
   let fader = $derived(pg.hasDevice && pg.view === "course" && pg.course.lesson.faders?.includes(id) ? FADERS.indexOf(id) + 1 : 0);
   /** A recipe step (or a course step) asks for this control. */
   let target = $derived(pg.targetParams.includes(id));
+  /** The value automation holds now (a playing clip moves it), else undefined. */
+  let auto = $derived(pg.autoShown[id]);
+  let shown = $derived(auto ?? pg.values[id]);
 </script>
 
 {#if options && options.length > 4 && !BUTTONS.has(id)}
@@ -85,13 +88,14 @@
     onclickcapture={pick}
   >
     {#if knob}<span class="k knob-k" title="MiniLab knob {knob}">{knob}</span>{:else if fader}<span class="k knob-k fader-k" title="MiniLab fader {fader}">F{fader}</span>{/if}
+    {#if auto !== undefined}<span class="auto" title="Automated: the playing clip moves it (the sound's own value is {formatValue(id, pg.values[id])})">A</span>{/if}
     <Knob
       size={size ?? (inline ? 30 : 38)}
       {rings}
       {inline}
       label={def.label}
-      display={formatValue(id, pg.values[id])}
-      position={toControl(id, pg.values[id])}
+      display={formatValue(id, shown)}
+      position={toControl(id, shown)}
       hot={pg.touched?.param === id}
       onchange={(t) => pg.setParam(id, fromControl(id, t))}
       onreset={() => pg.setParam(id, pg.preset.values[id] ?? def.default)}
@@ -119,6 +123,12 @@
     border-radius: 50%; background: var(--accent); color: #0b1314; font: 600 9px var(--mono); vertical-align: 1px;
   }
   .knob-k { position: absolute; top: 0; right: 2px; margin: 0; }
+  /* Automated in the playing clip. */
+  .auto {
+    position: absolute; top: 0; left: 2px; z-index: 1; padding: 0 3px; border-radius: 3px;
+    background: #e8a33a; color: #0b1314; font: 700 8px/12px var(--mono);
+  }
+  .inline .auto { top: -3px; left: auto; right: -3px; }
   .fader-k { width: auto; padding: 0 4px; border-radius: 7px; }
   /* Panel view: does nothing right now (the title says why), but stays in place and can be set ahead. */
   .idle { opacity: 0.35; transition: opacity 0.15s; }

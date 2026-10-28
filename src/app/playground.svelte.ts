@@ -85,11 +85,12 @@ import {
   TRACK_COLORS,
   type Track,
 } from "../song/song";
-import { barsForSteps, cleanNotes, clipBeats, drumClip, duplicateClip, noteClip, stepClip, withBars, BEATS_PER_BAR, MAX_BARS, type Clip, type ClipKind, type Note } from "../song/clips";
-import { GRIDS, stepsToNotes } from "../song/noteEdit";
+import { barsForSteps, cleanNotes, clipBeats, drumClip, duplicateClip, noteClip, stepClip, withBars, withLanes, BEATS_PER_BAR, MAX_BARS, type Clip, type ClipKind, type Note } from "../song/clips";
+import { barTicks, GRIDS, stepsToNotes } from "../song/noteEdit";
 import { readRecordSettings, Take, type RecordSettings } from "../song/recorder";
 import { clampPlacement, fitPlacement, freeBar, MAX_SONG_BARS, newPlacementId, songEnd, type BarRange, type Placement } from "../song/arrangement";
 import { ClipPlayer } from "../song/clipPlayer";
+import { automatable, cleanLanes, lanesForLength, panControl, paramControl, sendAutomation, setPoint, thin, valueAt, volumeControl, writeRange, type AutoLane, type AutoSink, type AutoTarget } from "../song/automation";
 import { renderSong } from "../song/songRender";
 import { download } from "./download";
 import { encodeWav, peakDb, type WavBits } from "../audio/wav";
@@ -115,6 +116,8 @@ const RECORD_KEY = "minilab3.record";
 const EXPORT_KEY = "minilab3.export";
 /** Recording what you hear stops by itself after this long (an hour of stereo samples is about 1.4 GB). */
 const MAX_RECORDING_S = 20 * 60;
+/** A knob recording automation counts as let go after this long still (its lane then plays again). */
+const AUTO_LET_GO_MS = 400;
 
 /** How a song is exported: the whole song or its loop region, the sample rate, and 16 or 24 bit. */
 export interface WavSettings {
@@ -368,6 +371,10 @@ export class Playground {
   take = $state.raw<{ track: string; clip: string } | null>(null);
   /** The take's timing, and the song before it (a take is one undo step). */
   private takeRun: { take: Take; before: SongSnapshot; label: string } | null = null;
+  /** Settings a knob is recording into the take's clip: the tick last written, and when the knob counts as let go. */
+  private autoTouch = new Map<ParamId, { tick: number; timer: number }>();
+  /** The selected part's settings that automation holds now (the Synth view's knobs follow them). */
+  autoShown = $state.raw<Partial<ParamValues>>({});
   readonly metronome: Metronome;
   private clicks: ClickSound;
   /** Undo and redo for the song (tracks and clips), apart from each part's sound. */
@@ -573,6 +580,8 @@ export class Playground {
         noteOff: (track, note, time) => this.engine.noteOff(note, time, track),
         pitchTo: (track, from, to, time) => this.engine.pitchTo(from, to, time, track),
         drum: (pad, velocity, time) => this.drumTrack.drums.trigger(pad, velocity, time),
+        automate: (track, target, value, time) => sendAutomation(this.autoSink(track), target, value, time),
+        endAutomation: (track, target, time) => sendAutomation(this.autoSink(track), target, null, time),
       },
       (id) => this.songClips.find((c) => c.id === id),
     );
@@ -593,6 +602,7 @@ export class Playground {
     window.addEventListener("pagehide", this.saveSongNow);
     document.addEventListener("visibilitychange", this.saveSongNow);
     this.intervals.push(window.setInterval(() => (this.cpu = this.engine.cpu), 250));
+    this.intervals.push(window.setInterval(() => this.showAutomation(), 40));
     this.freezes.observe();
     this.intervals.push(window.setInterval(() => this.updateTiming(), 1000));
     this.engine.ctx.onstatechange = () => (this.audioRunning = this.engine.ctx.state === "running");
@@ -955,8 +965,30 @@ export class Playground {
     if (clip?.kind !== "notes") return;
     this.recordSong(label, key && `${id}:${key}`);
     const b = bars ?? clip.bars;
-    this.songClips[i] = { ...($state.snapshot(clip) as Clip), bars: b, notes: cleanNotes(notes, b) } as Clip;
+    const { lanes, ...rest } = $state.snapshot(clip);
+    // Only Double changes the length here: the lanes play twice too.
+    this.songClips[i] = { ...rest, bars: b, notes: cleanNotes(notes, b), ...withLanes(lanes && lanesForLength(lanes, barTicks(clip.bars), barTicks(b), true)) };
     this.saveSong();
+  }
+
+  /** A note clip's automation lanes, as drawn in the piano roll (one undo step; changes with the same key close together are one). */
+  setClipLanes(id: string, lanes: AutoLane[], label: string, key: string | null = null) {
+    const i = this.songClips.findIndex((c) => c.id === id);
+    const clip = this.songClips[i];
+    if (clip?.kind !== "notes") return;
+    this.recordSong(label, key && `${id}:${key}`);
+    const { lanes: _, ...rest } = $state.snapshot(clip);
+    this.songClips[i] = { ...rest, ...withLanes(cleanLanes(lanes, barTicks(clip.bars))) };
+    this.saveSong();
+  }
+
+  /** A track's own value of a setting, as a control position (0..1): what automation gives back when its clip stops. */
+  ownControl(track: string, target: AutoTarget): number {
+    const t = this.songTracks.find((x) => x.id === track);
+    if (target === "trackVolume") return volumeControl(t?.volume ?? 0);
+    if (target === "trackPan") return panControl(t?.pan ?? 0);
+    const values = this.parts[track]?.values;
+    return values ? paramControl(target, values[target]) : 0;
   }
 
   /** Turn a step clip into a note clip that sounds the same (with scale lock's notes, at the tempo now). There is no way back but undo. */
@@ -1417,6 +1449,7 @@ export class Playground {
 
   /** No take any more: the record light, the metronome and the screen. */
   private endTakeState() {
+    for (const id of [...this.autoTouch.keys()]) this.letGo(id);
     this.takeRun = null;
     this.take = null;
     this.recording = false;
@@ -1503,6 +1536,71 @@ export class Playground {
     if (clip?.kind !== "notes") return;
     clip.notes = cleanNotes([...clip.notes, note], clip.bars);
     this.saveSong();
+  }
+
+  /**
+   * While a take records into a note clip on the selected track, a knob turning one of its sound's smooth settings
+   * writes into the clip's lane for that setting, and is heard at once, but leaves the sound as it is (when the
+   * clip stops, the setting goes back to it). Like a DAW's "touch": what the knob passes over is replaced, and
+   * once it is let go (still for a moment) the lane plays again.
+   */
+  private recordAutomation(id: ParamId, value: number): boolean {
+    const take = this.take;
+    const run = this.takeRun;
+    if (!take || !run || take.track !== this.part || !automatable(id) || this.view === "course") return false;
+    const i = this.songClips.findIndex((c) => c.id === take.clip);
+    const clip = this.songClips[i];
+    const tick = run.take.tickAt(this.heardBeat());
+    if (clip?.kind !== "notes" || tick < 0) return false;
+    const end = barTicks(clip.bars);
+    const v = paramControl(id, value);
+    const lanes = clip.lanes ?? [];
+    const lane = lanes.find((l) => l.target === id);
+    let points = lane?.points ?? [];
+    const touch = this.autoTouch.get(id);
+    if (!touch) {
+      this.clipPlayer.touch(take.track, id, true);
+      // The line drawn before goes on up to here.
+      if (points.length && tick > 0) points = setPoint(points, tick - 1, valueAt(points, tick - 1), end);
+      points = setPoint(points, tick, v, end);
+    } else if (tick >= touch.tick) points = writeRange(points, touch.tick + 1, tick, [{ tick, value: v }], end);
+    // Round the end of the clip and back to its start.
+    else points = writeRange(writeRange(points, touch.tick + 1, end, [], end), 0, tick, [{ tick, value: v }], end);
+    clearTimeout(touch?.timer);
+    this.autoTouch.set(id, { tick, timer: window.setTimeout(() => this.letGo(id), AUTO_LET_GO_MS) });
+    clip.lanes = lane ? lanes.map((l) => (l === lane ? { target: id, points } : l)) : [...lanes, { target: id, points }];
+    this.engine.parts[take.track]?.automate(id, value, this.engine.ctx.currentTime);
+    this.autoShown = { ...this.autoShown, [id]: value };
+    this.touched = { param: id, at: performance.now() };
+    this.saveSong();
+    return true;
+  }
+
+  /** A knob recording automation is let go: its lane keeps fewer points for the same line, and plays again. */
+  private letGo(id: ParamId) {
+    const touch = this.autoTouch.get(id);
+    if (!touch) return;
+    clearTimeout(touch.timer);
+    this.autoTouch.delete(id);
+    const take = this.take;
+    const clip = take && this.songClips.find((c) => c.id === take.clip);
+    if (clip?.kind === "notes" && clip.lanes) clip.lanes = clip.lanes.map((l) => (l.target === id ? { target: id, points: thin(l.points) } : l));
+    if (take) this.clipPlayer.touch(take.track, id, false);
+    else for (const t of this.songTracks) this.clipPlayer.touch(t.id, id, false);
+  }
+
+  /** Where a track's automation goes: its sound and its mixer strip. */
+  private autoSink(track: string): AutoSink {
+    return { part: this.engine.parts[track], strip: this.songTrackStrip(track) };
+  }
+
+  /** The settings automation holds now on the selected part, for the knobs (only a new object when they changed). */
+  private showAutomation() {
+    const now = this.engine.parts[this.part]?.automatedAt(this.engine.ctx.currentTime) ?? {};
+    const old = this.autoShown;
+    const keys = Object.keys(now) as ParamId[];
+    if (keys.length === Object.keys(old).length && keys.every((k) => old[k] === now[k])) return;
+    this.autoShown = now;
   }
 
   /** Where the take is, for the Song view: counting in, waiting for its bar, or recording (and which time round). */
@@ -2444,6 +2542,7 @@ export class Playground {
   // ------------------------------------------------------------------ parameters
 
   setParam(id: ParamId, value: number) {
+    if (this.recordAutomation(id, value)) return;
     // The course's pages each start from their own sound, so their changes aren't undo steps.
     if (this.view !== "course") this.remember(PARAMS[id].label, id);
     this.values[id] = value;
@@ -4106,7 +4205,7 @@ export class Playground {
 
   private popup(id: ParamId, cc?: number) {
     if (cc === undefined || !this.device) return;
-    this.device.send(parameterMessage(cc, paramLabel(id, this.values, PARAMS[id].label), formatValue(id, this.values[id])), "display");
+    this.device.send(parameterMessage(cc, paramLabel(id, this.values, PARAMS[id].label), formatValue(id, this.autoShown[id] ?? this.values[id])), "display");
   }
 
   drumName(i: number) {

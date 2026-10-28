@@ -34,6 +34,7 @@
   import { surface, type Surface } from "../components/canvas";
   import { narrow, touch } from "../media.svelte";
   import type { Playground } from "../playground.svelte";
+  import AutomationLane from "./AutomationLane.svelte";
 
   interface Props {
     pg: Playground;
@@ -849,6 +850,7 @@
     oncontextmenu={(e) => e.preventDefault()}
     onkeydown={key}
   ></canvas>
+  <AutomationLane {pg} {clip} {color} left={KEYS_W} {pxPerBeat} {scrollX} {grid} {snapOn} {readOnly} />
   {#if readOnly}
     <p class="hint">On a phone the piano roll shows the notes. Edit them on a bigger screen.</p>
   {:else if pg.explain}

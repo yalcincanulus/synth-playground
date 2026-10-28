@@ -2,11 +2,13 @@
 // launcher instead (until that is stopped), planned at exact audio times on the drum Sequencer's lookahead
 // clock (like the step sequencer and the arpeggiator), so clips and the Play view's toys keep one time. A
 // clip chosen while the transport plays starts on the next bar; on Play every chosen clip starts together
-// from bar 1, and the arrangement from the start bar. Plain code, so it is tested without a browser.
+// from bar 1, and the arrangement from the start bar. A note clip's automation lanes play with its notes, and
+// their settings go back to the track's own when it stops. Plain code, so it is tested without a browser.
 
 import { TRACKS as DRUMS, STEPS } from "../audio/sequencer";
 import { NoteSequencer } from "../audio/stepSequencer";
 import { placementEnd, SongClock, type Placement } from "./arrangement";
+import { valueAt, type AutoTarget } from "./automation";
 import { BEATS_PER_BAR, clipBeats, TICKS_PER_BEAT, type Clip, type NoteClip, type StepClip } from "./clips";
 
 /** Where a clip's sound goes. */
@@ -17,11 +19,20 @@ export interface ClipOut {
   pitchTo(track: string, from: number, to: number, time: number): void;
   /** The song's drum kit. */
   drum(pad: number, velocity: number, time: number): void;
+  /** Automation: a setting of the track to a control position (0..1) from `time`. */
+  automate(track: string, target: AutoTarget, value: number, time: number): void;
+  /** The setting goes back to the track's own value at `time`. */
+  endAutomation(track: string, target: AutoTarget, time: number): void;
 }
 
 /** Steps of a drum clip: a 16th each. */
 const DRUM_STEP_BEATS = BEATS_PER_BAR / STEPS;
 const EPS = 1e-9;
+/**
+ * A lane's line is sent this often (and at each of its points), when its value changed: a 32nd note, 16 ms at
+ * 120 BPM. The voices glide between the values (like a turned knob), so the steps aren't heard.
+ */
+const AUTO_STEP_BEATS = 1 / 8;
 
 /** One track's place in its clip. */
 interface Lane {
@@ -44,6 +55,8 @@ interface Lane {
   seg: Segment | null;
   /** Semitones the clip playing now is moved by (its placement's). */
   transpose: number;
+  /** The automated settings, and the value each was last sent (NaN: set by a knob being recorded). */
+  auto: Map<AutoTarget, number>;
 }
 
 /** A stretch of a track's arrangement: one time round of a placement's clip (or a gap), up to a change. */
@@ -75,6 +88,8 @@ export class ClipPlayer {
 
   private lanes = new Map<string, Lane>();
   private playing = false;
+  /** Settings being recorded from a knob ("track target"): their lanes are not played meanwhile. */
+  private touched = new Set<string>();
 
   constructor(
     private out: ClipOut,
@@ -131,11 +146,24 @@ export class ClipPlayer {
     lane.next = undefined;
   }
 
+  /**
+   * A knob is recording a track's setting (on), or has let go (off): meanwhile its lane isn't played, and the
+   * knob sets the sound. When the clip stops, the setting goes back to the track's own all the same.
+   */
+  touch(track: string, target: AutoTarget, on: boolean) {
+    const key = `${track} ${target}`;
+    const lane = this.lane(track);
+    if (on) {
+      this.touched.add(key);
+      lane.auto.set(target, NaN);
+    } else if (this.touched.delete(key)) lane.auto.delete(target);
+  }
+
   /** Forget a track (removed from the song): its notes stop at `time`. */
   removeTrack(track: string, time: number) {
     const lane = this.lanes.get(track);
     if (!lane) return;
-    this.release(track, lane, time);
+    this.release(track, lane, time, true);
     this.lanes.delete(track);
   }
 
@@ -157,7 +185,7 @@ export class ClipPlayer {
   stop(time: number) {
     this.playing = false;
     for (const [track, lane] of this.lanes) {
-      this.release(track, lane, time);
+      this.release(track, lane, time, true);
       if (lane.next !== undefined) lane.clip = lane.next;
       lane.next = undefined;
       lane.seg = null;
@@ -251,7 +279,7 @@ export class ClipPlayer {
 
   private lane(track: string): Lane {
     let lane = this.lanes.get(track);
-    if (!lane) this.lanes.set(track, (lane = { clip: null, start: 0, held: [], steps: null, stepsClip: null, cut: Infinity, stepOns: new Map(), seg: null, transpose: 0 }));
+    if (!lane) this.lanes.set(track, (lane = { clip: null, start: 0, held: [], steps: null, stepsClip: null, cut: Infinity, stepOns: new Map(), seg: null, transpose: 0, auto: new Map() }));
     return lane;
   }
 
@@ -276,11 +304,20 @@ export class ClipPlayer {
     return { key: `${p.id}:${p.clip}:${Math.round((s - into) * 1e6)}`, clip: p.clip, start, end, transpose: p.transpose };
   }
 
-  /** End every note the track sounds, at `time` (or as it starts, for one planned to start later: Stop comes before the lookahead runs out). */
-  private release(track: string, lane: Lane, time: number) {
+  /**
+   * End every note the track sounds, at `time` (or as it starts, for one planned to start later: Stop comes before
+   * the lookahead runs out), and give its automated settings back. A knob being recorded keeps its setting until
+   * the track stops for good (`stop`).
+   */
+  private release(track: string, lane: Lane, time: number, stop = false) {
     for (const h of lane.held) this.out.noteOff(track, h.note, Math.max(time, h.at));
     lane.held = [];
     lane.steps?.release(time);
+    for (const target of lane.auto.keys()) {
+      if (!stop && this.touched.has(`${track} ${target}`)) continue;
+      this.out.endAutomation(track, target, time);
+      lane.auto.delete(target);
+    }
   }
 
   /** One clip, over [from, to) beats of the time round that started at lane.start and ends at `boundary`. */
@@ -337,6 +374,37 @@ export class ClipPlayer {
       lane.held.push({ note: pitch, end: Math.min(at + n.length / TICKS_PER_BEAT, boundary), at: timeAt(at) });
     }
     ends(to, false);
+    this.playLanes(track, lane, clip, from, to, timeAt, skip);
+  }
+
+  /** A note clip's automation over [from, to): each lane's value at the start, then whenever it changes. */
+  private playLanes(track: string, lane: Lane, clip: NoteClip, from: number, to: number, timeAt: (beat: number) => number, skip: boolean) {
+    const lanes = clip.lanes ?? [];
+    for (const target of lane.auto.keys()) {
+      // A lane gone while it plays (deleted, undone): its setting goes back.
+      if (this.touched.has(`${track} ${target}`) || lanes.some((l) => l.target === target)) continue;
+      this.out.endAutomation(track, target, timeAt(from));
+      lane.auto.delete(target);
+    }
+    if (skip) return;
+    const p = lane.start;
+    for (const l of lanes) {
+      if (!l.points.length || this.touched.has(`${track} ${l.target}`)) continue;
+      const beats = [from];
+      for (let k = Math.floor((from - p) / AUTO_STEP_BEATS + EPS) + 1; p + k * AUTO_STEP_BEATS < to - EPS; k++) beats.push(p + k * AUTO_STEP_BEATS);
+      for (const pt of l.points) {
+        const b = p + pt.tick / TICKS_PER_BEAT;
+        if (b > from + EPS && b < to - EPS) beats.push(b);
+      }
+      beats.sort((a, b) => a - b);
+      for (const b of beats) {
+        const v = valueAt(l.points, (b - p) * TICKS_PER_BEAT);
+        const last = lane.auto.get(l.target);
+        if (last !== undefined && Math.abs(v - last) < 1e-4) continue;
+        lane.auto.set(l.target, v);
+        this.out.automate(track, l.target, v, timeAt(b));
+      }
+    }
   }
 
   /** The track's step sequencer, playing into the track; its note-offs are kept inside the clip. */

@@ -20,12 +20,16 @@ function setup(clips: Clip[] = []) {
   const seq = new Sequencer(host, ticker);
   seq.pattern = emptyPattern();
   const events: Event[] = [];
+  /** Automation: a value from a time, or (null) back to the track's own. */
+  const autos: { track: string; target: string; value: number | null; time: number }[] = [];
   const player = new ClipPlayer(
     {
       noteOn: (track, note, velocity, time) => events.push({ type: "on", track, note, time, velocity }),
       noteOff: (track, note, time) => events.push({ type: "off", track, note, time }),
       pitchTo: (track, _from, note, time) => events.push({ type: "pitch", track, note, time }),
       drum: (pad, velocity, time) => events.push({ type: "drum", track: "drums", note: pad, time, velocity }),
+      automate: (track, target, value, time) => autos.push({ track, target, value, time }),
+      endAutomation: (track, target, time) => autos.push({ track, target, value: null, time }),
     },
     (id) => clips.find((c) => c.id === id),
   );
@@ -38,7 +42,7 @@ function setup(clips: Clip[] = []) {
   };
   /** The audio time of a beat, for a transport started at time 0 (the first beat comes 50 ms after Play). */
   const beat = (b: number, bpm = 120) => 0.05 + (b * 60) / bpm;
-  return { host, seq, player, events, run, beat, toyHits, clips };
+  return { host, seq, player, events, autos, run, beat, toyHits, clips };
 }
 
 const ons = (events: Event[], track?: string) => events.filter((e) => e.type === "on" && (!track || e.track === track));
@@ -394,5 +398,60 @@ describe("the arrangement", () => {
     run(0.3);
     expect(offs(events, BASS.id)[0].time).toBeLessThan(host.ctx.currentTime + 0.2);
     balanced(events);
+  });
+});
+
+describe("automation", () => {
+  /** A 1-bar note clip whose Cutoff lane rises from 0 to 1 over its first 2 beats, then holds. */
+  const sweep = () => ({ ...noteClip([], BASS, [{ start: 0, length: Q, pitch: 40, velocity: 100 }], 1), lanes: [{ target: "cutoff" as const, points: [{ tick: 0, value: 0 }, { tick: 2 * Q, value: 1 }] }] });
+
+  test("a lane plays at exact times, the same every time round, and only sends changes", () => {
+    const clip = sweep();
+    const { player, seq, autos, run, beat } = setup([clip]);
+    player.launch(BASS.id, clip.id);
+    seq.start();
+    run(4.2); // two times round
+    const sent = autos.filter((a) => a.value !== null && a.time < beat(8) - 1e-9);
+    const round = (r: number) => sent.filter((a) => a.time >= beat(4 * r) - 1e-9 && a.time < beat(4 * r + 4) - 1e-9);
+    const [one, two] = [round(0), round(1)];
+    expect(one.length).toBeGreaterThan(10);
+    expect(two.map((a) => a.value)).toEqual(one.map((a) => a.value));
+    two.forEach((a, i) => expect(a.time - one[i].time).toBeCloseTo(beat(4) - beat(0), 9));
+    expect(one[0]).toMatchObject({ track: BASS.id, target: "cutoff", value: 0 });
+    expect(one[0].time).toBeCloseTo(beat(0), 9);
+    // Beat 1 is halfway up; from beat 2 on it holds, so nothing more is sent until the next time round.
+    expect(one.find((a) => Math.abs(a.time - beat(1)) < 1e-9)?.value).toBeCloseTo(0.5, 9);
+    expect(one[one.length - 1].value).toBe(1);
+    expect(one[one.length - 1].time).toBeCloseTo(beat(2), 9);
+  });
+
+  test("Stop gives the setting back to the track", () => {
+    const clip = sweep();
+    const { player, seq, autos, run } = setup([clip]);
+    player.launch(BASS.id, clip.id);
+    seq.start();
+    run(1);
+    seq.stop();
+    const last = autos[autos.length - 1];
+    expect(last).toMatchObject({ target: "cutoff", value: null });
+    expect(last.time).toBeCloseTo(1, 1);
+  });
+
+  test("a lane deleted while it plays gives its setting back; a knob being recorded keeps its lane quiet", () => {
+    const clip = sweep();
+    const { player, seq, autos, run } = setup([clip]);
+    player.launch(BASS.id, clip.id);
+    seq.start();
+    run(0.5);
+    player.touch(BASS.id, "cutoff", true);
+    const n = autos.length;
+    run(1);
+    expect(autos.length).toBe(n);
+    player.touch(BASS.id, "cutoff", false);
+    run(0.2);
+    expect(autos.length).toBeGreaterThan(n);
+    clip.lanes = [];
+    run(0.2);
+    expect(autos[autos.length - 1]).toMatchObject({ target: "cutoff", value: null });
   });
 });

@@ -9,6 +9,7 @@ import type { ParamValues } from "../audio/params";
 import { cut, tailEnd } from "../audio/wav";
 import { BEATS_PER_BAR, type Clip } from "./clips";
 import { ClipPlayer } from "./clipPlayer";
+import { sendAutomation, type AutoSink } from "./automation";
 import { sortPlacements, type Placement } from "./arrangement";
 import { audible, type Track } from "./song";
 
@@ -67,12 +68,15 @@ export async function renderSong(song: SongRenderInput, sampleRate: number, prog
   await new Promise((r) => setTimeout(r, 50));
   await engine.flush();
 
+  const sink = (track: string): AutoSink => ({ part: engine.parts[track], strip: track === drumTrack?.id ? drums.strip : engine.parts[track]?.fx.strip });
   const player = new ClipPlayer(
     {
       noteOn: (track, note, velocity, time, slide) => engine.noteOn(note, velocity, time, slide, track),
       noteOff: (track, note, time) => engine.noteOff(note, time, track),
       pitchTo: (track, from, to, time) => engine.pitchTo(from, to, time, track),
       drum: (pad, velocity, time) => drums.drums.trigger(pad, velocity, time),
+      automate: (track, target, value, time) => sendAutomation(sink(track), target, value, time),
+      endAutomation: (track, target, time) => sendAutomation(sink(track), target, null, time),
     },
     (id) => song.clips.find((c) => c.id === id),
   );

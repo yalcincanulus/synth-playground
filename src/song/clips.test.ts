@@ -57,4 +57,14 @@ describe("clips", () => {
     expect(notes.kind === "notes" && notes.notes).toEqual([{ start: 0, length: Q, pitch: 127, velocity: 1 }]);
     expect(readClips("nonsense", tracks)).toEqual([]);
   });
+
+  test("a note clip keeps its automation lanes, made to fit its length", () => {
+    const clip = { ...noteClip([], BASS, [], 1), id: "clip-1", lanes: [{ target: "cutoff" as const, points: [{ tick: 0, value: 0 }, { tick: 4 * Q, value: 1 }] }] };
+    expect(readClips([clip], tracks)[0]).toEqual(clip);
+    expect(readClips([{ ...clip, lanes: [{ target: "nope", points: [] }] }], tracks)[0]).not.toHaveProperty("lanes");
+    const longer = withBars(clip, 2);
+    expect(longer.kind === "notes" && longer.lanes).toEqual(clip.lanes);
+    const shorter = withBars({ ...clip, bars: 2, lanes: [{ target: "cutoff", points: [{ tick: 0, value: 0 }, { tick: 8 * Q, value: 1 }] }] }, 1);
+    expect(shorter.kind === "notes" && shorter.lanes).toEqual([{ target: "cutoff", points: [{ tick: 0, value: 0 }, { tick: 4 * Q, value: 0.5 }] }]);
+  });
 });

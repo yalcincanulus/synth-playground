@@ -4,6 +4,7 @@
 
 import { emptyPattern, STEPS, TRACKS as DRUMS, type Pattern } from "../audio/sequencer";
 import { clampHz, defaultNoteSeq, DIRECTIONS, NOTE_STEPS, RATES, type NoteSeqSettings } from "../audio/stepSequencer";
+import { lanesForLength, readLanes, type AutoLane } from "./automation";
 import { MAX_NAME, type Track } from "./song";
 
 /** Note positions and lengths are counted in ticks: this many a beat. */
@@ -50,6 +51,8 @@ export interface NoteClip extends ClipBase {
   kind: "notes";
   /** In order of start. */
   notes: Note[];
+  /** Automation: settings that move while the clip plays (absent: none). */
+  lanes?: AutoLane[];
 }
 
 export type Clip = DrumClip | StepClip | NoteClip;
@@ -137,10 +140,17 @@ export function withBars(clip: Clip, bars: number): Clip {
       return { ...clip, bars: n, patterns: Array.from({ length: n }, (_, i) => copyPattern(clip.patterns[i] ?? clip.patterns[i % clip.bars])) };
     case "steps":
       return { ...clip, bars: n };
-    case "notes":
-      return { ...clip, bars: n, notes: cleanNotes(clip.notes, n) };
+    case "notes": {
+      const { lanes, ...rest } = clip;
+      return { ...rest, bars: n, notes: cleanNotes(clip.notes, n), ...withLanes(lanes && lanesForLength(lanes, barTicks(clip.bars), barTicks(n))) };
+    }
   }
 }
+
+const barTicks = (bars: number) => bars * BEATS_PER_BAR * TICKS_PER_BEAT;
+
+/** A note clip's `lanes` field: left out when there are none. */
+export const withLanes = (lanes: AutoLane[] | undefined): { lanes?: AutoLane[] } => (lanes?.length ? { lanes } : {});
 
 /** A copy of a clip, with a new id and name, on the same track. */
 export function duplicateClip(clips: readonly Clip[], clip: Clip, track: Track): Clip {
@@ -196,7 +206,7 @@ export function readClips(raw: unknown, tracks: readonly Track[]): Clip[] {
     } else if (kind === "steps") out.push({ ...base, kind, seq: readSeq(r.seq as Record<string, unknown>) });
     else {
       const notes = (Array.isArray(r.notes) ? r.notes : []).filter((n): n is Note => !!n && typeof n === "object" && ["start", "length", "pitch", "velocity"].every((k) => typeof n[k] === "number" && Number.isFinite(n[k])));
-      out.push({ ...base, kind, notes: cleanNotes(notes, bars) });
+      out.push({ ...base, kind, notes: cleanNotes(notes, bars), ...withLanes(readLanes(r.lanes, barTicks(bars))) });
     }
   }
   return out;

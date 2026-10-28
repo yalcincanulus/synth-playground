@@ -108,7 +108,8 @@ interface Unit {
   readonly output: AudioNode;
   /** What "Listen here" hears: the effect's output, or for the delay and reverb only what they add. */
   readonly tapFrom: AudioNode;
-  set(p: ParamValues, bpm: number): void;
+  /** The settings, from audio time `at` (now when not given; automation plans them ahead). */
+  set(p: ParamValues, bpm: number, at?: number): void;
 }
 
 const gain = (ctx: BaseAudioContext, g: number) => new GainNode(ctx, { gain: g });
@@ -121,6 +122,11 @@ export class Strip {
   readonly input: GainNode;
   readonly output: StereoPannerNode;
   private meterNode: AnalyserNode | null = null;
+  private volume = 0;
+  private pan = 0;
+  private muted = false;
+  /** Automation: the volume (dB) and pan a playing clip sets in place of the strip's own (null: none). */
+  private auto: { volume: number | null; pan: number | null } = { volume: null, pan: null };
 
   constructor(
     private ctx: BaseAudioContext,
@@ -133,10 +139,23 @@ export class Strip {
 
   /** `volume` in dB (STRIP_MIN_DB and below: off), `pan` -1..1 (a stereo sound is balanced, not folded to mono). */
   set(volume: number, pan: number, muted: boolean) {
-    const g = muted || volume <= STRIP_MIN_DB ? 0 : 10 ** (volume / 20);
-    const t = this.ctx.currentTime;
+    this.volume = volume;
+    this.pan = pan;
+    this.muted = muted;
+    this.apply(this.ctx.currentTime);
+  }
+
+  /** Automation from audio time `at`: the volume (dB) or pan a playing clip sets, or (null) the strip's own again. */
+  automate(what: "volume" | "pan", value: number | null, at: number) {
+    this.auto[what] = value;
+    this.apply(at);
+  }
+
+  private apply(t: number) {
+    const volume = this.auto.volume ?? this.volume;
+    const g = this.muted || volume <= STRIP_MIN_DB ? 0 : 10 ** (volume / 20);
     this.input.gain.setTargetAtTime(g, t, 0.01);
-    this.output.pan.setTargetAtTime(Math.max(-1, Math.min(1, pan)), t, 0.01);
+    this.output.pan.setTargetAtTime(Math.max(-1, Math.min(1, this.auto.pan ?? this.pan)), t, 0.01);
   }
 
   /** The strip's output, for a level meter. */
@@ -226,6 +245,16 @@ export class PartFx {
     const chain = effectChain(p).filter((fx) => this.unit(fx, p));
     for (const fx of chain) this.units[fx]!.set(p, bpm);
     this.wire(chain);
+  }
+
+  /**
+   * Automation: the settings from audio time `at` (planned ahead by a playing clip). Only the amounts that
+   * move smoothly change; which effects run, and in what order, stays as it is.
+   */
+  automate(p: ParamValues, at: number) {
+    this.values = p;
+    this.input.gain.setTargetAtTime(p.volume * p.volume, at, 0.02);
+    for (const fx of effectChain(p)) this.units[fx]?.set(p, this.bpm, at);
   }
 
   /** The effect's unit; our own are made when first needed (once the worklet module has loaded). */
@@ -367,8 +396,8 @@ class DelayUnit implements Unit {
     this.tapFrom = merge;
   }
 
-  set(p: ParamValues, bpm: number) {
-    const t = this.ctx.currentTime;
+  set(p: ParamValues, bpm: number, at?: number) {
+    const t = at ?? this.ctx.currentTime;
     const seconds = (60 / bpm) * DELAY_DIV_BEATS[p.delayDiv];
     for (const d of this.lines) d.delayTime.setTargetAtTime(seconds, t, 0.05);
     const fb = p.delayFeedback;
@@ -457,8 +486,8 @@ class EqUnit implements Unit {
     this.bands = [this.input, this.mid, this.output];
   }
 
-  set(p: ParamValues) {
-    const t = this.ctx.currentTime;
+  set(p: ParamValues, _bpm?: number, at?: number) {
+    const t = at ?? this.ctx.currentTime;
     this.input.gain.setTargetAtTime(p.eqLow, t, 0.02);
     this.mid.gain.setTargetAtTime(p.eqMid, t, 0.02);
     this.mid.frequency.setTargetAtTime(p.eqMidFreq, t, 0.02);
@@ -491,8 +520,8 @@ class CompressorUnit implements Unit {
     this.input = this.output = this.tapFrom = new DynamicsCompressorNode(ctx, { knee: COMP_KNEE_DB });
   }
 
-  set(p: ParamValues) {
-    const t = this.ctx.currentTime;
+  set(p: ParamValues, _bpm?: number, at?: number) {
+    const t = at ?? this.ctx.currentTime;
     const c = this.input;
     c.threshold.setTargetAtTime(p.compThreshold, t, 0.02);
     c.ratio.setTargetAtTime(p.compRatio, t, 0.02);
@@ -507,6 +536,15 @@ class CompressorUnit implements Unit {
 }
 
 // ---------------------------------------------------------------- our own effects
+
+/**
+ * The settings of the effects the browser's nodes and our own effects run on the main thread's side (the
+ * part's voice processor has the rest, the chorus, delay and reverb amounts included).
+ */
+export const FX_SIDE_PARAMS = new Set<keyof ParamValues>([
+  "volume", "delayFeedback", "eqLow", "eqMid", "eqMidFreq", "eqHigh", "compThreshold", "compRatio", "compAttack", "compRelease",
+  "distDrive", "distTone", "distMix", "phaserRate", "phaserDepth", "phaserFeedback", "phaserMix", "flangerRate", "flangerDepth", "flangerFeedback", "flangerMix",
+]);
 
 /** The settings each of our own effects uses (only these are sent when they change). */
 const SLOT_PARAMS: Record<SlotKind, (keyof ParamValues)[]> = {
@@ -555,12 +593,12 @@ class SlotUnit implements Unit {
     return this.kind === "phaser" ? p.phaserRate : this.kind === "flanger" ? p.flangerRate : 0;
   }
 
-  set(p: ParamValues) {
+  set(p: ParamValues, _bpm?: number, at?: number) {
     const key = this.keyOf(p);
     if (key === this.key) return;
     this.key = key;
     this.rate = this.rateOf(p);
-    this.input.port.postMessage({ type: "params", values: p });
+    this.input.port.postMessage({ type: "params", values: p, t: at });
   }
 
   /** In the chain or not: out of it, the processor does nothing. */

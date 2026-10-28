@@ -53,7 +53,9 @@
   let keyboardNotes = $derived(new Set([...(pg.arp.on ? pg.arpNotes : pg.notes), ...pg.seqNotes]));
   let heldNotes = $derived(pg.arp.on ? new Set(pg.notes) : undefined);
 
-  const display = (id: ParamId) => formatValue(id, pg.values[id]);
+  /** A setting as heard: automation (a playing clip moving it) over the sound's own value. */
+  const shown = (id: ParamId) => pg.autoShown[id] ?? pg.values[id];
+  const display = (id: ParamId) => formatValue(id, shown(id));
   const resetParam = (id: ParamId) => pg.setParam(id, pg.preset.values[id] ?? PARAMS[id].default);
 
   function savePreset() {
@@ -315,7 +317,7 @@
               number={pg.hasDevice ? i + 1 : undefined}
               label={PARAMS[id].label}
               display={display(id)}
-              position={toControl(id, pg.values[id])}
+              position={toControl(id, shown(id))}
               hot={pg.touched?.param === id}
               size={46}
               onchange={(t) => pg.setKnob(i, t)}
@@ -334,7 +336,7 @@
               <Fader
                 label={PARAMS[id].label}
                 display={display(id)}
-                position={toControl(id, pg.values[id])}
+                position={toControl(id, shown(id))}
                 hot={pg.touched?.param === id}
                 height={96}
                 onchange={(t) => pg.setFader(i, t)}
