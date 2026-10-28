@@ -67,7 +67,7 @@ export class Sequencer {
   notes: NoteSequencer | null = null;
   /** The arpeggiator, played on the same clock; it also plays while the transport is stopped (see `setFree`). */
   arp: Arpeggiator | null = null;
-  /** The song's clips, played on the same clock while the transport plays. */
+  /** The song's clips, played on the same clock while the transport plays the song (see `song`). */
   clips: BeatPlanner | null = null;
   /** The recording metronome, on the same clock while the transport plays. */
   metronome: BeatPlanner | null = null;
@@ -75,6 +75,8 @@ export class Sequencer {
   recording = false;
   /** When off, the clock keeps running (for the note sequencer) but the drum loop is silent. */
   drumsOn = true;
+  /** What the transport plays, set before `start`: the song's clips (true), or the toys (the drum loop and the note sequencer). */
+  song = false;
   onTrigger: (track: number, velocity: number, time: number) => void = () => {};
   /** Called when each step is scheduled, with the audio time it will sound at. */
   onStep: (step: number, time: number) => void = () => {};
@@ -114,7 +116,7 @@ export class Sequencer {
     this.nextStep = 0;
     this.nextBeat = 0;
     this.notes?.reset();
-    this.clips?.reset();
+    if (this.song) this.clips?.reset();
     this.metronome?.reset();
     this.stats = { lateSteps: 0, closest: null };
     // Already ticking for the arpeggiator: the loop starts where that has planned up to, so no note plays twice.
@@ -217,13 +219,13 @@ export class Sequencer {
         this.onStep(step, this.nextTime);
         for (let track = 0; track < TRACKS && !late; track++) {
           const vel = this.pattern[track][step];
-          if (vel > 0 && this.drumsOn) {
+          if (vel > 0 && this.drumsOn && !this.song) {
             this.engine.drums.trigger(track, vel, this.nextTime);
             this.onTrigger(track, vel, this.nextTime);
           }
         }
-        this.notes?.schedule(this.nextBeat, this.nextBeat + 0.25, timeAt, secPerBeat, late);
-        this.clips?.schedule(this.nextBeat, this.nextBeat + 0.25, timeAt, secPerBeat, late);
+        if (this.song) this.clips?.schedule(this.nextBeat, this.nextBeat + 0.25, timeAt, secPerBeat, late);
+        else this.notes?.schedule(this.nextBeat, this.nextBeat + 0.25, timeAt, secPerBeat, late);
         this.metronome?.schedule(this.nextBeat, this.nextBeat + 0.25, timeAt, secPerBeat, late);
       }
       this.arp?.schedule(this.nextBeat, this.nextBeat + 0.25, timeAt, secPerBeat, late);

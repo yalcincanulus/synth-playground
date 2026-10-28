@@ -97,6 +97,36 @@ describe("Sequencer timing", () => {
   });
 });
 
+describe("Song or toys", () => {
+  /** A song that only counts what it is asked to plan. */
+  function withSong() {
+    const t = setup();
+    const song = { resets: 0, planned: 0, reset() { this.resets++; }, schedule() { this.planned++; }, stop() {} };
+    t.seq.clips = song;
+    return { ...t, song };
+  }
+
+  test("the toys: the drum loop and the note sequencer play, the song isn't started", () => {
+    const { seq, host, notes, run, song } = withSong();
+    seq.start();
+    run(1);
+    expect(host.hits.length).toBeGreaterThan(0);
+    expect(notes.length).toBeGreaterThan(0);
+    expect(song.resets + song.planned).toBe(0);
+  });
+
+  test("the song: its clips play, the drum loop and the note sequencer are silent", () => {
+    const { seq, host, notes, run, song } = withSong();
+    seq.song = true;
+    seq.start();
+    run(1);
+    expect(song.resets).toBe(1);
+    expect(song.planned).toBeGreaterThan(0);
+    expect(host.hits.length).toBe(0);
+    expect(notes.length).toBe(0);
+  });
+});
+
 describe("Count-in and metronome", () => {
   function withClicks() {
     const s = setup();

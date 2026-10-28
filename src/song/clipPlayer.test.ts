@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Ticker } from "../audio/clock";
 import { emptyPattern, Sequencer } from "../audio/sequencer";
-import { defaultNoteSeq, NoteSequencer } from "../audio/stepSequencer";
+import { defaultNoteSeq } from "../audio/stepSequencer";
 import { drumClip, noteClip, stepClip, TICKS_PER_BEAT, type Clip } from "./clips";
 import { ClipPlayer } from "./clipPlayer";
 import type { Placement } from "./arrangement";
@@ -34,6 +34,8 @@ function setup(clips: Clip[] = []) {
     (id) => clips.find((c) => c.id === id),
   );
   seq.clips = player;
+  // The transport plays the song (the toys only in the test that says so).
+  seq.song = true;
   const run = (seconds: number) => {
     for (const end = host.ctx.currentTime + seconds; host.ctx.currentTime < end - 1e-9; ) {
       host.ctx.currentTime += 0.025;
@@ -261,24 +263,32 @@ describe("clip player", () => {
     balanced(events);
   });
 
-  test("toys and clips on one clock: the drum loop, the step sequencer and clips land together", () => {
+  test("the song or the toys, on one clock: a clip's steps land where the drum loop's do, and only one of them plays", () => {
     const clip = drumClip([], DRUMS);
     for (const s of [0, 4, 8, 12]) clip.patterns[0][0][s] = 100;
     const { host, seq, player, events, run, toyHits } = setup([clip]);
     for (const s of [0, 4, 8, 12]) seq.pattern[1][s] = 100;
-    const toyNotes: number[] = [];
-    seq.notes = new NoteSequencer({ ...defaultNoteSeq(), enabled: true, rate: 0 }, { noteOn: (_n, _v, t) => toyNotes.push(t), noteOff: () => {} });
-    seq.notes.reset();
     player.launch(DRUMS.id, clip.id);
+    // The toys: the drum loop plays, the clip doesn't.
+    seq.song = false;
+    let t0 = 0;
     seq.start();
-    run(4);
-    const clipHits = events.filter((e) => e.type === "drum").map((e) => e.time);
-    const toy = toyHits.map(([, t]) => t);
-    expect(clipHits.length).toBeGreaterThan(6);
+    run(2);
+    seq.stop();
+    const toy = toyHits.map(([, t]) => t - t0);
+    expect(toy.length).toBeGreaterThan(3);
+    expect(events.filter((e) => e.type === "drum")).toEqual([]);
+    // The song: the clip plays on the same grid from Play, the drum loop doesn't.
+    run(1);
+    toyHits.length = 0;
+    seq.song = true;
+    t0 = host.ctx.currentTime;
+    seq.start();
+    run(2);
+    const clipHits = events.filter((e) => e.type === "drum").map((e) => e.time - t0);
+    expect(toyHits).toEqual([]);
+    expect(clipHits.length).toBe(toy.length);
     clipHits.forEach((t, i) => expect(t).toBeCloseTo(toy[i], 9));
-    // The step sequencer's 1/8 notes fall on every other drum step: each beat is on both.
-    for (const t of clipHits) expect(toyNotes.some((n) => Math.abs(n - t) < 1e-9)).toBe(true);
-    expect(host.ctx.currentTime).toBeGreaterThan(3.9);
   });
 
   test("Play starts every chosen clip again from bar 1; Stop keeps the choice", () => {

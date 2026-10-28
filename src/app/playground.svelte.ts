@@ -562,6 +562,11 @@ export class Playground {
   /** The drum loop starts off: ▶ plays nothing until the drums or the step sequencer is switched on. */
   drumsOn = $state(false);
   playing = $state(false);
+  /**
+   * What the transport plays (or played last): the song, when ▶ is pressed in the Song view or while a clip is
+   * edited in Play; the toys (the drum loop and the step sequencer) anywhere else. The song plays on in other views.
+   */
+  playsSong = $state(false);
   recording = $state(false);
   /** The drum loop's own pattern (the toy's); `pattern` is what its grid edits. */
   ownPattern = $state<Pattern>(basicBeat());
@@ -987,6 +992,7 @@ export class Playground {
   launchClip(id: string) {
     const clip = this.songClips.find((c) => c.id === id);
     if (!clip) return;
+    this.stopToys();
     const st = this.clipPlayer.state(clip.track);
     if (!this.playing) this.clipPlayer.launch(clip.track, id);
     else if (st.next === id) this.clipPlayer.launch(clip.track, st.clip);
@@ -994,7 +1000,7 @@ export class Playground {
     else this.clipPlayer.launch(clip.track, id);
     this.syncLaunch(clip.track);
     this.saveSong();
-    if (!this.playing) this.play();
+    if (!this.playing) this.play(false, true);
   }
 
   /** Stop a track's clip (at the next bar while playing). */
@@ -1024,7 +1030,7 @@ export class Playground {
     for (const t of this.songTracks) {
       const st = this.clipPlayer.state(t.id);
       // While playing, the player lets go of a deleted clip itself, at the time it reaches it.
-      if (!this.playing && st.clip && !has(st.clip)) this.clipPlayer.launch(t.id, null);
+      if (!this.songPlaying && st.clip && !has(st.clip)) this.clipPlayer.launch(t.id, null);
       this.syncLaunch(t.id);
     }
   }
@@ -1210,7 +1216,7 @@ export class Playground {
   /** The step under the drum grid's playhead: the edited drum clip's (in the bar shown), else the drum loop's. */
   gridStep(): number {
     const c = this.editClip;
-    if (c?.kind !== "drums") return this.seq.currentStep;
+    if (c?.kind !== "drums") return this.playsSong ? -1 : this.seq.currentStep;
     const beat = this.clipBeatNow(c.id);
     if (beat < 0 || Math.floor(beat / BEATS_PER_BAR) !== this.editBar) return -1;
     return Math.floor((beat % BEATS_PER_BAR) * 4);
@@ -1400,9 +1406,9 @@ export class Playground {
     this.songStart = Math.max(0, Math.min(MAX_SONG_BARS - 1, Math.round(bar)));
     this.clipPlayer.from = this.songStart * BEATS_PER_BAR;
     this.saveSong();
-    if (this.playing) {
+    if (this.songPlaying) {
       this.stop();
-      this.play();
+      this.play(false, true);
     }
   }
 
@@ -1500,6 +1506,7 @@ export class Playground {
     const editDrums = this.view !== "song" && this.editClip?.kind === "drums";
     const t = this.songTracks.find((x) => x.id === (editDrums ? this.editClip!.track : (this.armedTrack ?? this.selectedSongTrack)));
     if (!t) return this.showMessage("Record", "select a track first");
+    this.stopToys();
     this.loopReady = null;
     if (!editDrums && this.armedTrack !== t.id) this.armTrack(t.id, true);
     const kind: ClipKind = t.kind === "drums" ? "drums" : "notes";
@@ -1535,7 +1542,7 @@ export class Playground {
     if (!this.playing) {
       this.clipPlayer.launch(t.id, id);
       take.start = 0;
-      this.play(this.rec.countIn);
+      this.play(this.rec.countIn, true);
     } else if (this.clipPlayer.state(t.id).clip === id) {
       // Already playing (a stop waiting at the next bar is called off): the take starts now, where the clip is.
       this.clipPlayer.launch(t.id, id);
@@ -1726,7 +1733,7 @@ export class Playground {
   /** Where the take is, for the Song view: counting in, waiting for its bar, or recording (and which time round). */
   takeState(): { phase: "count" | "wait" | "rec"; count: number; pass: number } | null {
     const run = this.takeRun;
-    if (!run || !this.playing) return null;
+    if (!run || !this.songPlaying) return null;
     const beat = this.seq.beatAt(this.engine.ctx.currentTime);
     if (run.take.start === Infinity) return { phase: "wait", count: 0, pass: 0 };
     if (beat < run.take.start) return { phase: "count", count: Math.max(1, Math.min(BEATS_PER_BAR, Math.ceil(run.take.start - beat))), pass: 0 };
@@ -1754,7 +1761,7 @@ export class Playground {
 
   /** Whether the song plays along: the transport runs and a track has a clip launched or the timeline has something on it. */
   get songPlays() {
-    return this.playing && (this.placements.length > 0 || this.songTracks.some((t) => this.loopChosen(t.id)));
+    return this.songPlaying && (this.placements.length > 0 || this.songTracks.some((t) => this.loopChosen(t.id)));
   }
 
   /** A track as its pad shows it. */
@@ -1771,7 +1778,7 @@ export class Playground {
   /** Whether a track's pad blinks: its loop waits to start or stop, or its take to end. */
   padBlinks(id: string) {
     if (this.take?.track === id) return this.takeRun?.endAt !== undefined;
-    return this.playing && this.clipLaunch[id]?.next !== undefined;
+    return this.songPlaying && this.clipLaunch[id]?.next !== undefined;
   }
 
   /**
@@ -1784,6 +1791,7 @@ export class Playground {
     if (!t) return;
     if (this.take?.track === id) return this.takeRun?.loop ? this.finishLoopTake() : this.endTake();
     if (this.loopReady === id) return this.setLoopReady(null);
+    this.stopToys();
     const st = this.clipPlayer.state(id);
     if (this.loopChosen(id)) {
       if (!this.playing) this.clipPlayer.launch(id, null);
@@ -1832,6 +1840,7 @@ export class Playground {
     this.loopReady = null;
     const t = this.songTracks.find((x) => x.id === id);
     if (!t || id !== this.selectedSongTrack) return;
+    this.stopToys();
     const kind: ClipKind = t.kind === "drums" ? "drums" : "notes";
     const fits = (c: Clip | null | undefined) => (c && c.track === t.id && c.kind === kind ? c : null);
     const st = this.clipPlayer.state(t.id);
@@ -1887,7 +1896,7 @@ export class Playground {
     this.recording = true;
     this.metronome.on = this.rec.metronome;
     this.lastLoop = { ...this.lastLoop, [t.id]: cid };
-    if (!this.playing) this.play();
+    if (!this.playing) this.play(false, true);
     this.syncLaunch(t.id);
     this.syncTransportLeds();
     this.showHome();
@@ -1964,7 +1973,7 @@ export class Playground {
 
   /** Beats to the next bar (or to the end of a take tapped to end), as heard, for the big count; 0 when there is nothing to count. */
   loopCount(): { what: "bar" | "end"; beats: number } | null {
-    if (!this.playing) return null;
+    if (!this.songPlaying) return null;
     const now = this.heardBeat();
     const endAt = this.takeRun?.endAt;
     if (endAt !== undefined) return { what: "end", beats: Math.max(1, Math.ceil(endAt - now - 1e-6)) };
@@ -1977,7 +1986,7 @@ export class Playground {
   loopBar(): { bar: number; of: number | null } | null {
     const run = this.takeRun;
     const take = this.take;
-    if (!run || !take || !this.playing || run.take.start === Infinity) return null;
+    if (!run || !take || !this.songPlaying || run.take.start === Infinity) return null;
     const clip = this.songClips.find((c) => c.id === take.clip);
     const beats = Math.max(0, this.heardBeat() - run.take.start);
     if (run.loop?.first || !clip) return { bar: Math.floor(beats / BEATS_PER_BAR) + 1, of: null };
@@ -1990,14 +1999,14 @@ export class Playground {
    * to the arrangement, so ▶ plays it as a song.
    */
   captureToArrangement() {
-    const end = this.playing ? this.seq.beatAt(this.engine.ctx.currentTime) : this.stopBeat;
+    const end = this.songPlaying ? this.seq.beatAt(this.engine.ctx.currentTime) : this.stopBeat;
     const runs = captureRuns(this.clipPlayer.log, end, this.songStart).filter((r) => this.songClips.some((c) => c.id === r.clip));
     if (!runs.length) return this.showMessage("Capture", "nothing played yet");
     this.recordSong("Capture performance");
     let ps = $state.snapshot(this.placements) as Placement[];
     for (const r of runs) ps = fitPlacement(ps, { id: newPlacementId(ps), clip: r.clip, bar: r.bar, bars: Math.min(r.bars, MAX_SONG_BARS - r.bar), transpose: 0 }, this.trackOfClip);
     this.placements = ps;
-    if (!this.playing) {
+    if (!this.songPlaying) {
       for (const t of this.songTracks) this.clipPlayer.launch(t.id, null);
       for (const t of this.songTracks) this.syncLaunch(t.id);
       this.canCapture = false;
@@ -2013,7 +2022,7 @@ export class Playground {
    * back to where Play starts). Not while it loops, a clip plays from the launcher, or a take records.
    */
   private pastSongEnd() {
-    if (!this.playing || this.view !== "song" || this.take || (this.loopOn && this.loopRange) || this.launcherTracks.length) return false;
+    if (!this.songPlaying || this.view !== "song" || this.take || (this.loopOn && this.loopRange) || this.launcherTracks.length) return false;
     const end = songEnd(this.placements) * BEATS_PER_BAR;
     const beat = this.songBeatNow();
     return end > this.songStart * BEATS_PER_BAR && beat >= end;
@@ -2022,7 +2031,7 @@ export class Playground {
   /** The looper's light and screen, kept up with the music (every 40 ms). A take tapped to end ends here, at its beat. */
   private loopTick() {
     const run = this.takeRun;
-    if (run?.endAt !== undefined && this.playing && this.heardBeat() >= run.endAt) this.endTake();
+    if (run?.endAt !== undefined && this.songPlaying && this.heardBeat() >= run.endAt) this.endTake();
     if (this.pastSongEnd()) this.stop();
     if (!this.device || this.view !== "song") return;
     if (this.looperPads) this.paintLooper();
@@ -2674,7 +2683,7 @@ export class Playground {
     }
     return {
       view: this.view,
-      playing: this.playing,
+      playing: this.songPlaying,
       tempo: this.bpm,
       songName: this.songName,
       practice: this.practiceSong,
@@ -3436,7 +3445,7 @@ export class Playground {
 
   /** If this key should transpose the running sequence, the key that means "no change"; otherwise null. */
   private transposeRoot(note: number): number | null {
-    if (!this.noteSeq.enabled || !this.playing) return null;
+    if (!this.noteSeq.enabled || !this.playing || this.playsSong) return null;
     if (this.keysMode === "Transpose") return TRANSPOSE_ROOT;
     if (this.keysMode === "Split" && note < SPLIT_NOTE) return SPLIT_ROOT;
     return null;
@@ -3501,7 +3510,7 @@ export class Playground {
 
   private movePlayhead(step: number) {
     const prev = this.playStep;
-    this.playStep = this.playing ? step : -1;
+    this.playStep = this.playing && !this.playsSong ? step : -1;
     if (!this.stepMode) return;
     if (prev >= 0) this.paintStep(prev);
     if (this.playStep >= 0) this.paintStep(this.playStep);
@@ -3841,25 +3850,45 @@ export class Playground {
     else this.play();
   }
 
-  /** Play, after a bar of clicks with `countIn`. */
-  play(countIn = false) {
-    if (countIn && !this.playing) {
+  /** Whether ▶ here plays the song: in the Song view, or while a clip is edited in Play. */
+  get songHere() {
+    return this.view === "song" || (this.view === "playground" && !!this.editClip);
+  }
+
+  /** Whether the transport plays the song now. */
+  get songPlaying() {
+    return this.playing && this.playsSong;
+  }
+
+  /** Before something the song does (a clip launched, a take): the toys playing stop, so it starts the song. */
+  private stopToys() {
+    if (this.playing && !this.playsSong) this.stop();
+  }
+
+  /** Play the song or the toys (see `playsSong`), after a bar of clicks with `countIn`. */
+  play(countIn = false, song = this.songHere) {
+    if (this.playing) return;
+    this.playsSong = song;
+    this.seq.song = song;
+    if (countIn) {
       const secPerBeat = 60 / this.bpm;
       const lead = 0.05 + BEATS_PER_BAR * secPerBeat;
       this.seq.start(lead);
       this.metronome.countIn(this.engine.ctx.currentTime + lead, secPerBeat);
     } else this.seq.start();
     this.playing = true;
-    // Every chosen clip starts from bar 1: the loops' time rounds count from there.
-    if (this.loopGrid) this.loopGrid.origin = 0;
-    this.canCapture = this.clipPlayer.log.some((e) => e.clip !== null);
+    if (song) {
+      // Every chosen clip starts from bar 1: the loops' time rounds count from there.
+      if (this.loopGrid) this.loopGrid.origin = 0;
+      this.canCapture = this.clipPlayer.log.some((e) => e.clip !== null);
+    }
     this.syncTransportLeds();
     this.showHome();
   }
 
   stop() {
     this.endTake();
-    if (this.playing) this.stopBeat = this.seq.beatAt(this.engine.ctx.currentTime);
+    if (this.songPlaying) this.stopBeat = this.seq.beatAt(this.engine.ctx.currentTime);
     this.seq.stop();
     this.seqBlur = false;
     this.playing = false;
@@ -3875,11 +3904,13 @@ export class Playground {
   toggleRecord() {
     if (this.take) return this.endTake();
     if (this.recordsTake) return this.startTake();
+    // Pad hits go into the drum loop, so the toys play rather than the song.
+    if (!this.recording && this.songPlaying) this.stop();
     this.recording = !this.recording;
     // Recording pad hits into a loop you can't hear makes no sense: switch the drums on.
     if (this.recording && !this.drumsOn) this.setDrumsOn(true);
     this.seq.recording = this.recording;
-    if (this.recording && !this.playing) this.play();
+    if (this.recording && !this.playing) this.play(false, false);
     this.syncTransportLeds();
     this.showHome();
   }

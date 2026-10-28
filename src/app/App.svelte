@@ -144,6 +144,8 @@
 
   /** A recording's length as m:ss. */
   const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  /** What ▶ plays (or ■ stops): the song in the Song view (and while a clip is edited in Play), the toys anywhere else. */
+  const playSong = $derived(pg.playing ? pg.playsSong : pg.songHere);
 </script>
 
 
@@ -277,7 +279,7 @@
     </div>
 
     <div class="group transport" role="group" aria-label="Transport">
-      <button class:active={pg.playing} data-guide="play" onclick={() => pg.togglePlay()} title="Play / stop the drums and the step sequencer{pg.hw(' (Shift + ▶)')}">{pg.playing ? "■" : "▶"}</button>
+      <button class="play" class:active={pg.playing} data-guide="play" onclick={() => pg.togglePlay()} title="{pg.playing ? 'Stop' : 'Play'} {playSong ? 'the song' : 'the toys: the drum loop and the step sequencer'}{pg.hw(' (Shift + ▶)')}">{pg.playing ? "■" : "▶"} {playSong ? "Song" : "Toys"}</button>
       <button class="rec" class:active={pg.recording} onclick={() => pg.toggleRecord()} title="{pg.view === 'song' || pg.editClip?.kind === 'drums' ? 'Record into a clip' : 'Record pads into the drum loop'}{pg.hw(' (Shift + ●)')}">●</button>
       <label class="bpm" data-guide="tempo" title={pg.hw("Shift + knobs 2–8 on the MiniLab") || undefined}>
         <input type="number" min="40" max="240" value={pg.bpm} onchange={(e) => pg.setBpm(+e.currentTarget.value)} />
@@ -285,7 +287,7 @@
       </label>
       <button onclick={() => pg.tap()} title="Tap tempo{pg.hw(' (Shift + Tap)')}">Tap</button>
       {#if pg.songPlays && pg.view !== "song"}
-        <button class="song-on" onclick={() => pg.setView("song")} title="The song plays along with the toys, on the same clock and tempo. Click to open the Song view">Song ▶</button>
+        <button class="song-on" onclick={() => pg.setView("song")} title="The song is playing. Click to open the Song view">Song ▶</button>
       {/if}
       {#if pg.outputRec}
         <button class="outrec" onclick={() => pg.toggleOutputRecording()} title="Recording what you hear: click to stop">
@@ -660,6 +662,7 @@
   .compare { font-size: 12px; font-family: var(--mono); }
   .compare.active { background: #ffcc33; border-color: #ffcc33; color: #111; }
   .transport button { min-width: 34px; }
+  .transport .play { min-width: 76px; }
   .transport .active { background: var(--accent); color: #0b1314; }
   .transport .rec { color: #ff6b6b; }
   .transport .rec.active { background: #ff6b6b; color: #fff; }

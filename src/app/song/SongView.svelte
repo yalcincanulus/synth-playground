@@ -49,7 +49,7 @@
   onMount(() => {
     let raf = 0;
     const tick = () => {
-      if (pg.playing) frame++;
+      if (pg.songPlaying) frame++;
       raf = requestAnimationFrame(tick);
     };
     tick();
@@ -76,7 +76,7 @@
   function launchState(c: Clip) {
     const st = pg.clipLaunch[c.track];
     const chosen = st?.clip === c.id;
-    return { chosen, playing: chosen && pg.playing, waiting: st?.next === c.id, stopping: chosen && st?.next !== undefined };
+    return { chosen, playing: chosen && pg.songPlaying, waiting: st?.next === c.id, stopping: chosen && st?.next !== undefined };
   }
 
   /** What recording is doing, in a few words. */
@@ -134,7 +134,7 @@
     const t = pg.songTracks.find((x) => x.id === (take?.track ?? pg.loopReady));
     const at = pg.loopBar();
     if (take && t) return `Recording ${t.name}${at ? ` · bar ${at.bar}${at.of ? ` of ${at.of}` : ""}` : ""}: click its pad to end the take`;
-    if (pg.loopReady && t) return `${t.name} is ready: play to start recording${pg.playing ? "" : " (the music starts with your first note)"}`;
+    if (pg.loopReady && t) return `${t.name} is ready: play to start recording${pg.songPlaying ? "" : " (the music starts with your first note)"}`;
     return "Click a track's pad to select it, again to get it ready, then play: your first note starts the loop";
   }
 
@@ -331,7 +331,7 @@
             <button onclick={() => confirm("Throw the recording away?") && pg.discardRecording()} title="Throw the recording away">Discard</button>
           {/if}
         </div>
-        <p class="note">Everything you hear, live: the song, the toys and your playing. It keeps recording in the other views. When you stop, save it here or with Save in the transport.</p>
+        <p class="note">Everything you hear, live: the song or the toys, and your playing. It keeps recording in the other views. When you stop, save it here or with Save in the transport.</p>
       </div>
     </div>
   {/if}
@@ -454,7 +454,7 @@
   <ol class="tracks">
     {#each pg.songTracks as t, i (t.id)}
       {@const ps = pg.padStateOf(t.id)}
-      {@const auto = frame >= 0 && pg.playing ? pg.songTrackStrip(t.id)?.automatedAt(pg.engine.ctx.currentTime) : null}
+      {@const auto = frame >= 0 && pg.songPlaying ? pg.songTrackStrip(t.id)?.automatedAt(pg.engine.ctx.currentTime) : null}
       {@const k = (kind: string) => `${kind} ${guideKey(kind, t.name)}`}
       <li class="track" class:selected={pg.selectedSongTrack === t.id} class:silent={t.mute || (anySolo && !t.solo)} style:--track={css(t.color)}>
         <button class="swatch" data-guide={k("swatch")} onclick={() => pg.cycleSongTrackColor(t.id)} aria-label="Colour of {t.name}" title="Change the colour"></button>
@@ -531,7 +531,7 @@
                 data-guide="launch {guideKey('launch', c.name)}"
                 onclick={() => pg.launchClip(c.id)}
                 aria-label="{st.playing && !st.stopping ? 'Stop' : 'Play'} {c.name}"
-                title={st.waiting ? "Starts on the next bar (click to cancel)" : st.playing && !st.stopping ? "Stop this track at the next bar" : pg.playing ? "Play on this track from the next bar" : "Play"}
+                title={st.waiting ? "Starts on the next bar (click to cancel)" : st.playing && !st.stopping ? "Stop this track at the next bar" : pg.songPlaying ? "Play on this track from the next bar" : "Play"}
               >{st.playing && !st.stopping ? "■" : "▶"}</button>
               <button
                 class="clip-name"
