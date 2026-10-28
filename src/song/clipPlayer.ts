@@ -204,7 +204,14 @@ export class ClipPlayer {
       const seq = this.stepsFor(track, lane, clip);
       lane.cut = timeAt(boundary);
       seq.schedule(from - p, to - p, (b) => timeAt(b + p), secPerBeat, skip);
-    } else this.playNotes(track, lane, clip, from, to, boundary, timeAt, skip);
+    } else {
+      // A step clip turned into notes while it plays: a note its sequencer holds (a slide) ends here.
+      if (lane.stepsClip === clip.id) {
+        lane.steps?.release(timeAt(from));
+        lane.stepsClip = null;
+      }
+      this.playNotes(track, lane, clip, from, to, boundary, timeAt, skip);
+    }
   }
 
   private playNotes(track: string, lane: Lane, clip: NoteClip, from: number, to: number, boundary: number, timeAt: (beat: number) => number, skip: boolean) {

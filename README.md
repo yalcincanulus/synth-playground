@@ -20,7 +20,7 @@ is optional: connected, every control on the device does something, and the app 
 - Four envelopes, three LFOs and a mod matrix with 8 routes. Patch by dragging cables in the Synth view.
 - Eight effects: distortion, compressor, EQ, phaser, flanger, chorus, delay and reverb. Drag them to change the order.
 - A drum kit with a 16-step loop and a step sequencer.
-- A Song view: a drum track and up to seven synth tracks, each with its own sound, a mixer (volume, pan, mute, solo), and clips that loop on each track (sent from the Play view's drum loop and step sequencer).
+- A Song view: a drum track and up to seven synth tracks, each with its own sound, a mixer (volume, pan, mute, solo), and clips that loop on each track (sent from the Play view's drum loop and step sequencer, or written in a piano roll).
 - A Wavetable view in 3D. Import your own sound (WAV, MP3, OGG…) as a wavetable.
 - A course and recipes that teach synthesis step by step.
 - Factory presets, including 21 recreations of famous synth sounds (TB-303, Prophet-5, Juno, CS-80…).

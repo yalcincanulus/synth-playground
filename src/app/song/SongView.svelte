@@ -6,6 +6,8 @@
   import { MAX_SYNTH_TRACKS, MAX_TRACK_VOICES, VOLUME_MAX, VOLUME_MIN, type Track } from "../../song/song";
   import { surface, type Surface } from "../components/canvas";
   import type { Playground } from "../playground.svelte";
+  import SequencerPanel from "../sequencer/SequencerPanel.svelte";
+  import PianoRoll from "./PianoRoll.svelte";
   import { trackCss as css } from "./trackColor";
 
   interface Props {
@@ -128,8 +130,9 @@
       selected, the keys from C to G play the drum kit. The mixer sets how loud each track is and where it sits left to right; <strong>M</strong> mutes a track,
       <strong>S</strong> plays only the soloed ones.
       Below each track are its <strong>clips</strong>: short patterns that loop. ▶ plays a clip on its track (from the next bar while the music plays; ■ stops it at the
-      next bar). Send the Play view's drum loop or step sequence here with <strong>Send to song</strong>, or make a new clip with <strong>+</strong>, then click a clip's
-      name to rename it, set its length or change it with <strong>Edit in Play</strong>. The Play view's drums and step sequencer keep playing on top of the song.
+      next bar). Send the Play view's drum loop or step sequence here with <strong>Send to song</strong>, or make a new clip with <strong>+</strong>. Click a clip's
+      name to open it: a note clip opens in the <strong>piano roll</strong>, where you draw its notes; a step clip in the step sequencer's panel. The Play view's drums and
+      step sequencer keep playing on top of the song.
     </p>
   {/if}
 
@@ -205,9 +208,12 @@
               {#if st.playing}<span class="progress" style:width="{progress(c) * 100}%"></span>{/if}
             </div>
           {/each}
-          <button class="add-clip" onclick={() => pg.addClip(t.id)} title={t.kind === "drums" ? "A new empty drum clip" : "A new step clip, to change with Edit in Play"}>
-            + {t.kind === "drums" ? "Drum clip" : "Step clip"}
-          </button>
+          {#if t.kind === "drums"}
+            <button class="add-clip" onclick={() => pg.addClip(t.id)} title="A new empty drum clip">+ Drum clip</button>
+          {:else}
+            <button class="add-clip" onclick={() => pg.addClip(t.id, "notes")} title="A new empty note clip, to write in the piano roll">+ Note clip</button>
+            <button class="add-clip" onclick={() => pg.addClip(t.id, "steps")} title="A new step clip: 8 steps, like the Play view's step sequencer">+ Step clip</button>
+          {/if}
         </div>
       </li>
     {/each}
@@ -225,6 +231,9 @@
       </label>
       <span class="summary">{summary(clip)}</span>
       <span class="push"></span>
+      {#if clip.kind === "steps"}
+        <button onclick={() => pg.convertToNotes(clip!.id)} title="Turn it into a note clip that sounds the same, to edit in the piano roll (undo turns it back)">Convert to notes</button>
+      {/if}
       {#if clip.kind !== "notes"}
         <button onclick={() => pg.editInPlay(clip!.id)} title={clip.kind === "drums" ? "Change it in the Play view's drum loop (and with the pads)" : "Change it in the Play view's step sequencer (and on the MiniLab)"}>Edit in Play</button>
       {/if}
@@ -232,6 +241,11 @@
       <button class="danger" onclick={() => removeClip(clip!)} title="Delete this clip">Delete</button>
       <button class="close" onclick={() => pg.selectClip(null)} aria-label="Close">✕</button>
     </section>
+    {#if clip.kind === "notes"}
+      <PianoRoll {pg} {clip} color={css(clipTrack.color)} />
+    {:else if clip.kind === "steps" && pg.editClipId === clip.id}
+      <SequencerPanel {pg} />
+    {/if}
   {/if}
 </section>
 

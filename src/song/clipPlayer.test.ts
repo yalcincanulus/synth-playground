@@ -219,6 +219,25 @@ describe("clip player", () => {
     balanced(events);
   });
 
+  test("a step clip turned into notes while it plays: a note held by a slide ends, and the notes play", () => {
+    const s = { ...defaultNoteSeq(), enabled: true };
+    s.steps.forEach((st) => (st.slide = true)); // every note is held into the next
+    const clip = stepClip([], BASS, s, 1);
+    const clips: Clip[] = [clip];
+    const { player, seq, events, run } = setup(clips);
+    player.launch(BASS.id, clip.id);
+    seq.start();
+    run(0.6);
+    clips[0] = { id: clip.id, track: clip.track, name: clip.name, bars: 1, kind: "notes", notes: [{ start: 0, length: Q, pitch: 40, velocity: 100 }] };
+    run(2.5);
+    seq.stop();
+    // Let go where the notes take over (within the lookahead), not at the end of the bar.
+    const stepOffs = offs(events).filter((e) => e.note !== 40);
+    expect(Math.max(...stepOffs.map((e) => e.time))).toBeLessThan(1);
+    expect(ons(events).some((e) => e.note === 40)).toBe(true);
+    balanced(events);
+  });
+
   test("a step clip on a Free clock starts from step 1 at each start of the clip", () => {
     const s = { ...defaultNoteSeq(), enabled: true, free: true, hz: 2.7 }; // 5.4 steps in a 2 s bar
     s.steps.forEach((st, i) => (st.note = 60 + i));
