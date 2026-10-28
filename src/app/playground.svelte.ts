@@ -88,8 +88,11 @@ import {
 import { barsForSteps, cleanNotes, clipBeats, drumClip, duplicateClip, noteClip, stepClip, withBars, BEATS_PER_BAR, MAX_BARS, type Clip, type ClipKind, type Note } from "../song/clips";
 import { GRIDS, stepsToNotes } from "../song/noteEdit";
 import { readRecordSettings, Take, type RecordSettings } from "../song/recorder";
-import { clampPlacement, fitPlacement, freeBar, MAX_SONG_BARS, newPlacementId, type BarRange, type Placement } from "../song/arrangement";
+import { clampPlacement, fitPlacement, freeBar, MAX_SONG_BARS, newPlacementId, songEnd, type BarRange, type Placement } from "../song/arrangement";
 import { ClipPlayer } from "../song/clipPlayer";
+import { renderSong } from "../song/songRender";
+import { download } from "./download";
+import { encodeWav, peakDb, type WavBits } from "../audio/wav";
 import { cleanSongName, emptySong, newSongId, readSongFile, sameTable, songFile, uniqueSongName, type SongDoc, type SongSound, type SongTable } from "../song/songDoc";
 import { deleteSong as deleteStoredSong, getSong, getSongTables, putSong, putSongTables, rememberOpen, songsAtStart } from "../song/songStore";
 import { EXAMPLE_SONGS } from "../song/examples";
@@ -108,6 +111,26 @@ const ARP_KEY = "minilab3.arp";
 const RECIPES_DONE_KEY = "minilab3.recipesDone";
 const FAVOURITES_KEY = "minilab3.favourites";
 const RECORD_KEY = "minilab3.record";
+const EXPORT_KEY = "minilab3.export";
+/** Recording what you hear stops by itself after this long (an hour of stereo samples is about 1.4 GB). */
+const MAX_RECORDING_S = 20 * 60;
+
+/** How a song is exported: the whole song or its loop region, the sample rate, and 16 or 24 bit. */
+export interface WavSettings {
+  range: "song" | "loop";
+  rate: 44100 | 48000;
+  bits: WavBits;
+}
+
+function loadWavSettings(): WavSettings {
+  let raw: Partial<WavSettings> | null = null;
+  try {
+    raw = JSON.parse(localStorage.getItem(EXPORT_KEY) ?? "null");
+  } catch {
+    raw = null;
+  }
+  return { range: raw?.range === "loop" ? "loop" : "song", rate: raw?.rate === 44100 ? 44100 : 48000, bits: raw?.bits === 24 ? 24 : 16 };
+}
 
 /** Your favourite presets' ids, in the order you starred them (pad bank B loads the first 8). */
 function loadFavourites(): string[] {
@@ -1872,6 +1895,159 @@ export class Playground {
     this.openDoc(named, tables, false);
     this.saveSongNow();
     return `Opened ${named.name}${tables.length ? ` (with ${tables.length} wavetable${tables.length === 1 ? "" : "s"})` : ""}`;
+  }
+
+  // ------------------------------------------------------------------ WAV export, and recording the output
+
+  /** How songs are exported (and recordings written), kept across reloads. */
+  wavSettings = $state<WavSettings>(loadWavSettings());
+  /** An export in progress: how far it is (0..1). */
+  exporting = $state<{ progress: number } | null>(null);
+  private exportAbort: AbortController | null = null;
+
+  setWavSettings(change: Partial<WavSettings>) {
+    this.wavSettings = { ...this.wavSettings, ...change };
+    try {
+      localStorage.setItem(EXPORT_KEY, JSON.stringify(this.wavSettings));
+    } catch {
+      // Not kept (private window): it still works until the page closes.
+    }
+  }
+
+  /** The bars an export covers: the whole song (to its last placement), or the loop region. */
+  get exportRange(): BarRange | null {
+    if (this.wavSettings.range === "loop") return this.loopRange;
+    const end = songEnd(this.placements);
+    return end > 0 ? { start: 0, end } : null;
+  }
+
+  /**
+   * Render the song's arrangement offline and make it a WAV file: the whole song or the loop region, with the
+   * delay and reverb ringing out. The toys aren't in it. Throws an AbortError when cancelled.
+   */
+  async exportWav(): Promise<{ wav: ArrayBuffer; seconds: number }> {
+    const range = this.exportRange;
+    if (!range) throw new Error(this.wavSettings.range === "loop" ? "There is no loop region: drag on the ruler to make one." : "The song is empty: place clips on the timeline first.");
+    if (this.exporting) throw new Error("An export is already running.");
+    this.flushClipEdit();
+    const abort = new AbortController();
+    this.exportAbort = abort;
+    this.exporting = { progress: 0 };
+    try {
+      const sounds: Record<string, ParamValues> = {};
+      for (const t of this.songTracks) if (t.kind === "synth" && this.parts[t.id]) sounds[t.id] = $state.snapshot(this.parts[t.id].values);
+      const scale = $state.snapshot(this.scale);
+      const { channels, sampleRate } = await renderSong(
+        {
+          tracks: $state.snapshot(this.songTracks),
+          sounds,
+          clips: $state.snapshot(this.songClips) as Clip[],
+          placements: $state.snapshot(this.placements),
+          tempo: this.songTempo,
+          keys: $state.snapshot(this.parts.keys.values),
+          pitch: (note) => snapToScale(note, scale),
+          from: range.start,
+          to: range.end,
+        },
+        this.wavSettings.rate,
+        (progress) => this.exporting && (this.exporting = { progress }),
+        abort.signal,
+      );
+      return { wav: encodeWav(channels, sampleRate, this.wavSettings.bits), seconds: channels[0].length / sampleRate };
+    } finally {
+      this.exporting = null;
+      this.exportAbort = null;
+    }
+  }
+
+  cancelExport() {
+    this.exportAbort?.abort();
+  }
+
+  /** Recording what you hear: how long so far, and the level (dBFS, falling back slowly), for the meter. */
+  outputRec = $state<{ seconds: number; level: number } | null>(null);
+  private recorder: { node: AudioWorkletNode; left: Float32Array[]; right: Float32Array[]; frames: number } | null = null;
+
+  /** Record the app's output in real time (toys and all, whatever view), until stopOutputRecording(). */
+  async startOutputRecording() {
+    if (this.recorder) return;
+    await this.startAudio();
+    const ctx = this.engine.ctx;
+    const node = new AudioWorkletNode(ctx, "recorder", { numberOfInputs: 1, numberOfOutputs: 0, channelCount: 2, channelCountMode: "explicit" });
+    const rec = { node, left: [] as Float32Array[], right: [] as Float32Array[], frames: 0 };
+    let level = -Infinity;
+    node.port.onmessage = (e: MessageEvent<{ type: string; left: Float32Array; right: Float32Array }>) => {
+      if (e.data.type !== "chunk") return;
+      rec.left.push(e.data.left);
+      rec.right.push(e.data.right);
+      rec.frames += e.data.left.length;
+      const peak = peakDb([e.data.left, e.data.right]);
+      level = peak > level ? peak : Math.max(peak, level - 3);
+      this.outputRec = { seconds: rec.frames / ctx.sampleRate, level };
+      if (rec.frames / ctx.sampleRate >= MAX_RECORDING_S) void this.finishOutputRecording();
+    };
+    this.engine.tapOutput(node);
+    this.recorder = rec;
+    this.outputRec = { seconds: 0, level: -Infinity };
+    this.showMessage("Recording", "what you hear");
+  }
+
+  /** The last recording, finished: kept until you save it (or discard it, or record another). */
+  recordedWav = $state.raw<{ wav: ArrayBuffer; seconds: number; at: Date; saved: boolean } | null>(null);
+
+  /** Stop recording what you hear; the WAV is in `recordedWav`. */
+  async finishOutputRecording() {
+    const rec = this.recorder;
+    if (!rec) return;
+    this.recorder = null;
+    await new Promise<void>((resolve) => {
+      const done = (e: MessageEvent<{ type: string; left: Float32Array; right: Float32Array }>) => {
+        if (e.data.type === "chunk") {
+          rec.left.push(e.data.left);
+          rec.right.push(e.data.right);
+          rec.frames += e.data.left.length;
+        } else if (e.data.type === "done") resolve();
+      };
+      rec.node.port.onmessage = done;
+      rec.node.port.postMessage({ type: "stop" });
+      setTimeout(resolve, 1000);
+    });
+    this.engine.untapOutput(rec.node);
+    const join = (parts: Float32Array[]) => {
+      const out = new Float32Array(rec.frames);
+      let at = 0;
+      for (const p of parts) {
+        out.set(p.subarray(0, rec.frames - at), at);
+        at += p.length;
+      }
+      return out;
+    };
+    const rate = this.engine.ctx.sampleRate;
+    this.outputRec = null;
+    this.recordedWav = { wav: encodeWav([join(rec.left), join(rec.right)], rate, this.wavSettings.bits), seconds: rec.frames / rate, at: new Date(), saved: false };
+    this.showMessage("Recording", "stopped: save it");
+  }
+
+  /** Save the last recording as a file (named for when it was made). */
+  saveRecording() {
+    const r = this.recordedWav;
+    if (!r) return;
+    const at = r.at;
+    const stamp = `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")} ${String(at.getHours()).padStart(2, "0")}.${String(at.getMinutes()).padStart(2, "0")}`;
+    download(r.wav, `Recording ${stamp}.wav`, "audio/wav");
+    this.recordedWav = { ...r, saved: true };
+  }
+
+  /** Throw the last recording away. */
+  discardRecording() {
+    this.recordedWav = null;
+  }
+
+  /** Start recording, or stop. A recording not saved yet is replaced by a new one only when you say so. */
+  toggleOutputRecording() {
+    if (this.recorder) return void this.finishOutputRecording();
+    if (this.recordedWav && !this.recordedWav.saved && !confirm("Your last recording isn't saved. Record a new one instead?")) return;
+    void this.startOutputRecording();
   }
 
   async startAudio() {

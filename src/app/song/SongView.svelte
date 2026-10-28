@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { download, fileName } from "../download";
   import { DRUM_NAMES } from "../../audio/drums";
   import { RATES } from "../../audio/stepSequencer";
   import { CLIP_KIND_NAMES, clipBeats, MAX_BARS, type Clip } from "../../song/clips";
@@ -120,14 +121,30 @@
   }
 
   function exportSong() {
-    const blob = new Blob([pg.exportSong()], { type: "application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `${pg.songName.replace(/[\\/:*?"<>|]+/g, "-")}.song.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    download(pg.exportSong(), `${fileName(pg.songName)}.song.json`, "application/json");
     songMessage = { ok: true, text: `${pg.songName} saved to a file` };
   }
+
+  // ------------------------------------------------------------------ WAV
+
+  let wavPanel = $state(false);
+  let wavMessage = $state<{ ok: boolean; text: string } | null>(null);
+  const duration = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+
+  async function exportWav() {
+    wavMessage = null;
+    try {
+      const { wav, seconds } = await pg.exportWav();
+      const range = pg.wavSettings.range === "loop" && pg.loopRange ? ` bars ${pg.loopRange.start + 1}-${pg.loopRange.end}` : "";
+      download(wav, `${fileName(pg.songName)}${range}.wav`, "audio/wav");
+      wavMessage = { ok: true, text: `Exported ${duration(seconds)} (${(wav.byteLength / 1048576).toFixed(1)} MB)` };
+    } catch (err) {
+      const e = err as Error;
+      wavMessage = { ok: e.name === "AbortError", text: e.name === "AbortError" ? "Export cancelled" : e.message };
+    }
+  }
+
+  const exportBars = $derived(pg.exportRange ? pg.exportRange.end - pg.exportRange.start : 0);
 
   async function importSong(file: File | undefined) {
     if (!file) return;
@@ -185,11 +202,56 @@
     <button onclick={() => pg.newSong()} title="A new, empty song (this one stays saved)">New</button>
     <button onclick={() => pg.duplicateSong()} title="Keep this song as it is, and go on in a copy">Duplicate</button>
     <button onclick={exportSong} title="Save the song as a file, with its sounds and wavetables, to keep or open on another computer">Export</button>
+    <button onclick={() => (wavPanel = !wavPanel)} aria-expanded={wavPanel} title="Make an audio file of the song, or record what you hear">WAV {wavPanel ? "▴" : "▾"}</button>
     <button onclick={() => songFileInput.click()} title="Open a song file as a new song">Import…</button>
     <input bind:this={songFileInput} type="file" accept=".json,application/json" hidden onchange={(e) => { void importSong(e.currentTarget.files?.[0]); e.currentTarget.value = ""; }} />
     <span class="saved" title="Songs are saved in this browser as you work">Saved</span>
     {#if songMessage}<span class="song-msg" class:bad={!songMessage.ok}>{songMessage.text}</span>{/if}
   </div>
+  {#if wavPanel}
+    <div class="wav-panel">
+      <div class="wav-export" role="group" aria-label="Export the song as a WAV file">
+        <h3>Export as WAV</h3>
+        <div class="wav-row">
+          <select value={pg.wavSettings.range} onchange={(e) => pg.setWavSettings({ range: e.currentTarget.value as "song" | "loop" })} aria-label="What to export">
+            <option value="song">The whole song</option>
+            <option value="loop" disabled={!pg.loopRange}>The loop region{pg.loopRange ? ` (bars ${pg.loopRange.start + 1}–${pg.loopRange.end})` : ""}</option>
+          </select>
+          <select value={pg.wavSettings.rate} onchange={(e) => pg.setWavSettings({ rate: +e.currentTarget.value as 44100 | 48000 })} aria-label="Sample rate">
+            <option value={44100}>44.1 kHz</option>
+            <option value={48000}>48 kHz</option>
+          </select>
+          <select value={pg.wavSettings.bits} onchange={(e) => pg.setWavSettings({ bits: +e.currentTarget.value as 16 | 24 })} aria-label="Bit depth">
+            <option value={16}>16 bit</option>
+            <option value={24}>24 bit</option>
+          </select>
+          {#if pg.exporting}
+            <progress max="1" value={pg.exporting.progress} aria-label="Export progress"></progress>
+            <button onclick={() => pg.cancelExport()}>Cancel</button>
+          {:else}
+            <button class="go" onclick={exportWav} disabled={!exportBars} title="Render the song (faster than real time) and save the WAV">Export {exportBars ? `${exportBars} bar${exportBars === 1 ? "" : "s"}` : ""}</button>
+          {/if}
+        </div>
+        <p class="note">The song's tracks, as arranged on the timeline, with the delay and reverb ringing out. The Play view's drum loop and step sequencer aren't in it: send them to the song to keep them.</p>
+        {#if wavMessage}<p class="song-msg" class:bad={!wavMessage.ok}>{wavMessage.text}</p>{/if}
+      </div>
+      <div class="wav-record" role="group" aria-label="Record what you hear">
+        <h3>Record what you hear</h3>
+        <div class="wav-row">
+          <button class="rec-out" class:on={!!pg.outputRec} onclick={() => pg.toggleOutputRecording()} title="Record the app's output as you hear it, toys and all, in real time">
+            ● {pg.outputRec ? "Stop" : "Record"}
+          </button>
+          <span class="time">{duration(pg.outputRec?.seconds ?? 0)}</span>
+          <meter min="-60" max="0" low="-12" high="-3" optimum="-20" value={Math.max(-60, pg.outputRec?.level ?? -60)} aria-label="Level"></meter>
+          {#if pg.recordedWav && !pg.outputRec}
+            <button class:go={!pg.recordedWav.saved} onclick={() => pg.saveRecording()} title="Save the recording as a WAV file">{pg.recordedWav.saved ? "Save again" : "Save"} ({duration(pg.recordedWav.seconds)})</button>
+            <button onclick={() => confirm("Throw the recording away?") && pg.discardRecording()} title="Throw the recording away">Discard</button>
+          {/if}
+        </div>
+        <p class="note">Everything you hear, live: the song, the toys and your playing. It keeps recording in the other views. When you stop, save it here or with Save in the transport.</p>
+      </div>
+    </div>
+  {/if}
   {#if songList}
     <div class="song-list">
       <div>
@@ -242,7 +304,7 @@
       To <strong>record</strong>, arm a track with its red ● and press ● Record: what you play on the keys (or the pads, for the drums) goes into its clip, time
       round after time round. Overdub adds each time; Replace starts from an empty clip.
       The song is <strong>saved</strong> in this browser as you work, with each track's sound (so changing or deleting a preset later doesn't change it) and the
-      wavetables it uses. <strong>Songs</strong> lists your songs and three examples; <strong>Export</strong> makes a file you can open on another computer.
+      wavetables it uses. <strong>Songs</strong> lists your songs and three examples; <strong>Export</strong> makes a file you can open on another computer. <strong>WAV</strong> makes an audio file of the song (or its loop region), or records everything you hear as you play.
     </p>
   {/if}
 
@@ -429,6 +491,17 @@
   .open-song .dt { font-size: 11px; color: var(--dim); }
   .song-list .del { padding: 0 8px; color: var(--dim); }
   .song-list .del:hover { color: #ff8a80; border-color: #ff8a80; }
+  .wav-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 10px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; }
+  .wav-panel h3 { margin: 0 0 6px; font-size: 12px; color: var(--dim); font-weight: 600; }
+  .wav-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; }
+  .wav-row button { font-size: 12px; padding: 3px 10px; }
+  .wav-row .go { border-color: var(--accent); color: var(--accent); }
+  .wav-row progress { flex: 1 1 100px; min-width: 80px; }
+  .wav-panel .note { margin: 6px 0 0; font-size: 11px; color: var(--dim); }
+  .rec-out { color: #ff6b6b; }
+  .rec-out.on { background: #ff6b6b; color: #fff; }
+  .time { font: 13px var(--mono); min-width: 3.5em; }
+  .wav-row meter { flex: 1 1 80px; min-width: 60px; }
   .head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   h2 { margin: 0; font-size: 14px; }
   .head button { font-size: 12px; padding: 3px 10px; }
@@ -547,7 +620,7 @@
     .meter { display: none; }
   }
   @media (max-width: 700px) {
-    .song-list { grid-template-columns: 1fr; }
+    .song-list, .wav-panel { grid-template-columns: 1fr; }
     .track {
       grid-template-columns: 10px 32px minmax(0, 1fr) auto;
       grid-template-areas:

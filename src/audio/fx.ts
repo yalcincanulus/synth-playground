@@ -47,6 +47,11 @@ export class Fx {
     split.connect(this.meters.right, 1);
   }
 
+  /** The final sound, as it goes to the speakers (silent while "Listen here" mutes it). */
+  get output(): AudioNode {
+    return this.mute;
+  }
+
   /** A new part's effects. */
   addPart(): PartFx {
     const part = new PartFx(this.ctx, this.master);

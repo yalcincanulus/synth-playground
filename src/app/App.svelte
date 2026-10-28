@@ -135,6 +135,9 @@
     "not-found": "",
     connected: "",
   };
+
+  /** A recording's length as m:ss. */
+  const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 </script>
 
 
@@ -268,6 +271,14 @@
         BPM
       </label>
       <button onclick={() => pg.tap()} title="Tap tempo{pg.hw(' (Shift + Tap)')}">Tap</button>
+      {#if pg.outputRec}
+        <button class="outrec" onclick={() => pg.toggleOutputRecording()} title="Recording what you hear: click to stop">
+          ● {clock(pg.outputRec.seconds)} ■
+        </button>
+      {:else if pg.recordedWav && !pg.recordedWav.saved}
+        <button class="outrec" onclick={() => pg.saveRecording()} title="Save the recording as a WAV file">Save {clock(pg.recordedWav.seconds)}</button>
+        <button class="outrec" onclick={() => confirm("Throw the recording away?") && pg.discardRecording()} aria-label="Discard the recording" title="Throw the recording away">✕</button>
+      {/if}
     </div>
   </section>
   {/if}
@@ -618,6 +629,7 @@
   .transport .active { background: var(--accent); color: #0b1314; }
   .transport .rec { color: #ff6b6b; }
   .transport .rec.active { background: #ff6b6b; color: #fff; }
+  .transport .outrec { color: #ff6b6b; border-color: #ff6b6b; font: 12px var(--mono); }
   .bpm { display: flex; align-items: center; gap: 4px; color: var(--dim); font-size: 12px; }
   .bpm input { width: 52px; padding: 4px 6px; text-align: center; font: 13px var(--mono); color: var(--text); appearance: textfield; }
   .bpm input::-webkit-inner-spin-button, .bpm input::-webkit-outer-spin-button { appearance: none; margin: 0; }

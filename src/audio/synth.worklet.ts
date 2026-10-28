@@ -9,6 +9,8 @@
 // Wavetables are prepared on the main thread (wavetables.ts) and sent once to a
 // "table-loader" processor, which stores them where every voice's processor can read them.
 //
+// "recorder": collects the app's output for "Record what you hear" and sends it to the main thread.
+//
 // "fx-slot": one of the effects written in our own code (distortion, phaser, flanger; dsp/effects.ts),
 // stereo in and out. A part makes one when that effect is first turned on (see PartFx).
 //
@@ -187,6 +189,52 @@ class FxSlot extends AudioWorkletProcessor {
   }
 }
 
+/** Frames the recorder collects before it sends them to the main thread (about 0.1 s). */
+const RECORD_CHUNK = 4096;
+
+/**
+ * "recorder": what comes in (the app's output), sent to the main thread in chunks of stereo samples, until it
+ * is told to stop. It has no outputs, so Chrome runs it for its input alone.
+ */
+class Recorder extends AudioWorkletProcessor {
+  private left = new Float32Array(RECORD_CHUNK);
+  private right = new Float32Array(RECORD_CHUNK);
+  private at = 0;
+  private stopped = false;
+
+  constructor() {
+    super();
+    this.port.onmessage = (e: MessageEvent<{ type: "stop" }>) => {
+      if (e.data.type !== "stop") return;
+      this.send();
+      this.stopped = true;
+      this.port.postMessage({ type: "done" });
+    };
+  }
+
+  private send() {
+    if (!this.at) return;
+    const left = this.left.slice(0, this.at);
+    const right = this.right.slice(0, this.at);
+    this.port.postMessage({ type: "chunk", left, right }, [left.buffer, right.buffer]);
+    this.at = 0;
+  }
+
+  process(inputs: Float32Array[][]) {
+    if (this.stopped) return false;
+    const input = inputs[0];
+    const n = input[0]?.length ?? BLOCK;
+    for (let i = 0; i < n; i++) {
+      // Nothing connected (or silence that Chrome leaves out): zeros, so the time still counts.
+      this.left[this.at] = input[0]?.[i] ?? 0;
+      this.right[this.at] = input[1]?.[i] ?? input[0]?.[i] ?? 0;
+      if (++this.at === RECORD_CHUNK) this.send();
+    }
+    return true;
+  }
+}
+
 registerProcessor("synth-voices", SynthVoices);
+registerProcessor("recorder", Recorder);
 registerProcessor("fx-slot", FxSlot);
 registerProcessor("table-loader", TableLoader);

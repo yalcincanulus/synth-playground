@@ -16,6 +16,8 @@ export class Voice {
   /** The part that played it: your keys, the step sequencer, or a song track. Each only releases its own notes. */
   owner: NoteOwner = "keys";
   releasedAt: number | null = null;
+  /** When a released voice has fallen silent (its release over), by the audio clock. */
+  endsAt: number | null = null;
   readonly startedAt: number;
   /** When the envelopes last (re)started: differs from startedAt after a mono retrigger. */
   triggeredAt: number;

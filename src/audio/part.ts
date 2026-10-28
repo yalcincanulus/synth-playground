@@ -287,6 +287,9 @@ export class Part {
     if (this.mono) return this.monoNoteOn(note, velocity, t, slide);
     // Retriggering a held note: release the old voice first.
     for (const v of this.voices) if (v.note === note && v.releasedAt === null) this.releaseVoice(v, t);
+    // Voices silent by now are forgotten by the audio clock too, not only by the timer: an offline render
+    // (the song export) runs far ahead of the wall clock, and they would crowd out new notes.
+    this.voices = this.voices.filter((v) => v.endsAt === null || v.endsAt > t);
     this.host.makeRoom(this, voiceWeight(this.params.unison), t);
     this.voices.push(this.newVoice(note, velocity, t));
   }
@@ -330,6 +333,7 @@ export class Part {
 
   private releaseVoice(v: Voice, t: number) {
     const end = v.release(this.params, t);
+    v.endsAt = end;
     v.stop(end);
     setTimeout(() => this.voices.includes(v) && this.remove(v), (end - this.host.ctx.currentTime) * 1000 + 50);
   }

@@ -95,12 +95,19 @@ export class Engine {
   private listenNode: AudioNode | null = null;
   private bend = 0;
   private mod = 0;
+  private listenLimiter: DynamicsCompressorNode;
+  /**
+   * Rendering offline (the render check, the song export): every note is kept. The CPU guard cuts notes so a
+   * live sound doesn't crackle, but offline there is all the time needed, and its measures mean nothing.
+   */
+  readonly offline: boolean;
 
   /**
    * `ctx` is normally a live AudioContext. The render check passes an OfflineAudioContext (cast):
    * the engine uses nothing an offline context lacks, apart from resume().
    */
   constructor(readonly ctx: AudioContext = new AudioContext({ latencyHint: "interactive" })) {
+    this.offline = typeof OfflineAudioContext !== "undefined" && (ctx as BaseAudioContext) instanceof OfflineAudioContext;
     this.fx = new Fx(ctx);
     this.analyser = this.fx.analyser;
     const engine = this;
@@ -135,8 +142,8 @@ export class Engine {
 
     // "Listen here": a tap is routed to its own quiet, limited output while the main output is muted.
     this.listenGain = new GainNode(ctx, { gain: LISTEN_GAIN });
-    const listenLimiter = new DynamicsCompressorNode(ctx, { threshold: -6, knee: 3, ratio: 20, attack: 0.002, release: 0.15 });
-    this.listenGain.connect(listenLimiter).connect(ctx.destination);
+    this.listenLimiter = new DynamicsCompressorNode(ctx, { threshold: -6, knee: 3, ratio: 20, attack: 0.002, release: 0.15 });
+    this.listenGain.connect(this.listenLimiter).connect(ctx.destination);
 
     this.drums = new Drums(ctx, this.fx.drumIn, noise);
     for (const part of this.allParts) part.apply();
@@ -220,6 +227,7 @@ export class Engine {
   }
 
   private cpuReported(cpu: Omit<CpuLoad, "cuts">) {
+    if (this.offline) return;
     const fresh = performance.now() - this.cpuAt < CPU_STALE_MS;
     const load = fresh ? this.cpuReport.load * 0.6 + cpu.load * 0.4 : cpu.load;
     this.cpuReport = { ...cpu, load, cuts: this.cpuCuts };
@@ -245,6 +253,17 @@ export class Engine {
       this.tableLoader?.port.postMessage({ id });
     }
     for (const part of this.allParts) this.loadTable(part.params.wtTable);
+  }
+
+  /** Send what you hear (the full sound, or the tap you listen to) into `node` too, say a recorder. */
+  tapOutput(node: AudioNode) {
+    this.fx.output.connect(node);
+    this.listenLimiter.connect(node);
+  }
+
+  untapOutput(node: AudioNode) {
+    this.fx.output.disconnect(node);
+    this.listenLimiter.disconnect(node);
   }
 
   // --- parameters (of the selected part unless another is named)
