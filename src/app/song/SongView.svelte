@@ -4,6 +4,7 @@
   import { RATES } from "../../audio/stepSequencer";
   import { CLIP_KIND_NAMES, clipBeats, MAX_BARS, type Clip } from "../../song/clips";
   import { GRIDS } from "../../song/noteEdit";
+  import { EXAMPLE_SONGS } from "../../song/examples";
   import { MAX_SYNTH_TRACKS, MAX_TRACK_VOICES, VOLUME_MAX, VOLUME_MIN, type Track } from "../../song/song";
   import { surface, type Surface } from "../components/canvas";
   import type { Playground } from "../playground.svelte";
@@ -103,6 +104,50 @@
     if (confirm(`Delete the clip "${c.name}"?`)) pg.removeClip(c.id);
   }
 
+  // ------------------------------------------------------------------ songs
+
+  let songList = $state(false);
+  let songFileInput: HTMLInputElement;
+  let songMessage = $state<{ ok: boolean; text: string } | null>(null);
+
+  function renameSong(input: HTMLInputElement) {
+    pg.renameSong(input.value);
+    input.value = pg.songName;
+  }
+
+  function deleteSong(id: string, name: string) {
+    if (confirm(`Delete the song "${name}"? This can't be undone.`)) void pg.deleteSong(id);
+  }
+
+  function exportSong() {
+    const blob = new Blob([pg.exportSong()], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${pg.songName.replace(/[\\/:*?"<>|]+/g, "-")}.song.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    songMessage = { ok: true, text: `${pg.songName} saved to a file` };
+  }
+
+  async function importSong(file: File | undefined) {
+    if (!file) return;
+    try {
+      songMessage = { ok: true, text: await pg.importSong(file) };
+      songList = false;
+    } catch (err) {
+      songMessage = { ok: false, text: (err as Error).message };
+    }
+  }
+
+  const when = (ms: number) => new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+
+  /** What a track's sound is, in words: the preset it started from, and whether it was edited. */
+  function soundTitle(id: string) {
+    const p = pg.presetOf(id);
+    const from = pg.isListed(p) ? p.name : `${p.name} (no longer in your presets)`;
+    return `${from}${pg.parts[id]?.dirty ? ", edited" : ""}. Click to browse presets for this track.`;
+  }
+
   /** One meter per track, kept across redraws (so its level falls back smoothly). */
   const meters = new Map<string, ReturnType<typeof makeMeter>>();
   const meter = (id: string) => meters.get(id) ?? meters.set(id, makeMeter(id)).get(id)!;
@@ -134,6 +179,48 @@
 </script>
 
 <section class="song panel" aria-label="Song">
+  <div class="song-bar" role="group" aria-label="The song">
+    <input class="song-name" value={pg.songName} maxlength="32" aria-label="Song name" title="The song's name (it is saved as you work)" onchange={(e) => renameSong(e.currentTarget)} />
+    <button onclick={() => (songList = !songList)} aria-expanded={songList} title="Your songs, and the example songs">Songs {songList ? "▴" : "▾"}</button>
+    <button onclick={() => pg.newSong()} title="A new, empty song (this one stays saved)">New</button>
+    <button onclick={() => pg.duplicateSong()} title="Keep this song as it is, and go on in a copy">Duplicate</button>
+    <button onclick={exportSong} title="Save the song as a file, with its sounds and wavetables, to keep or open on another computer">Export</button>
+    <button onclick={() => songFileInput.click()} title="Open a song file as a new song">Import…</button>
+    <input bind:this={songFileInput} type="file" accept=".json,application/json" hidden onchange={(e) => { void importSong(e.currentTarget.files?.[0]); e.currentTarget.value = ""; }} />
+    <span class="saved" title="Songs are saved in this browser as you work">Saved</span>
+    {#if songMessage}<span class="song-msg" class:bad={!songMessage.ok}>{songMessage.text}</span>{/if}
+  </div>
+  {#if songList}
+    <div class="song-list">
+      <div>
+        <h3>Your songs</h3>
+        <ul>
+          {#each pg.songs as s (s.id)}
+            <li class:open={s.id === pg.songId}>
+              <button class="open-song" onclick={() => { void pg.openSong(s.id); songList = false; }} disabled={s.id === pg.songId} title={s.id === pg.songId ? "The open song" : "Open this song"}>
+                <span class="nm">{s.name}</span>
+                <span class="dt">{s.id === pg.songId ? "open" : when(s.modified)}</span>
+              </button>
+              <button class="del" onclick={() => deleteSong(s.id, s.name)} aria-label="Delete {s.name}" title="Delete this song">✕</button>
+            </li>
+          {/each}
+        </ul>
+      </div>
+      <div>
+        <h3>Examples</h3>
+        <ul>
+          {#each EXAMPLE_SONGS as ex, i (ex.name)}
+            <li>
+              <button class="open-song" onclick={() => { pg.openExample(i); songList = false; }} title="Open a copy among your songs">
+                <span class="nm">{ex.name}</span>
+                <span class="dt">{ex.about}</span>
+              </button>
+            </li>
+          {/each}
+        </ul>
+      </div>
+    </div>
+  {/if}
   <div class="head">
     <h2>Tracks</h2>
     <button onclick={() => pg.addSongTrack()} disabled={!pg.canAddSongTrack} title={pg.canAddSongTrack ? "A new synth track with a sound of its own" : `Up to ${MAX_SYNTH_TRACKS} synth tracks`}>+ Synth track</button>
@@ -154,6 +241,8 @@
       step sequencer keep playing on top of the song.
       To <strong>record</strong>, arm a track with its red ● and press ● Record: what you play on the keys (or the pads, for the drums) goes into its clip, time
       round after time round. Overdub adds each time; Replace starts from an empty clip.
+      The song is <strong>saved</strong> in this browser as you work, with each track's sound (so changing or deleting a preset later doesn't change it) and the
+      wavetables it uses. <strong>Songs</strong> lists your songs and three examples; <strong>Export</strong> makes a file you can open on another computer.
     </p>
   {/if}
 
@@ -206,7 +295,7 @@
         <div class="sound">
           {#if t.kind === "synth"}
             <button class="step" onclick={() => { pg.selectSongTrack(t.id); pg.stepPreset(-1); }} aria-label="Previous preset">◀</button>
-            <button class="preset" onclick={(e) => browse(t, e)} title="Browse presets for this track">
+            <button class="preset" onclick={(e) => browse(t, e)} title={soundTitle(t.id)}>
               {pg.presetOf(t.id).name}{pg.parts[t.id]?.dirty ? " *" : ""}
             </button>
             <button class="step" onclick={() => { pg.selectSongTrack(t.id); pg.stepPreset(1); }} aria-label="Next preset">▶</button>
@@ -323,6 +412,23 @@
 
 <style>
   .song { display: flex; flex-direction: column; gap: 8px; }
+  .song-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid var(--line); }
+  .song-bar button { font-size: 12px; padding: 3px 10px; }
+  .song-name { font: inherit; font-size: 15px; font-weight: 600; width: 16em; max-width: 100%; min-width: 0; padding: 2px 6px; background: transparent; color: inherit; border: 1px solid transparent; border-radius: 4px; }
+  .song-name:hover, .song-name:focus { border-color: var(--line); }
+  .saved { font-size: 11px; color: var(--dim); }
+  .song-msg { font-size: 12px; color: var(--accent); }
+  .song-msg.bad { color: #ff8a80; }
+  .song-list { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 10px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; }
+  .song-list h3 { margin: 0 0 4px; font-size: 12px; color: var(--dim); font-weight: 600; }
+  .song-list ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; max-height: 260px; overflow-y: auto; }
+  .song-list li { display: flex; gap: 3px; }
+  .open-song { flex: 1; min-width: 0; display: grid; text-align: left; gap: 1px; padding: 4px 8px; }
+  .open-song:disabled { opacity: 1; border-color: var(--accent); }
+  .open-song .nm { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .open-song .dt { font-size: 11px; color: var(--dim); }
+  .song-list .del { padding: 0 8px; color: var(--dim); }
+  .song-list .del:hover { color: #ff8a80; border-color: #ff8a80; }
   .head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   h2 { margin: 0; font-size: 14px; }
   .head button { font-size: 12px; padding: 3px 10px; }
@@ -441,6 +547,7 @@
     .meter { display: none; }
   }
   @media (max-width: 700px) {
+    .song-list { grid-template-columns: 1fr; }
     .track {
       grid-template-columns: 10px 32px minmax(0, 1fr) auto;
       grid-template-areas:

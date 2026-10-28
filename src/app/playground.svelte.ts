@@ -30,7 +30,7 @@ import {
 import { ARP_MAX_OCTAVES, ARP_PATTERNS, Arpeggiator, defaultArp, type ArpSettings } from "../audio/arpeggiator";
 import { TABLE_WAVE } from "../audio/oscCore";
 import { addTable, BUILTIN_TABLES, idAfterRemoval, removeTable, renameTable, replaceFrames, tableDef, tableFrames, WAVETABLES, type WavetableDef } from "../audio/wavetables";
-import { deleteImportedTable, saveImportedTable, storeTable, updateStoredTable } from "../audio/tableStore";
+import { deleteImportedTable, saveImportedTable, split, storeTable, toStored, updateStoredTable } from "../audio/tableStore";
 import { blendKeyframes, shapeWave } from "../audio/tableDraw";
 import { TableEditor } from "./wavetable/tableEditor.svelte";
 import { detectChord, type DetectedChord } from "../audio/chordDetect";
@@ -82,15 +82,17 @@ import {
   DRUM_TRACK_ID,
   moveTrack,
   newSynthTrack,
-  readTracks,
   TRACK_COLORS,
   type Track,
 } from "../song/song";
-import { barsForSteps, cleanNotes, clipBeats, drumClip, duplicateClip, fitsTrack, noteClip, stepClip, withBars, readClips, BEATS_PER_BAR, MAX_BARS, type Clip, type ClipKind, type Note } from "../song/clips";
+import { barsForSteps, cleanNotes, clipBeats, drumClip, duplicateClip, noteClip, stepClip, withBars, BEATS_PER_BAR, MAX_BARS, type Clip, type ClipKind, type Note } from "../song/clips";
 import { GRIDS, stepsToNotes } from "../song/noteEdit";
 import { readRecordSettings, Take, type RecordSettings } from "../song/recorder";
-import { clampPlacement, fitPlacement, freeBar, MAX_SONG_BARS, newPlacementId, readPlacements, readRange, type BarRange, type Placement } from "../song/arrangement";
+import { clampPlacement, fitPlacement, freeBar, MAX_SONG_BARS, newPlacementId, type BarRange, type Placement } from "../song/arrangement";
 import { ClipPlayer } from "../song/clipPlayer";
+import { cleanSongName, emptySong, newSongId, readSongFile, sameTable, songFile, uniqueSongName, type SongDoc, type SongSound, type SongTable } from "../song/songDoc";
+import { deleteSong as deleteStoredSong, getSong, getSongTables, putSong, putSongTables, rememberOpen, songsAtStart } from "../song/songStore";
+import { EXAMPLE_SONGS } from "../song/examples";
 
 export type MidiStatus = "idle" | "unsupported" | "denied" | "not-found" | "connected";
 export type VizMode = "scope" | "spectrum" | "spectrogram";
@@ -105,8 +107,6 @@ const LAST_SCALE_KEY = "minilab3.lastScale";
 const ARP_KEY = "minilab3.arp";
 const RECIPES_DONE_KEY = "minilab3.recipesDone";
 const FAVOURITES_KEY = "minilab3.favourites";
-/** The Song view's tracks and their sounds (until songs are saved properly, as files of their own). */
-const SONG_KEY = "minilab3.song";
 const RECORD_KEY = "minilab3.record";
 
 /** Your favourite presets' ids, in the order you starred them (pad bank B loads the first 8). */
@@ -264,6 +264,14 @@ interface SongSnapshot {
   sounds: Record<string, PartSnapshot>;
 }
 
+/** A saved song in the song list. */
+export interface SongMeta {
+  id: string;
+  name: string;
+  modified: number;
+}
+const songMeta = (d: SongDoc): SongMeta => ({ id: d.id, name: d.name, modified: d.modified });
+
 /** What a song track's change is called in its undo step. */
 const TRACK_CHANGE_LABELS: Record<string, string> = { name: "Rename", color: "Colour", volume: "Volume", pan: "Pan", mute: "Mute", solo: "Solo", voices: "Voices" };
 
@@ -287,6 +295,10 @@ export class Playground {
     seq: new PartState(FACTORY_PRESETS.find((p) => p.id === factoryId(SEQ_START_PRESET)) ?? FACTORY_PRESETS[0]),
   };
   part = $state<PartId>("keys");
+  /** The open song (its id in the browser's storage, and its name), and every saved song, the last changed first. */
+  songId = $state("");
+  songName = $state("");
+  songs = $state.raw<SongMeta[]>([]);
   /** The Song view's tracks, in order: the drums and the synth tracks (each with its part in `parts`). */
   songTracks = $state<Track[]>([]);
   /** The song's drum track selected in the Song view: your keys play its kit (it has no sound to edit). */
@@ -544,7 +556,7 @@ export class Playground {
     this.clicks.volume = this.rec.click;
     this.metronome = new Metronome(this.clicks);
     this.seq.metronome = this.metronome;
-    this.loadSong();
+    this.startSongs();
     window.addEventListener("pagehide", this.saveSongNow);
     document.addEventListener("visibilitychange", this.saveSongNow);
     this.intervals.push(window.setInterval(() => (this.cpu = this.engine.cpu), 250));
@@ -1561,62 +1573,149 @@ export class Playground {
     this.saveSong();
   }
 
-  // ------------------------------------------------------------------ keeping the song
+  // ------------------------------------------------------------------ keeping songs
 
-  /** The tracks, their sounds and clips from the last visit (a new song's the first time). */
-  private loadSong() {
-    let saved: {
-      tracks?: unknown;
-      sounds?: Record<string, { preset?: unknown; values?: unknown; dirty?: unknown }>;
-      clips?: unknown;
-      chosen?: Record<string, unknown>;
-      placements?: unknown;
-      tempo?: unknown;
-      start?: unknown;
-      loop?: unknown;
-      loopOn?: unknown;
-    } | null = null;
-    try {
-      saved = JSON.parse(localStorage.getItem(SONG_KEY) ?? "null");
-    } catch {
-      saved = null;
+  /** Open the song from the last visit; the first time, a copy of the first factory song. */
+  private startSongs() {
+    const { songs, open } = songsAtStart();
+    this.songs = songs.map(songMeta);
+    if (open) return this.openDoc(open.doc, open.tables);
+    this.openDoc(this.newDoc(EXAMPLE_SONGS[0].make()), []);
+    this.saveSongNow();
+  }
+
+  /** A song to save as a new one: a fresh id, a name not taken. */
+  private newDoc(song: Omit<SongDoc, "id" | "modified">): SongDoc {
+    return { ...structuredClone(song), id: newSongId(), modified: Date.now(), name: uniqueSongName(song.name, this.songs.map((s) => s.name)) };
+  }
+
+  /** Let go of the open song: its take, clip edits, launcher, track parts and undo history. The toys keep their sounds. */
+  private closeSong() {
+    if (this.playing) this.stop();
+    this.flushClipEdit();
+    if (this.editClipId) this.closeClipEdit();
+    this.editInSong = false;
+    this.editStart = null;
+    this.armedTrack = null;
+    this.selectedClip = null;
+    this.selectedPlacement = null;
+    if (this.drumsSelected) {
+      this.drumsSelected = false;
+      this.syncPlayer();
     }
-    const tracks = readTracks(saved?.tracks);
-    for (const t of tracks) {
-      if (t.kind !== "synth") continue;
-      this.addTrackPart(t.id, this.readSound(saved?.sounds?.[t.id], DEFAULT_TRACK_PRESETS[t.id]));
+    if (isTrackPart(this.part)) this.selectPart("keys");
+    for (const t of this.songTracks) {
+      if (t.kind === "synth") this.dropTrackPart(t.id);
+      else this.clipPlayer.removeTrack(t.id, this.engine.ctx.currentTime);
     }
-    this.songTracks = tracks;
-    this.songClips = readClips(saved?.clips, tracks);
-    for (const t of tracks) {
-      const id = saved?.chosen?.[t.id];
-      const clip = this.songClips.find((c) => c.id === id);
-      if (clip && fitsTrack(clip.kind, t) && clip.track === t.id) this.clipPlayer.launch(t.id, clip.id);
-      this.syncLaunch(t.id);
-    }
-    this.placements = readPlacements(saved?.placements, this.songClips);
-    const tempo = saved?.tempo;
-    this.songTempo = typeof tempo === "number" && Number.isFinite(tempo) ? Math.round(Math.max(40, Math.min(240, tempo))) : 120;
-    // Opening a song sets the app's tempo.
-    this.bpm = this.songTempo;
-    this.engine.setBpm(this.bpm);
-    const start = saved?.start;
-    this.songStart = typeof start === "number" && Number.isFinite(start) ? Math.round(Math.max(0, Math.min(MAX_SONG_BARS - 1, start))) : 0;
-    this.clipPlayer.from = this.songStart * BEATS_PER_BAR;
-    this.loopRange = readRange(saved?.loop);
-    this.loopOn = saved?.loopOn === true && this.loopRange !== null;
-    this.syncLoop();
-    this.applyMix();
+    this.clipLaunch = {};
+    this.songTracks = [];
+    this.songClips = [];
+    this.placements = [];
+    this.songHistory.clear();
+    this.historyVersion++;
   }
 
   /**
-   * A track's saved sound: a preset in the list is taken from the list (it may have changed since); another
-   * (a Dice patch, a deleted preset) from what was saved. Unreadable: the start preset.
+   * Make a song the open one: its tables join the table list, each synth track gets its part, and the app
+   * takes its tempo. `stored`: its tables are saved already (not a song from a file).
    */
-  private readSound(raw: { preset?: unknown; values?: unknown; dirty?: unknown } | undefined, start = "First Saw"): PartState {
+  private openDoc(doc: SongDoc, tables: SongTable[], stored = true) {
+    const wasOnTrack = isTrackPart(this.part);
+    if (this.songTracks.length) this.closeSong();
+    this.songId = doc.id;
+    this.songName = doc.name;
+    rememberOpen(doc.id);
+    const tableIds = this.bindTables(tables);
+    for (const t of doc.tracks) {
+      if (t.kind !== "synth") continue;
+      this.addTrackPart(t.id, this.readSound(doc.sounds[t.id], DEFAULT_TRACK_PRESETS[t.id], tableIds));
+    }
+    this.songTracks = doc.tracks;
+    this.songClips = doc.clips;
+    for (const t of doc.tracks) {
+      const id = doc.chosen[t.id];
+      if (id) this.clipPlayer.launch(t.id, id);
+      this.syncLaunch(t.id);
+    }
+    this.placements = doc.placements;
+    this.songTempo = doc.tempo;
+    // Opening a song sets the app's tempo.
+    this.bpm = this.songTempo;
+    this.engine.setBpm(this.bpm);
+    this.songStart = doc.start;
+    this.clipPlayer.from = this.songStart * BEATS_PER_BAR;
+    this.loopRange = doc.loop;
+    this.loopOn = doc.loopOn;
+    this.syncLoop();
+    this.applyMix();
+    // The tables are as saved: nothing to write until a sound picks another.
+    this.savedTables = stored ? { song: doc.id, defs: this.songTableDefs() } : null;
+    this.pruneSongTables();
+    const first = doc.tracks.find((t) => t.kind === "synth");
+    if (wasOnTrack && first) this.selectPart(first.id);
+  }
+
+  /**
+   * A song's tables in the table list: one you already have (the same name and frames) is used as it is,
+   * another joins the list as a table only the song keeps. Returns each song table's id in the list.
+   */
+  private bindTables(tables: SongTable[]): number[] {
+    const ids = tables.map((t) => {
+      const frames = split(t.samples);
+      const have = WAVETABLES.findIndex((d, i) => i >= BUILTIN_TABLES && d.frames && sameTable(t, d.name, d.frames));
+      if (have >= 0) return have;
+      const id = addTable({
+        name: t.name,
+        short: t.short,
+        explain: t.explain || "Kept with a song.",
+        frames: frames.map((f) => Float32Array.from(f)),
+        drawn: t.drawn && { keys: split(t.drawn.keys).map((k) => Float32Array.from(k)), blend: t.drawn.blend },
+        songOnly: true,
+      });
+      this.engine.tablesChanged(id, id);
+      return id;
+    });
+    this.tables = [...WAVETABLES];
+    return ids;
+  }
+
+  /** Tables only a song kept, that no part plays any more (after another song was opened), leave the list. */
+  private pruneSongTables() {
+    const used = new Set(Object.values(this.parts).map((p) => p.values.wtTable));
+    for (let id = WAVETABLES.length - 1; id >= BUILTIN_TABLES; id--) if (WAVETABLES[id].songOnly && !used.has(id)) this.dropTable(id);
+  }
+
+  /** The custom tables the song's sounds play (each once), in the order the tracks use them. */
+  private songTableDefs(): WavetableDef[] {
+    const defs: WavetableDef[] = [];
+    for (const t of this.songTracks) {
+      const p = this.parts[t.id];
+      if (t.kind !== "synth" || !p || !usesTable(p.values) || p.values.wtTable < BUILTIN_TABLES) continue;
+      const def = WAVETABLES[p.values.wtTable];
+      // A drawing not saved yet isn't kept (the editor's draft).
+      if (def?.frames && def !== this.tableEditor?.draft && !defs.includes(def)) defs.push(def);
+    }
+    return defs;
+  }
+
+  /**
+   * A track's saved sound. Its own values always win; the preset it started from is taken from the list when
+   * it is still there (it may have been renamed), else as saved (a deleted preset, a Dice patch). Edited when
+   * marked so, or when its values no longer match the preset's (the preset was saved over since). A custom
+   * table points at the song's table (`tableIds`). Unreadable: the start preset.
+   */
+  private readSound(raw: SongSound | undefined, start = "First Saw", tableIds: number[] = []): PartState {
     const fallback = FACTORY_PRESETS.find((p) => p.id === factoryId(start)) ?? FACTORY_PRESETS[0];
     const stored = raw?.preset as Partial<Preset> | undefined;
     if (!raw || !stored || typeof stored.id !== "string") return new PartState(fallback);
+    const rawValues = { ...(raw.values as Record<string, unknown>) };
+    const presetValuesRaw = { ...((stored.values ?? {}) as Record<string, unknown>) };
+    const table = raw.table === undefined ? undefined : tableIds[raw.table];
+    if (table !== undefined) {
+      if (presetValuesRaw.wtTable === rawValues.wtTable) presetValuesRaw.wtTable = table;
+      rawValues.wtTable = table;
+    }
     const listed = this.presets.find((p) => p.id === stored.id);
     const preset: Preset = listed ?? {
       ...fallback,
@@ -1624,17 +1723,48 @@ export class Playground {
       name: typeof stored.name === "string" ? stored.name.slice(0, 18) : fallback.name,
       color: Array.isArray(stored.color) && stored.color.length === 3 ? (stored.color as Rgb) : fallback.color,
       knobs: Array.isArray(stored.knobs) && stored.knobs.length === 8 && stored.knobs.every((k) => k in PARAMS) ? (stored.knobs as Preset["knobs"]) : fallback.knobs,
-      values: readValues(stored.values, WAVETABLES.length),
+      values: readValues(presetValuesRaw, WAVETABLES.length),
       from: stored.from === "dice" ? "dice" : undefined,
     };
     const state = new PartState(preset);
-    state.values = { ...presetValues(preset), ...readValues(raw.values, WAVETABLES.length) };
-    state.dirty = raw.dirty === true;
+    state.values = { ...presetValues(preset), ...readValues(rawValues, WAVETABLES.length) };
+    state.dirty = raw.dirty === true || diffValues(presetValues(preset), state.values).length > 0;
     return state;
   }
 
+  /** The open song as data, with the custom tables its sounds play. */
+  private currentDoc(): { doc: SongDoc; defs: WavetableDef[] } {
+    const defs = this.songTableDefs();
+    const sounds: Record<string, SongSound> = {};
+    for (const t of this.songTracks) {
+      const p = this.parts[t.id];
+      if (t.kind !== "synth" || !p) continue;
+      sounds[t.id] = { preset: $state.snapshot(p.preset) as Preset, values: $state.snapshot(p.values), dirty: p.dirty };
+      const at = usesTable(p.values) ? defs.indexOf(WAVETABLES[p.values.wtTable]) : -1;
+      if (at >= 0) sounds[t.id].table = at;
+    }
+    const doc: SongDoc = {
+      id: this.songId,
+      name: this.songName,
+      modified: Date.now(),
+      tracks: $state.snapshot(this.songTracks),
+      sounds,
+      clips: $state.snapshot(this.songClips) as Clip[],
+      chosen: this.clipPlayer.chosen,
+      placements: $state.snapshot(this.placements),
+      tempo: this.songTempo,
+      start: this.songStart,
+      loop: $state.snapshot(this.loopRange),
+      loopOn: this.loopOn,
+    };
+    return { doc, defs };
+  }
+
+  /** The tables last written for the open song, so an autosave writes them only when they change. */
+  private savedTables: { song: string; defs: WavetableDef[] } | null = null;
+
   private songTimer = 0;
-  /** Keep the tracks, their sounds and clips soon (a burst of changes is saved once). */
+  /** Save the open song soon (a burst of changes is saved once). */
   private saveSong() {
     clearTimeout(this.songTimer);
     this.songTimer = window.setTimeout(this.saveSongNow, 300);
@@ -1642,29 +1772,107 @@ export class Playground {
 
   private saveSongNow = () => {
     clearTimeout(this.songTimer);
-    const sounds = Object.fromEntries(
-      this.songTracks.filter((t) => t.kind === "synth" && this.parts[t.id]).map((t) => {
-        const p = this.parts[t.id];
-        return [t.id, { preset: $state.snapshot(p.preset), values: $state.snapshot(p.values), dirty: p.dirty }];
-      }),
-    );
-    try {
-      const song = {
-        tracks: $state.snapshot(this.songTracks),
-        sounds,
-        clips: $state.snapshot(this.songClips),
-        chosen: this.clipPlayer.chosen,
-        placements: $state.snapshot(this.placements),
-        tempo: this.songTempo,
-        start: this.songStart,
-        loop: $state.snapshot(this.loopRange),
-        loopOn: this.loopOn,
-      };
-      localStorage.setItem(SONG_KEY, JSON.stringify(song));
-    } catch {
-      // Not saved (private window, or full): the tracks last until the page closes.
+    if (!this.songId) return;
+    const { doc, defs } = this.currentDoc();
+    const saved = this.savedTables;
+    const tablesChanged = !saved || saved.song !== doc.id || saved.defs.length !== defs.length || saved.defs.some((d, i) => d !== defs[i]);
+    const writes = [putSong(doc)];
+    if (tablesChanged) {
+      writes.push(putSongTables(doc.id, defs.map(toStored)));
+      this.savedTables = { song: doc.id, defs };
     }
+    this.songs = [songMeta(doc), ...this.songs.filter((s) => s.id !== doc.id)];
+    // Not saved (private window, or full): the song lasts until the page closes.
+    Promise.all(writes).catch((e) => console.warn("The song could not be saved", e));
   };
+
+  // ------------------------------------------------------------------ the song list
+
+  /** Open a saved song (the open one is saved first). */
+  async openSong(id: string) {
+    if (id === this.songId) return;
+    this.saveSongNow();
+    try {
+      const [doc, tables] = await Promise.all([getSong(id), getSongTables(id)]);
+      if (!doc) throw new Error("not found");
+      this.openDoc(doc, tables);
+      this.showMessage("Song", doc.name);
+    } catch {
+      this.showMessage("Song", "couldn't open it");
+    }
+  }
+
+  /** A new song: the drums and three synth tracks, empty. */
+  newSong() {
+    this.saveSongNow();
+    const { id: _, modified: __, ...empty } = emptySong("New song");
+    this.openDoc(this.newDoc(empty), []);
+    this.saveSongNow();
+    this.showMessage("Song", this.songName);
+  }
+
+  /** Open a copy of a factory song among yours. */
+  openExample(i: number) {
+    const ex = EXAMPLE_SONGS[i];
+    if (!ex) return;
+    this.saveSongNow();
+    this.openDoc(this.newDoc(ex.make()), []);
+    this.saveSongNow();
+    this.showMessage("Song", this.songName);
+  }
+
+  renameSong(name: string) {
+    const clean = cleanSongName(name);
+    if (!clean || clean === this.songName) return;
+    this.songName = clean;
+    this.saveSongNow();
+  }
+
+  /** Keep a copy of the open song and go on in the copy (the song as it is now stays under its name). */
+  duplicateSong() {
+    this.saveSongNow();
+    this.songId = newSongId();
+    this.songName = uniqueSongName(`${this.songName} copy`, this.songs.map((s) => s.name));
+    rememberOpen(this.songId);
+    this.saveSongNow();
+    this.showMessage("Song", this.songName);
+  }
+
+  /** Delete a saved song. Deleting the open one opens the newest other one (or a new song). */
+  async deleteSong(id: string) {
+    const open = id === this.songId;
+    if (open) clearTimeout(this.songTimer);
+    this.songs = this.songs.filter((s) => s.id !== id);
+    try {
+      await deleteStoredSong(id);
+    } catch (e) {
+      console.warn("The song could not be deleted", e);
+    }
+    if (!open) return;
+    this.songId = "";
+    const next = this.songs[0];
+    if (next) {
+      const [doc, tables] = await Promise.all([getSong(next.id), getSongTables(next.id)]).catch(() => [null, []] as const);
+      if (doc) return this.openDoc(doc, [...tables]);
+    }
+    this.newSong();
+  }
+
+  /** The open song as a file (JSON, with its custom tables). */
+  exportSong(): string {
+    const { doc, defs } = this.currentDoc();
+    return songFile(doc, defs.map(toStored));
+  }
+
+  /** Open a song from a file, as a new song among yours. */
+  async importSong(file: File): Promise<string> {
+    const { doc, tables } = readSongFile(await file.text());
+    this.saveSongNow();
+    const named = { ...doc, name: uniqueSongName(doc.name, this.songs.map((s) => s.name)) };
+    this.openDoc(named, tables, false);
+    this.saveSongNow();
+    return `Opened ${named.name}${tables.length ? ` (with ${tables.length} wavetable${tables.length === 1 ? "" : "s"})` : ""}`;
+  }
 
   async startAudio() {
     await Promise.all([this.engine.resume(), this.engine.ready]);
@@ -1843,6 +2051,8 @@ export class Playground {
     if (this.editing) return;
     this.parts[this.part].history.record(() => this.snapshot(), label, key);
     this.historyVersion++;
+    // A song track's sound is part of the song.
+    if (isTrackPart(this.part)) this.saveSong();
   }
 
   /** Several changes as one undo step. */
@@ -1906,6 +2116,7 @@ export class Playground {
     this.dirty = s.dirty;
     this.browseId = null;
     this.engine.setParams(this.values);
+    if (isTrackPart(this.part)) this.saveSong();
     // Undoing the start of a recipe goes back to the sound before it: the recipe is over.
     if (way === "undo" && step.label.startsWith(RECIPE_STEP)) this.stopRecipe();
     else this.recipe?.changed();
@@ -2715,14 +2926,34 @@ export class Playground {
     }
   }
 
-  /** Delete an imported or drawn table (from the browser's storage too). */
+  /**
+   * Delete an imported or drawn table (from the browser's storage too). One the open song plays stays in the
+   * list as the song's own (the song keeps a copy), until a song without it is opened.
+   */
   async deleteTable(id: number) {
     const def = WAVETABLES[id];
     if (id < BUILTIN_TABLES || def?.storeKey === undefined) return;
     if (this.tableEditor?.original === def) this.cancelTableEditor();
     await deleteImportedTable(def.storeKey);
+    if (this.songTableDefs().includes(def)) {
+      def.storeKey = undefined;
+      def.songOnly = true;
+      this.tables = [...WAVETABLES];
+      this.importResult = { ok: true, text: `Deleted ${def.name} from your tables. The song "${this.songName}" plays it, so it keeps a copy.` };
+      return;
+    }
     this.dropTable(WAVETABLES.indexOf(def));
     this.importResult = { ok: true, text: `Deleted ${def.name}.` };
+  }
+
+  /** Keep a table only a song has among your own tables. */
+  async keepTable(id: number) {
+    const def = WAVETABLES[id];
+    if (!def?.songOnly) return;
+    await storeTable(def);
+    def.songOnly = false;
+    this.tables = [...WAVETABLES];
+    this.importResult = { ok: true, text: `${def.name} is now one of your tables.` };
   }
 
   /**

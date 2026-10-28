@@ -27,6 +27,8 @@ export interface WavetableDef {
   storeKey?: number;
   /** A drawn table's keyframes and how they blend, so it can be opened and edited again (see tableDraw.ts). */
   drawn?: { keys: Float32Array[]; blend: "harmonics" | "crossfade" };
+  /** A table a song keeps that isn't among your tables (deleted since, or from a song file): it stays in the list while a part plays it. */
+  songOnly?: boolean;
 }
 
 const TAU = 2 * Math.PI;

@@ -12,6 +12,11 @@
 
   let { pg, accent }: { pg: Playground; accent: string } = $props();
 
+  /** A key for each table that lasts while it is in the list (the list is plain objects, so their changes need a new key). */
+  const keys = new WeakMap<object, number>();
+  let nextKey = 0;
+  const tableKey = (def: object) => keys.get(def) ?? keys.set(def, nextKey++).get(def)!;
+
   const color = () => accent;
   let engine = $derived(pg.engine);
   let editor = $derived(pg.tableEditor);
@@ -38,7 +43,7 @@
   }
 
   function remove(i: number) {
-    if (confirm(`Delete the wavetable "${pg.tables[i].name}"? Presets that use it switch to the first table.`)) pg.deleteTable(i);
+    if (confirm(`Delete the wavetable "${pg.tables[i].name}"? Presets that use it switch to the first table (a song that plays it keeps a copy).`)) pg.deleteTable(i);
   }
   let active = $derived(usesTable(pg.values));
   let lfoOnPosition = $derived(pg.values.lfoTarget === 4 || pg.values.lfo2Target === 4 || pg.values.modTarget === 4);
@@ -95,15 +100,19 @@
   <div class="main">
     <div class="left">
       <nav class="tables" aria-label="Wavetables">
-        {#each pg.tables as def, i (def)}
+        {#each pg.tables as def, i (`${tableKey(def)}${def.songOnly ? "s" : ""}`)}
           {#if i === BUILTIN_TABLES}<div class="title imported">Yours</div>{/if}
           <div class="row">
             <button class="pick" class:active={pg.values.wtTable === i} onclick={() => pg.selectTable(i)} title={def.name}>
               <canvas use:surface={{ draw: draw.thumbnail(i, pg.values.wtTable === i ? accent : "#9aa7ab"), key: `${pg.values.wtTable === i}${i}${def === editor?.draft ? editor.built : ""}` }}></canvas>
-              <span>{def.name}</span>
+              <span>{def.name}{#if def.songOnly}<small class="song-mark" title="Not among your tables: the open song keeps it"> · song</small>{/if}</span>
             </button>
-            {#if def.drawn}<button class="del" title="Edit this drawing" disabled={!!editor} onclick={() => pg.openTableEditor(i)}>✎</button>{/if}
-            {#if def.storeKey !== undefined}<button class="del" title="Delete this table" onclick={() => remove(i)}>×</button>{/if}
+            {#if def.songOnly}
+              <button class="del" title="Keep it among your tables" onclick={() => pg.keepTable(i)}>Keep</button>
+            {:else}
+              {#if def.drawn}<button class="del" title="Edit this drawing" disabled={!!editor} onclick={() => pg.openTableEditor(i)}>✎</button>{/if}
+              {#if def.storeKey !== undefined}<button class="del" title="Delete this table" onclick={() => remove(i)}>×</button>{/if}
+            {/if}
           </div>
         {/each}
       </nav>
@@ -231,6 +240,7 @@
   .tables { display: flex; flex-direction: column; gap: 4px; max-height: 340px; overflow-y: auto; }
   .row { display: flex; gap: 4px; }
   .pick { flex: 1; min-width: 0; display: grid; grid-template-columns: 44px 1fr; align-items: center; gap: 8px; padding: 2px 8px; text-align: left; font-size: 12px; }
+  .song-mark { font-size: 10px; color: var(--dim); }
   .pick span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pick.active { border-color: var(--accent); color: var(--accent); }
   .del { padding: 0 7px; font-size: 14px; color: var(--dim); }
