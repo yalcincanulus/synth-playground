@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { CpuGuard, pickVictim, voiceWeight, type LimitedVoice } from "./voiceLimit";
 
-const v = (startedAt: number, owner: "keys" | "seq" = "keys", releasedAt: number | null = null, level = 1) => ({ startedAt, owner, releasedAt, level });
+const v = (startedAt: number, owner = "keys", releasedAt: number | null = null, level = 1) => ({ startedAt, owner, releasedAt, level });
 const level = (x: LimitedVoice & { level: number }) => x.level;
 
 describe("pickVictim", () => {
@@ -15,6 +15,15 @@ describe("pickVictim", () => {
     expect(pickVictim(voices, level)).toBe(voices[1]);
     expect(pickVictim([v(5), v(4), v(6)], level)?.startedAt).toBe(4);
     expect(pickVictim([], level)).toBeUndefined();
+  });
+
+  test("a song track's notes go before the part your keys play", () => {
+    const voices = [v(0, "track-1"), v(1, "seq"), v(2), v(3, "track-2")];
+    expect(pickVictim(voices, level)).toBe(voices[0]);
+    // Your keys play track 1 (the Song view): the others' notes go first, the Keys part's included.
+    expect(pickVictim(voices, level, "track-1")).toBe(voices[1]);
+    // Only your own notes left: the oldest of them.
+    expect(pickVictim([v(1, "track-1"), v(0, "track-1")], level, "track-1")?.startedAt).toBe(0);
   });
 });
 

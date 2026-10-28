@@ -104,20 +104,24 @@ class SynthVoices extends AudioWorkletProcessor {
   private taps: Float32Array[] = [];
   /** Whether the stage outputs are wanted (the Synth view is open, or a stage is being listened to). */
   private tapsOn = false;
+  /** The part was removed (a song track deleted): process() returns false, and the processor is gone for good. */
+  private closed = false;
 
   constructor(options: AudioWorkletNodeOptions) {
     super();
     const { values, seed } = options.processorOptions;
     this.bank = new VoiceBank(sampleRate, values, TABLES, seed);
-    this.port.onmessage = (e: MessageEvent<BankMessage | { type: "ping"; n: number } | { type: "taps"; on: boolean }>) => {
+    this.port.onmessage = (e: MessageEvent<BankMessage | { type: "ping"; n: number } | { type: "taps"; on: boolean } | { type: "close" }>) => {
       // A ping is answered once every message sent before it has arrived (the render check waits for this).
       if (e.data.type === "ping") this.port.postMessage({ type: "pong", n: e.data.n });
       else if (e.data.type === "taps") this.tapsOn = e.data.on;
+      else if (e.data.type === "close") this.closed = true;
       else this.bank.post(e.data);
     };
   }
 
   process(_inputs: Float32Array[][], outputs: Float32Array[][]) {
+    if (this.closed) return false;
     const start = now();
     const left = outputs[0][0];
     const right = outputs[0][1];
@@ -135,7 +139,7 @@ class SynthVoices extends AudioWorkletProcessor {
   }
 }
 
-type SlotMessage = { type: "params"; values: Parameters<SlotEffect["set"]>[0] } | { type: "on"; on: boolean } | { type: "ping"; n: number };
+type SlotMessage = { type: "params"; values: Parameters<SlotEffect["set"]>[0] } | { type: "on"; on: boolean } | { type: "ping"; n: number } | { type: "close" };
 
 class FxSlot extends AudioWorkletProcessor {
   private fx: SlotEffect;
@@ -145,6 +149,8 @@ class FxSlot extends AudioWorkletProcessor {
    * Chrome doesn't start a processor again once it has returned false, even when it is reconnected.
    */
   private on = true;
+  /** Its part was removed: process() returns false, and the processor is gone for good. */
+  private closed = false;
   private reportFrame = 0;
 
   constructor(options: AudioWorkletNodeOptions) {
@@ -155,11 +161,13 @@ class FxSlot extends AudioWorkletProcessor {
     this.port.onmessage = (e: MessageEvent<SlotMessage>) => {
       if (e.data.type === "ping") this.port.postMessage({ type: "pong", n: e.data.n });
       else if (e.data.type === "on") this.on = e.data.on;
+      else if (e.data.type === "close") this.closed = true;
       else this.fx.set(e.data.values);
     };
   }
 
   process(inputs: Float32Array[][], outputs: Float32Array[][]) {
+    if (this.closed) return false;
     if (!this.on) return true;
     const start = now();
     const [left, right] = outputs[0];

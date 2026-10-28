@@ -1,6 +1,6 @@
 // One part: a sound with its own preset, its own voice processor ("synth-voices", dsp/voiceBank.ts),
-// its own voices and LFOs, and its own way into the effects. The engine has two: Keys (what you play)
-// and Sequencer (what the step sequencer plays).
+// its own voices and LFOs, and its own way into the effects. The engine always has two: Keys (what you
+// play) and Sequencer (what the step sequencer plays); each of the Song view's synth tracks is one more.
 
 import { LFO_POSITION, LFO_WIDTH, lfoDepths, type PerTarget } from "./dsp/lfo";
 import { clampWidth } from "./oscCore";
@@ -50,6 +50,8 @@ export class Part {
   private tapsOn = false;
   private bend = 0;
   private mod = 0;
+  /** Most voices at once, below the preset's Max Voices (a song track's limit, to spare the CPU). */
+  voiceCap = Infinity;
 
   /** What the three LFOs (running in the voice processor) are doing, for the drawings. */
   readonly lfos: [Lfo, Lfo, Lfo];
@@ -100,6 +102,19 @@ export class Part {
 
   get started() {
     return this.node !== null;
+  }
+
+  /** The part was removed: silence it, and stop its processor for good. */
+  close() {
+    this.allNotesOff();
+    this.node?.port.postMessage({ type: "close" });
+    this.node?.disconnect();
+    this.node = null;
+  }
+
+  /** Most voices this part may sound at once: its Max Voices, within its cap. */
+  get maxVoices() {
+    return Math.min(Math.round(this.params.maxVoices), this.voiceCap);
   }
 
   private lfoReport(r: LfoState & { time: number }) {

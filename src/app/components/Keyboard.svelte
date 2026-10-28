@@ -11,8 +11,10 @@
     playable?: (note: number) => boolean;
     /** Scale lock: the scale's root (0 = C), marked on its keys. */
     root?: number | null;
+    /** A word on a key (the drum it plays), or null for none. */
+    label?: (note: number) => string | null;
   }
-  let { notes, held = new Set(), from = 36, to = 84, onnoteon, onnoteoff, playable = () => true, root = null }: Props = $props();
+  let { notes, held = new Set(), from = 36, to = 84, onnoteon, onnoteoff, playable = () => true, root = null, label }: Props = $props();
 
   const BLACK = new Set([1, 3, 6, 8, 10]);
   let keys = $derived.by(() => {
@@ -67,7 +69,7 @@
       onpointerenter={(e) => enter(k.note, e)}
       role="presentation"
     >
-      {#if k.note % 12 === 0}<span>C{k.note / 12 - 1}</span>{/if}
+      {#if label?.(k.note)}<span class="word">{label(k.note)}</span>{:else if k.note % 12 === 0}<span>C{k.note / 12 - 1}</span>{/if}
     </div>
   {/each}
 </div>
@@ -76,6 +78,8 @@
   .keyboard { position: relative; height: 76px; user-select: none; touch-action: none; }
   .key { position: absolute; top: 0; bottom: 0; background: #e9edee; border: 1px solid #0b0e10; border-radius: 0 0 4px 4px; cursor: pointer; display: flex; align-items: flex-end; justify-content: center; }
   .key span { font: 9px var(--mono); color: #667; margin-bottom: 4px; pointer-events: none; }
+  .key span.word { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 9px; color: #445; white-space: nowrap; }
+  .key.black span.word { color: #a9b6ba; }
   .key.black { bottom: 38%; background: #15191b; z-index: 1; border-color: #000; }
   .key.on { background: var(--accent); }
   .key.black.on { background: var(--accent); filter: brightness(0.7); }

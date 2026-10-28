@@ -67,13 +67,13 @@ export function presetFile(presets: readonly Preset[]): string {
 const FALLBACK_KNOBS: Preset["knobs"] = ["cutoff", "resonance", "filterEnvAmt", "filterDecay", "osc2Detune", "oscMix", "chorus", "reverbMix"];
 const isParam = (id: unknown): id is ParamId => typeof id === "string" && Object.hasOwn(PARAMS, id);
 
-/** One preset from a file, checked and cleaned up; null when it isn't one. */
-function readPreset(raw: unknown, tableCount: number): Preset | null {
-  if (!raw || typeof raw !== "object") return null;
-  const r = raw as Record<string, unknown>;
-  if (typeof r.name !== "string" || !r.name.trim() || !r.values || typeof r.values !== "object") return null;
-  // migrate() knows the settings of older versions.
-  const old = migrate({ id: "x", name: "", category: "Lead", color: [0, 0, 0], knobs: FALLBACK_KNOBS, values: r.values as Preset["values"] });
+/**
+ * Sound settings from a file or storage, checked: settings this app doesn't know are dropped, the others
+ * kept within their range. Older versions' settings are moved to today's (migrate).
+ */
+export function readValues(raw: unknown, tableCount: number): Preset["values"] {
+  if (!raw || typeof raw !== "object") return {};
+  const old = migrate({ id: "x", name: "", category: "Lead", color: [0, 0, 0], knobs: FALLBACK_KNOBS, values: raw as Preset["values"] });
   const values: Preset["values"] = {};
   for (const [id, v] of Object.entries(old.values)) {
     if (!isParam(id) || typeof v !== "number" || !Number.isFinite(v)) continue;
@@ -81,6 +81,15 @@ function readPreset(raw: unknown, tableCount: number): Preset | null {
     if (id === "wtTable") values.wtTable = v >= 0 && v < tableCount ? Math.round(v) : 0;
     else values[id] = Math.min(PARAMS[id].max, Math.max(PARAMS[id].min, v));
   }
+  return values;
+}
+
+/** One preset from a file, checked and cleaned up; null when it isn't one. */
+function readPreset(raw: unknown, tableCount: number): Preset | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.name !== "string" || !r.name.trim() || !r.values || typeof r.values !== "object") return null;
+  const values = readValues(r.values, tableCount);
   const knobs = Array.isArray(r.knobs) && r.knobs.length === 8 ? r.knobs.map((k, i) => (k === "filterType" ? "filterMorph" : isParam(k) ? k : FALLBACK_KNOBS[i])) : FALLBACK_KNOBS;
   const color = Array.isArray(r.color) && r.color.length === 3 && r.color.every((c) => typeof c === "number") ? (r.color.map((c) => Math.min(127, Math.max(0, c))) as Preset["color"]) : ([0, 110, 100] as Preset["color"]);
   const category = CATEGORIES.includes(r.category as Preset["category"]) ? (r.category as Preset["category"]) : "Lead";

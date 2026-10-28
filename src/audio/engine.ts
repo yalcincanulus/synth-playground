@@ -1,8 +1,8 @@
 import { Drums } from "./drums";
-import { Fx } from "./fx";
+import { Fx, type Strip } from "./fx";
 import type { Lfo } from "./lfo";
 import { BEND_RANGE_CENTS, type ModSource, type ParamId, type ParamValues } from "./params";
-import { Part, type PartTapId, type VoiceState } from "./part";
+import { Part, type PartHost, type PartTapId, type VoiceState } from "./part";
 import workletUrl from "./synth.worklet.ts?worker&url";
 import type { NoteOwner } from "./voice";
 import { CpuGuard, pickVictim } from "./voiceLimit";
@@ -29,7 +29,7 @@ export interface CpuLoad {
    * Only meaningful with the "performance" clock: Chrome's worklets only have Date.now(), whole milliseconds.
    */
   peak: number;
-  /** Most voices sounding at once in that time (both parts). */
+  /** Most voices sounding at once in that time (every part). */
   voices: number;
   /** Their average weight (see voiceWeight). */
   units: number;
@@ -42,6 +42,24 @@ export interface CpuLoad {
 /** With no report for this long, nothing is playing: the meter reads zero. */
 const CPU_STALE_MS = 600;
 
+/** The parts the engine always has, and any song tracks' (by their ids). */
+export type Parts = { keys: Part; seq: Part; [id: string]: Part };
+
+/** A song's drum track: its own kit, through its own strip. */
+export interface DrumTrack {
+  readonly drums: Drums;
+  readonly strip: Strip;
+}
+
+/** A part's random LFO seed, from the engine's seed and the part's id (so a seeded render repeats it). */
+function partSeed(seed: number, id: string) {
+  if (id === "keys") return seed;
+  if (id === "seq") return seed ^ 0x5eed;
+  let h = 0x811c9dc5;
+  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 0x01000193);
+  return (seed ^ h) >>> 0;
+}
+
 export class Engine {
   readonly fx: Fx;
   readonly drums: Drums;
@@ -52,10 +70,15 @@ export class Engine {
   private tableLoader: AudioWorkletNode | null = null;
   private tablesSent = new Set<number>();
 
-  /** Two sounds at once: Keys (what you play) and Sequencer (what the step sequencer plays). */
-  readonly parts: Record<NoteOwner, Part>;
+  /** Keys (what you play) and Sequencer (what the step sequencer plays), and the song's synth tracks. */
+  readonly parts: Parts;
   /** The part being edited and shown (the knobs, the Synth view, the presets). */
   selected: NoteOwner = "keys";
+  /** The part your playing goes to (notes, bend, the mod strip): Keys, or a song track in the Song view. */
+  player: NoteOwner = "keys";
+  private host: PartHost;
+  private noise: AudioBuffer;
+  private tapsOn = false;
 
   private cpuReport: CpuLoad = { load: 0, fx: 0, peak: 0, voices: 0, units: 0, cuts: 0, clock: "" };
   private cpuGuard = new CpuGuard();
@@ -81,7 +104,7 @@ export class Engine {
     this.fx = new Fx(ctx);
     this.analyser = this.fx.analyser;
     const engine = this;
-    const host = {
+    this.host = {
       ctx,
       get bpm() {
         return engine.bpm;
@@ -89,17 +112,16 @@ export class Engine {
       makeRoom: (part: Part, weight: number, t: number) => this.makeRoom(part, weight, t),
       changed: (part: Part) => this.partChanged(part),
     };
-    this.parts = { keys: new Part(host, "keys", this.fx.addPart()), seq: new Part(host, "seq", this.fx.addPart()) };
+    this.parts = { keys: new Part(this.host, "keys", this.fx.addPart()), seq: new Part(this.host, "seq", this.fx.addPart()) };
 
     this.ready = ctx.audioWorklet.addModule(workletUrl).then(() => {
       this.tableLoader = new AudioWorkletNode(ctx, "table-loader", { numberOfInputs: 0, numberOfOutputs: 1 });
       this.tableLoader.port.onmessage = (e) => e.data.cpu && this.cpuReported(e.data.cpu);
       for (const part of this.allParts) this.loadTable(part.params.wtTable);
-      // One seed for both parts' random LFOs, picked here so a seeded render (render check) repeats them.
+      // One seed for every part's random LFOs, picked here so a seeded render (render check) repeats them.
       const seed = Math.floor(Math.random() * 2 ** 32);
       this.seed = seed;
-      this.parts.keys.start(seed);
-      this.parts.seq.start(seed ^ 0x5eed);
+      for (const [id, part] of Object.entries(this.parts)) part.start(partSeed(seed, id));
       // The other built-in tables in the background (about 15 ms each), so switching tables later is instant.
       // Imported ones can be large (up to 256 frames), so they load when a part first uses them.
       for (let i = 0; i < BUILTIN_TABLES; i++) setTimeout(() => this.loadTable(i), 300 + i * 80);
@@ -109,6 +131,7 @@ export class Engine {
     const noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
     const data = noise.getChannelData(0);
     for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    this.noise = noise;
 
     // "Listen here": a tap is routed to its own quiet, limited output while the main output is muted.
     this.listenGain = new GainNode(ctx, { gain: LISTEN_GAIN });
@@ -124,7 +147,51 @@ export class Engine {
   }
 
   private get allParts() {
-    return [this.parts.keys, this.parts.seq];
+    return Object.values(this.parts);
+  }
+
+  /**
+   * A song track's part, with its own voice processor and effects. It starts once the voice processors have
+   * loaded (at once if they have).
+   */
+  addPart(id: NoteOwner, values: ParamValues): Part {
+    if (this.parts[id]) return this.parts[id];
+    const part = new Part(this.host, id, this.fx.addPart());
+    this.parts[id] = part;
+    part.setParams(values);
+    part.setTaps(this.tapsOn);
+    if (this.tableLoader) part.start(partSeed(this.seed, id));
+    return part;
+  }
+
+  /** Remove a song track's part: its notes stop and its processors are gone. */
+  removePart(id: NoteOwner) {
+    const part = this.parts[id];
+    if (!part || id === "keys" || id === "seq") return;
+    part.close();
+    this.fx.removePart(part.fx);
+    delete this.parts[id];
+    if (this.listening && this.selected === id) this.listen(null);
+    if (this.selected === id) this.selected = "keys";
+    if (this.player === id) this.setPlayer("keys");
+  }
+
+  /** A song's drum track: a kit of its own, on its own strip (the Play view's drums keep theirs). */
+  addDrumTrack(): DrumTrack {
+    const bus = this.fx.addDrumBus();
+    return { drums: new Drums(this.ctx, bus.input, this.noise), strip: bus.strip };
+  }
+
+  removeDrumTrack(track: DrumTrack) {
+    track.strip.close();
+  }
+
+  /** Where your playing goes: notes played without naming a part, the pitch bend and the mod strip. */
+  setPlayer(owner: NoteOwner) {
+    if (owner === this.player || !this.parts[owner]) return;
+    this.parts[this.player]?.setControls(0, 0);
+    this.player = owner;
+    this.parts[owner].setControls(this.bend, this.mod);
   }
 
   /** The selected part. */
@@ -140,7 +207,7 @@ export class Engine {
   }
 
   /**
-   * Resolves once both voice processors have every message sent so far (or after `timeoutMs`).
+   * Resolves once every voice processor has every message sent so far (or after `timeoutMs`).
    * The render check waits for this before rendering, since notes are messages, not automation.
    */
   async flush(timeoutMs = 500): Promise<void> {
@@ -203,16 +270,16 @@ export class Engine {
     }
   }
 
-  /** Pitch bend, -1..1. Your playing controls (bend, mod strip) move the Keys part. */
+  /** Pitch bend, -1..1. Your playing controls (bend, mod strip) move the part you play (`player`). */
   setBend(value: number) {
     this.bend = value * BEND_RANGE_CENTS;
-    this.parts.keys.setControls(this.bend, this.mod);
+    this.parts[this.player].setControls(this.bend, this.mod);
   }
 
   /** The mod strip, 0..1. */
   setMod(value: number) {
     this.mod = value;
-    this.parts.keys.setControls(this.bend, this.mod);
+    this.parts[this.player].setControls(this.bend, this.mod);
   }
 
   /** A part's settings changed. The drums get a little of the Keys part's reverb. */
@@ -284,6 +351,7 @@ export class Engine {
 
   /** Whether the stage taps are drawn or listened to: the voice processors only render them then. */
   setTaps(on: boolean) {
+    this.tapsOn = on;
     for (const part of this.allParts) part.setTaps(on);
   }
 
@@ -300,24 +368,24 @@ export class Engine {
   /**
    * `at` schedules the note ahead (the step sequencer does this); it defaults to now.
    * `slide` glides into the note on mono presets even when the preset's Glide is 0.
-   * `owner` is the part that plays it: your keys, or the step sequencer.
+   * `owner` is the part that plays it: the step sequencer, a song track, or (by default) the part you play.
    */
-  noteOn(note: number, velocity: number, at?: number, slide = false, owner: NoteOwner = "keys") {
-    this.parts[owner].noteOn(note, velocity, Math.max(at ?? 0, this.ctx.currentTime), slide);
+  noteOn(note: number, velocity: number, at?: number, slide = false, owner: NoteOwner = this.player) {
+    this.parts[owner]?.noteOn(note, velocity, Math.max(at ?? 0, this.ctx.currentTime), slide);
   }
 
-  noteOff(note: number, at?: number, owner: NoteOwner = "keys") {
-    this.parts[owner].noteOff(note, Math.max(at ?? 0, this.ctx.currentTime));
+  noteOff(note: number, at?: number, owner: NoteOwner = this.player) {
+    this.parts[owner]?.noteOff(note, Math.max(at ?? 0, this.ctx.currentTime));
   }
 
   /** Move a sounding note to a new pitch at once, keeping its envelopes (see Part.pitchTo). */
   pitchTo(from: number, to: number, at: number, owner: NoteOwner = "seq") {
-    this.parts[owner].pitchTo(from, to, Math.max(at, this.ctx.currentTime));
+    this.parts[owner]?.pitchTo(from, to, Math.max(at, this.ctx.currentTime));
   }
 
   /**
    * Hear a sound without loading it (the preset browser): `notes` together for `seconds`, on a part of its
-   * own, so both parts keep their sounds and their notes. A new preview cuts the one before.
+   * own, so the other parts keep their sounds and their notes. A new preview cuts the one before.
    */
   preview(values: ParamValues, notes: number[], seconds: number) {
     if (!this.tableLoader) return; // the voice processors haven't loaded yet
@@ -350,20 +418,20 @@ export class Engine {
   }
 
   get activeVoices() {
-    return this.parts.keys.activeVoices + this.parts.seq.activeVoices;
+    return this.allParts.reduce((sum, part) => sum + part.activeVoices, 0);
   }
 
-  /** Total weight of every sounding voice, both parts. */
+  /** Total weight of every sounding voice, every part. */
   private weight() {
     return this.allParts.reduce((sum, part) => sum + part.voices.reduce((s, v) => s + v.weight, 0), 0);
   }
 
   /**
    * Before a part starts a voice: keep within its Max Voices (cutting its own notes), and within what
-   * the CPU can make without crackling (cutting from either part).
+   * the CPU can make without crackling (cutting from any part).
    */
   private makeRoom(part: Part, weight: number, t: number) {
-    const max = Math.round(part.params.maxVoices);
+    const max = part.maxVoices;
     while (part.voices.length >= max) if (!this.cutFrom([part], t)) break;
     while (this.weight() + weight > this.cpuGuard.budget) {
       if (!this.cutForCpu(t)) break;
@@ -381,7 +449,7 @@ export class Engine {
   /** Fade out the voice pickVictim chooses among these parts' voices. */
   private cutFrom(parts: Part[], t: number): boolean {
     const voices = parts.flatMap((p) => p.voices);
-    const victim = pickVictim(voices, (v) => this.parts[v.owner].level(v, t));
+    const victim = pickVictim(voices, (v) => this.parts[v.owner].level(v, t), this.player);
     if (!victim) return false;
     this.parts[victim.owner].cut(victim, t);
     return true;

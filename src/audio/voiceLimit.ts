@@ -5,20 +5,22 @@
 export const voiceWeight = (unison: number) => 1 + Math.max(1, Math.min(3, Math.round(unison)));
 
 export interface LimitedVoice {
-  owner: "keys" | "seq";
+  /** The part playing it (see NoteOwner). */
+  owner: string;
   releasedAt: number | null;
   startedAt: number;
 }
 
 /**
- * The voice to cut to make room: released voices first (the quietest, as `level` says), then the
- * step sequencer's, then your own; the oldest first among held voices. So held chords survive longest.
+ * The voice to cut to make room: released voices first (the quietest, as `level` says), then the ones
+ * played for you (the step sequencer's, a song's), then your own (`player`'s: the part your keys play);
+ * the oldest first among held voices. So held chords survive longest.
  */
-export function pickVictim<V extends LimitedVoice>(voices: readonly V[], level: (v: V) => number): V | undefined {
+export function pickVictim<V extends LimitedVoice>(voices: readonly V[], level: (v: V) => number, player = "keys"): V | undefined {
   const released = voices.filter((v) => v.releasedAt !== null);
   if (released.length) return released.reduce((a, b) => (level(b) < level(a) ? b : a));
   const oldest = (vs: V[]) => vs.reduce<V | undefined>((a, b) => (!a || b.startedAt < a.startedAt ? b : a), undefined);
-  return oldest(voices.filter((v) => v.owner === "seq")) ?? oldest([...voices]);
+  return oldest(voices.filter((v) => v.owner !== player)) ?? oldest([...voices]);
 }
 
 /**

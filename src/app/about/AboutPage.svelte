@@ -25,6 +25,7 @@
         <li><strong>Two parts:</strong> the keys and an 8-step sequencer each have their own sound, say a pad over a bass line.</li>
         <li><strong>Synth:</strong> the whole synth with plain-English explanations, as blocks joined by cables or as a plugin-style panel. "Listen here" plays any stage on its own.</li>
         <li><strong>Wavetable:</strong> eight built-in wavetables in 3D; import your own or draw one.</li>
+        <li><strong>Song:</strong> up to seven synth tracks and a drum track, each with its own sound, and a mixer with volume, pan, mute and solo.</li>
         <li><strong>Learn:</strong> a five-chapter course on how sound and synths work, one idea per page, with only the controls that page needs.</li>
         <li><strong>Recipes and Classics:</strong> 18 sounds to build step by step, and 21 presets that recreate famous synth sounds.</li>
         <li><strong>Scale lock, chords and arpeggiator:</strong> every key lands in the scale, plays a whole chord, or an arpeggio in time with the drums.</li>
@@ -53,7 +54,7 @@
         <dt>Shift + knobs 2–8</dt>
         <dd>Tempo</dd>
         <dt>Shift + any key</dt>
-        <dd>Switch part (Keys or Sequencer)</dd>
+        <dd>Switch part (Keys or Sequencer; in the Song view, each synth track too)</dd>
         <dt>Shift + faders</dt>
         <dd>1: arpeggiator mode, 2: its range, 3: the scale, 4: notes, triads or 7ths (bottom = off)</dd>
         <dt>Shift + mod strip</dt>

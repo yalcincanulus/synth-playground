@@ -17,6 +17,7 @@
   import { surface } from "./components/canvas";
   import { spectrogram } from "./components/spectrogram";
   import { PART_NAMES, Playground, SHIFT_FADERS } from "./playground.svelte";
+  import SongView from "./song/SongView.svelte";
   import SynthView from "./synth/SynthView.svelte";
   import WavetableView from "./wavetable/WavetableView.svelte";
   import AboutPage from "./about/AboutPage.svelte";
@@ -138,6 +139,7 @@
       <button data-label="Play" class:active={pg.view === "playground"} onclick={() => pg.setView("playground")} title="Play: the preset's main controls, the pads, drums and step sequencer{pg.hw(' (Shift + encoder)')}">Play</button>
       <button data-label="Synth" class:active={pg.view === "synth"} onclick={() => pg.setView("synth")} title="The whole synth as blocks: see and change every part of the sound{pg.hw(' (Shift + encoder)')}">Synth</button>
       <button data-label="Wavetable" class:active={pg.view === "wavetable"} onclick={() => pg.setView("wavetable")} title="Pick, import and draw wavetables{pg.hw(' (Shift + encoder)')}">Wavetable</button>
+      <button data-label="Song" class:active={pg.view === "song"} onclick={() => pg.setView("song")} title="Tracks, each with a sound of its own, and their mix{pg.hw(' (Shift + encoder)')}">Song</button>
       <button data-label="Learn" class:active={pg.view === "course"} onclick={() => pg.setView("course")} title="The course: how sound and synths work, one idea per page, with only the controls each page needs">Learn</button>
     </nav>
     <!-- On a narrow screen the rest of the row folds into a menu; on a wide one the wrapper takes no space of its own. -->
@@ -185,11 +187,18 @@
     <div class="group sound">
       <div class="parts" role="group" aria-label="Part" title="Which sound the controls and presets edit{pg.hw(' (Shift + any key on the MiniLab)')}">
         {#each ["keys", "seq"] as const as part (part)}
-          <button class:active={pg.part === part} onclick={() => pg.selectPart(part)}>
+          <button class:active={pg.part === part && !pg.drumsSelected} onclick={() => pg.selectPart(part)}>
             <span class="part-name">{PART_NAMES[part]}</span>
             <span class="part-preset"><Marquee text={pg.presetOf(part).name} /></span>
           </button>
         {/each}
+        <!-- The song track selected last: its sound can be edited from any view (and the keys play it while it is selected). -->
+        {#if pg.lastTrack && pg.parts[pg.lastTrack]}
+          <button class="track-part" class:active={pg.part === pg.lastTrack && !pg.drumsSelected} onclick={() => pg.selectPart(pg.lastTrack!)} title="A song track: the keys play it while it is selected">
+            <span class="part-name"><Marquee text={pg.partName(pg.lastTrack)} /></span>
+            <span class="part-preset"><Marquee text={pg.presetOf(pg.lastTrack).name} /></span>
+          </button>
+        {/if}
       </div>
       <button onclick={() => pg.stepPreset(-1)} aria-label="Previous preset" title="Previous preset in the browser's list{pg.hw(' (or turn the encoder)')}">◀</button>
       <div class="preset-wrap">
@@ -265,7 +274,7 @@
             <div class="center"></div>
             <span>Pitch</span>
           </div>
-          <div class="strip" title="Mod strip: adds LFO to {LFO_TARGETS[pg.parts.keys.values.modTarget]} (Keys part). Shift + mod strip on the MiniLab: the scale's root">
+          <div class="strip" title="Mod strip: adds LFO to {LFO_TARGETS[pg.parts[pg.playerPart].values.modTarget]} ({pg.partName(pg.playerPart)} part). Shift + mod strip on the MiniLab: the scale's root">
             <div class="mod" style:height="{pg.mod * 100}%"></div>
             <span>Mod</span>
           </div>
@@ -425,6 +434,8 @@
     <SynthView {pg} {accent} />
   {:else if pg.view === "wavetable"}
     <WavetableView {pg} {accent} />
+  {:else if pg.view === "song"}
+    <SongView {pg} />
   {:else if pg.view === "course"}
     <CourseView {pg} {accent} />
   {:else}
@@ -463,8 +474,9 @@
         held={heldNotes}
         onnoteon={(n) => pg.noteOn(n, 100)}
         onnoteoff={(n) => pg.noteOff(n)}
-        playable={(n) => playable(n, pg.scale)}
-        root={pg.scale.scale === "off" ? null : pg.scale.root}
+        playable={(n) => pg.drumsSelected || playable(n, pg.scale)}
+        root={pg.scale.scale === "off" || pg.drumsSelected ? null : pg.scale.root}
+        label={pg.drumsSelected ? (n) => pg.drumOfKey(n) : undefined}
       />
     {/if}
   </section>
@@ -704,6 +716,10 @@
   }
   @media (max-width: 560px) {
     h1 { display: none; }
+  }
+  /* Five views beside ⋯ on the smallest phones. */
+  @media (max-width: 400px) {
+    .views button { padding: 6px 4px; font-size: 12.5px; }
   }
 
   /* Touch screens: fingers need bigger targets than a mouse. */

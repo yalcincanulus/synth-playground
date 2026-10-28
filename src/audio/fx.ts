@@ -4,10 +4,12 @@ import { DELAY_DIV_BEATS, DELAY_MODES, effectChain, EFFECTS, type Effect, type P
 import { CLIP_RANGE, softClipCurve } from "./softClip";
 
 /**
- * Effects and master chain. Each part (see part.ts) has its own effects, in its own order (PartFx):
+ * Effects and master chain. Each part (see part.ts) has its own effects, in its own order (PartFx), and a
+ * mixer strip (Strip: the Song view's volume, pan and mute; it does nothing on the Play view's parts):
  *
- *   part -> volume -> effect -> effect -> ... --+--> master -> limiter -> soft clipper -> analyser -> destination
- *   drumIn -------------------------------------+   (and a little of the Keys part's reverb)
+ *   part -> volume -> effect -> effect -> ... -> strip --+--> master -> limiter -> soft clipper -> analyser -> destination
+ *   drumIn ----------------------------------------------+   (and a little of the Keys part's reverb)
+ *   drum track -> strip ---------------------------------+
  */
 export class Fx {
   readonly drumIn: GainNode;
@@ -52,6 +54,28 @@ export class Fx {
     return part;
   }
 
+  /** A removed part's effects: disconnected, and our own effects' processors stopped for good. */
+  removePart(part: PartFx) {
+    part.close();
+    this.parts = this.parts.filter((p) => p !== part);
+    if (this.drumReverbPart === part) {
+      this.drumReverbSend.disconnect(part.reverbIn);
+      this.drumReverbPart = null;
+    }
+  }
+
+  /**
+   * A drum kit's own way to the master, for the Song view's drum track: the same level as the Play view's
+   * drums (and a little of the Keys part's reverb), through its own strip.
+   */
+  addDrumBus(): { input: GainNode; strip: Strip } {
+    const strip = new Strip(this.ctx, this.master);
+    const input = new GainNode(this.ctx, { gain: this.drumIn.gain.value });
+    input.connect(strip.input);
+    strip.output.connect(this.drumReverbSend);
+    return { input, strip };
+  }
+
   /** Silence the main output (the output analyser still sees the signal). */
   setMuted(muted: boolean) {
     this.mute.gain.setTargetAtTime(muted ? 0 : 1, this.ctx.currentTime, 0.01);
@@ -84,6 +108,47 @@ interface Unit {
 
 const gain = (ctx: BaseAudioContext, g: number) => new GainNode(ctx, { gain: g });
 
+/** The quietest a strip's volume goes before it is off, in dB. */
+export const STRIP_MIN_DB = -40;
+
+/** A mixer strip: volume (dB), pan and mute, with a level meter made when first asked for. */
+export class Strip {
+  readonly input: GainNode;
+  readonly output: StereoPannerNode;
+  private meterNode: AnalyserNode | null = null;
+
+  constructor(
+    private ctx: BaseAudioContext,
+    out: AudioNode,
+  ) {
+    this.input = new GainNode(ctx);
+    this.output = new StereoPannerNode(ctx);
+    this.input.connect(this.output).connect(out);
+  }
+
+  /** `volume` in dB (STRIP_MIN_DB and below: off), `pan` -1..1 (a stereo sound is balanced, not folded to mono). */
+  set(volume: number, pan: number, muted: boolean) {
+    const g = muted || volume <= STRIP_MIN_DB ? 0 : 10 ** (volume / 20);
+    const t = this.ctx.currentTime;
+    this.input.gain.setTargetAtTime(g, t, 0.01);
+    this.output.pan.setTargetAtTime(Math.max(-1, Math.min(1, pan)), t, 0.01);
+  }
+
+  /** The strip's output, for a level meter. */
+  get meter(): AnalyserNode {
+    if (!this.meterNode) {
+      this.meterNode = new AnalyserNode(this.ctx, { fftSize: 512 });
+      this.output.connect(this.meterNode);
+    }
+    return this.meterNode;
+  }
+
+  close() {
+    this.input.disconnect();
+    this.output.disconnect();
+  }
+}
+
 /**
  * One part's effects, run in the order and on/off the part's settings say (effectChain). Effects that are
  * off are taken out of the chain, so they cost nothing. The distortion, phaser and flanger are our own
@@ -102,6 +167,8 @@ export class PartFx {
   readonly taps: Record<Effect, AnalyserNode>;
   /** Into the reverb itself (the drums send here). */
   readonly reverbIn: AudioNode;
+  /** After the effects: the Song view's volume, pan and mute. */
+  readonly strip: Strip;
   readonly eq: EqUnit;
   readonly compressor: CompressorUnit;
   private units: Partial<Record<Effect, Unit>>;
@@ -121,7 +188,8 @@ export class PartFx {
   ) {
     this.input = new GainNode(ctx);
     this.out = new GainNode(ctx);
-    this.out.connect(master);
+    this.strip = new Strip(ctx, master);
+    this.out.connect(this.strip.input);
     this.amounts = new ChannelSplitterNode(ctx, { numberOfOutputs: 3 });
     const tap = () => new AnalyserNode(ctx, { fftSize: 2048, smoothingTimeConstant: 0.6 });
     this.taps = Object.fromEntries(EFFECTS.map((fx) => [fx, tap()])) as Record<Effect, AnalyserNode>;
@@ -191,6 +259,15 @@ export class PartFx {
   /** Build a changed reverb now rather than after the debounce. */
   settle() {
     this.reverb.settle();
+  }
+
+  /** The part is gone: let go of everything, and stop our own effects' processors. */
+  close() {
+    this.input.disconnect();
+    for (const unit of Object.values(this.units)) unit.output.disconnect();
+    for (const slot of Object.values(this.slots)) slot.close();
+    this.out.disconnect();
+    this.strip.close();
   }
 
   /** The phaser's or flanger's LFO phase (cycles) right now, for the drawings; null until it has run. */
@@ -486,6 +563,12 @@ class SlotUnit implements Unit {
     if (on === this.on) return;
     this.on = on;
     this.input.port.postMessage({ type: "on", on });
+  }
+
+  /** Stop the processor for good (its part was removed). */
+  close() {
+    this.input.disconnect();
+    this.input.port.postMessage({ type: "close" });
   }
 
   phaseAt(time: number): number | null {

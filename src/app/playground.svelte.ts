@@ -1,6 +1,7 @@
 import { SvelteSet } from "svelte/reactivity";
 import { DRUM_NAMES } from "../audio/drums";
-import { Engine, type CpuLoad, type ListenTap } from "../audio/engine";
+import { Engine, type CpuLoad, type DrumTrack, type ListenTap } from "../audio/engine";
+import type { Strip } from "../audio/fx";
 import type { NoteOwner } from "../audio/voice";
 import { EFFECT_ON, effectOrder, formatValue, fromControl, fxSlotId, EFFECTS, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, PARAMS, slotIds, toControl, type Effect, type ParamId, type ParamValues } from "../audio/params";
 import { WorkerClock } from "../audio/clock";
@@ -71,14 +72,26 @@ import {
 import { rollDice } from "../presets/dice";
 import { BLOCK_TAPS, BLOCKS, blockDest, blockSource, KNOB_PAGES, MOD_SHORT, pageOf, paramLabel, routeStartAmount, TAP_NAMES, usesTable, WAVETABLE_KNOBS, type BlockId } from "./synth/blocks";
 import { DEFAULT_FAVOURITES, FACTORY_PRESETS, factoryId, FADERS, loadUserPresets, presetValues, saveUserPresets, userId, type Preset, type Rgb } from "../presets/presets";
-import { emptyFilter, filterPresets, isUserPresetId, presetFile, readPresetFile, type PresetFilter } from "../presets/browser";
+import { emptyFilter, filterPresets, isUserPresetId, presetFile, readPresetFile, readValues, type PresetFilter } from "../presets/browser";
+import {
+  audible,
+  canAddTrack,
+  cleanName,
+  DEFAULT_TRACK_PRESETS,
+  DRUM_TRACK_ID,
+  moveTrack,
+  newSynthTrack,
+  readTracks,
+  TRACK_COLORS,
+  type Track,
+} from "../song/song";
 
 export type MidiStatus = "idle" | "unsupported" | "denied" | "not-found" | "connected";
 export type VizMode = "scope" | "spectrum" | "spectrogram";
-export type View = "playground" | "synth" | "wavetable" | "course" | "about";
-/** What Shift + encoder cycles through: the playground's three visualisers, then the Synth and Wavetable views. */
-const SCREENS = ["scope", "spectrum", "spectrogram", "synth", "wavetable"] as const;
-const SCREEN_NAMES: Record<(typeof SCREENS)[number], string> = { scope: "Waveform", spectrum: "Spectrum", spectrogram: "Spectrogram", synth: "Synth", wavetable: "Wavetable" };
+export type View = "playground" | "synth" | "wavetable" | "song" | "course" | "about";
+/** What Shift + encoder cycles through: the playground's three visualisers, then the Synth, Wavetable and Song views. */
+const SCREENS = ["scope", "spectrum", "spectrogram", "synth", "wavetable", "song"] as const;
+const SCREEN_NAMES: Record<(typeof SCREENS)[number], string> = { scope: "Waveform", spectrum: "Spectrum", spectrogram: "Spectrogram", synth: "Synth", wavetable: "Wavetable", song: "Song" };
 const EXPLAIN_KEY = "minilab3.explain";
 const SCALE_KEY = "minilab3.scale";
 /** The scale the Scale lock switch brings back (Major the first time). */
@@ -86,6 +99,8 @@ const LAST_SCALE_KEY = "minilab3.lastScale";
 const ARP_KEY = "minilab3.arp";
 const RECIPES_DONE_KEY = "minilab3.recipesDone";
 const FAVOURITES_KEY = "minilab3.favourites";
+/** The Song view's tracks and their sounds (until songs are saved properly, as files of their own). */
+const SONG_KEY = "minilab3.song";
 
 /** Your favourite presets' ids, in the order you starred them (pad bank B loads the first 8). */
 function loadFavourites(): string[] {
@@ -177,9 +192,11 @@ export interface TimingReport {
   sequencer: SequencerTiming | null;
 }
 
-/** The two parts: Keys (what you play) and Sequencer (what the step sequencer plays). */
+/** The parts: Keys (what you play), Sequencer (what the step sequencer plays), and each song synth track (its id). */
 export type PartId = NoteOwner;
-export const PART_NAMES: Record<PartId, string> = { keys: "Keys", seq: "Sequencer" };
+export const PART_NAMES: Record<"keys" | "seq", string> = { keys: "Keys", seq: "Sequencer" };
+/** Whether a part is a song synth track's (not Keys or Sequencer). */
+export const isTrackPart = (id: PartId) => id.startsWith("track-");
 /** The Sequencer part starts on this preset, so a bass line plays under the Keys part's sound. */
 const SEQ_START_PRESET = "Round Bass";
 
@@ -224,6 +241,9 @@ interface PartSnapshot {
   dirty: boolean;
 }
 
+/** The drums' names on the keys (DRUM_NAMES, short enough for a black key). */
+const DRUM_KEY_LABELS = ["Kick", "Snare", "Clap", "Hat", "O.Hat", "Tom L", "Tom H", "Cow"];
+
 /** The OLED's line for a step about playing. */
 const PLAY_SCREEN: Record<PlayCheck["play"], string> = { note: "Play a note", low: "Play a low note", high: "Play a high note", chord: "Play a chord" };
 
@@ -235,12 +255,19 @@ export class Playground {
 
   /** The factory presets, then yours. */
   presets = $state.raw<Preset[]>([...FACTORY_PRESETS, ...loadUserPresets()]);
-  /** Each part's sound. The knobs, faders, Synth view and preset browser edit the selected part. */
-  readonly parts: Record<PartId, PartState> = {
+  /** Each part's sound (the song's synth tracks too). The knobs, faders, Synth view and preset browser edit the selected part. */
+  readonly parts: { keys: PartState; seq: PartState; [id: string]: PartState } = {
     keys: new PartState(FACTORY_PRESETS[0]),
     seq: new PartState(FACTORY_PRESETS.find((p) => p.id === factoryId(SEQ_START_PRESET)) ?? FACTORY_PRESETS[0]),
   };
   part = $state<PartId>("keys");
+  /** The Song view's tracks, in order: the drums and the synth tracks (each with its part in `parts`). */
+  songTracks = $state<Track[]>([]);
+  /** The song's drum track selected in the Song view: your keys play its kit (it has no sound to edit). */
+  drumsSelected = $state(false);
+  /** The song synth track selected last, for its button beside Keys and Sequencer. */
+  lastTrack = $state<PartId | null>(null);
+  private drumTrack: DrumTrack;
   /** Preset highlighted by the encoder but not loaded yet. */
   browseId = $state<string | null>(null);
   /** The preset browser: whether it is open, and what it shows (◀ ▶ and the encoder step through that list too). */
@@ -416,9 +443,10 @@ export class Playground {
     this.noteSequencer.pitch = (note) => snapToScale(note, this.scale);
     this.seq.notes = this.noteSequencer;
     this.seq.drumsOn = this.drumsOn;
+    // The arpeggiator plays the part your keys play (Keys, or a song track).
     this.arpeggiator = new Arpeggiator(this.arp, {
-      noteOn: (note, velocity, time) => this.engine.noteOn(note, velocity, time, false, "keys"),
-      noteOff: (note, time) => this.engine.noteOff(note, time, "keys"),
+      noteOn: (note, velocity, time) => this.engine.noteOn(note, velocity, time),
+      noteOff: (note, time) => this.engine.noteOff(note, time),
     });
     this.arpeggiator.onNote = (note, time, end) => {
       this.atAudioTime(time, () => this.arpNotes.add(note));
@@ -427,6 +455,10 @@ export class Playground {
     this.seq.arp = this.arpeggiator;
     this.engine.setParams(this.parts.keys.values, "keys");
     this.engine.setParams(this.parts.seq.values, "seq");
+    this.drumTrack = this.engine.addDrumTrack();
+    this.loadSong();
+    window.addEventListener("pagehide", this.saveSongNow);
+    document.addEventListener("visibilitychange", this.saveSongNow);
     this.intervals.push(window.setInterval(() => (this.cpu = this.engine.cpu), 250));
     this.freezes.observe();
     this.intervals.push(window.setInterval(() => this.updateTiming(), 1000));
@@ -438,6 +470,9 @@ export class Playground {
    * the old one would keep its audio running and keep playing the MiniLab's keys on its own preset.
    */
   dispose() {
+    this.saveSongNow();
+    window.removeEventListener("pagehide", this.saveSongNow);
+    document.removeEventListener("visibilitychange", this.saveSongNow);
     this.intervals.forEach(clearInterval);
     clearInterval(this.spectrumTimer);
     this.seq.stop();
@@ -482,21 +517,229 @@ export class Playground {
     return this.parts[part].preset;
   }
 
-  /** Edit and show another part: the knobs, faders, Synth view and preset browser follow it. */
+  /** A part's name: Keys, Sequencer, or the song track's. */
+  partName(part: PartId): string {
+    if (part === "keys" || part === "seq") return PART_NAMES[part];
+    return this.songTracks.find((t) => t.id === part)?.name ?? "Track";
+  }
+
+  /**
+   * Edit and show another part: the knobs, faders, Synth view and preset browser follow it. A song track's
+   * part is also the one your keys play (it has nothing else to play it yet).
+   */
   selectPart(part: PartId) {
-    if (part === this.part) return;
+    if (part === this.part && !this.drumsSelected) return;
+    this.drumsSelected = false;
+    if (part === this.part) return this.syncPlayer();
+    if (!this.parts[part]) return;
     this.endCompare();
     this.part = part;
+    if (isTrackPart(part)) this.lastTrack = part;
     this.engine.select(part);
     this.browseId = null;
     this.faderLive.fill(false);
+    this.syncPlayer();
     this.syncHardware();
-    this.showMessage("Part", `${PART_NAMES[part]}: ${this.preset.name}`);
+    this.showMessage("Part", `${this.partName(part)}: ${this.preset.name}`);
   }
 
+  /** Shift + a key on the MiniLab: Keys, Sequencer, then (in the Song view) each synth track in turn. */
   togglePart() {
-    this.selectPart(this.part === "keys" ? "seq" : "keys");
+    const order: PartId[] = ["keys", "seq", ...(this.view === "song" ? this.songTracks.filter((t) => t.kind === "synth").map((t) => t.id) : [])];
+    this.selectPart(order[(order.indexOf(this.part) + 1) % order.length]);
   }
+
+  /** The part your keys play: the selected part when it is a song synth track, the Keys part otherwise. */
+  get playerPart(): PartId {
+    return isTrackPart(this.part) && !this.drumsSelected ? this.part : "keys";
+  }
+
+  /**
+   * Where your keys go: the selected part when it is a song track, the Keys part otherwise. Changing it lets
+   * go of the keys held (their notes would otherwise hang on the part they started on).
+   */
+  private syncPlayer() {
+    const player = this.playerPart;
+    const drums = this.keysToDrums;
+    if (player === this.engine.player && drums === this.keysWereDrums) return;
+    this.releaseKeys();
+    this.engine.setPlayer(player);
+    this.keysWereDrums = drums;
+  }
+
+  /** In the Song view with the drum track selected, the keys play its kit. */
+  private get keysToDrums() {
+    return this.drumsSelected && this.view === "song";
+  }
+  private keysWereDrums = false;
+
+  /** Let go of every held key now (their notes stop, the arpeggiator forgets them). */
+  private releaseKeys() {
+    const now = this.engine.ctx.currentTime;
+    for (const n of this.noteHolds.keys()) this.engine.noteOff(n, now);
+    if (this.arp.on) {
+      this.arpeggiator.clear();
+      this.arpNotes.clear();
+    }
+    this.keyPlays.clear();
+    this.noteHolds.clear();
+    this.notes.clear();
+  }
+
+  // ------------------------------------------------------------------ song tracks
+
+  /** The track shown as selected in the Song view: the drums, the selected part's track, or none. */
+  get selectedSongTrack(): string | null {
+    if (this.drumsSelected) return DRUM_TRACK_ID;
+    return isTrackPart(this.part) ? this.part : null;
+  }
+
+  /** Select a track: a synth track's sound is edited and played; the drum track's kit is played by the keys. */
+  selectSongTrack(id: string) {
+    const t = this.songTracks.find((x) => x.id === id);
+    if (!t) return;
+    if (t.kind === "synth") return this.selectPart(id);
+    this.drumsSelected = true;
+    this.syncPlayer();
+    this.showMessage("Track", t.name);
+  }
+
+  get canAddSongTrack() {
+    return canAddTrack(this.songTracks);
+  }
+
+  /** A new synth track at the end, on the first factory sound, selected. */
+  addSongTrack() {
+    if (!this.canAddSongTrack) return;
+    const t = newSynthTrack(this.songTracks);
+    this.addTrackPart(t.id, new PartState(FACTORY_PRESETS[0]));
+    this.songTracks = [...this.songTracks, t];
+    this.applyMix();
+    this.selectSongTrack(t.id);
+    this.saveSong();
+  }
+
+  /** Remove a synth track and its sound (the drum track stays). */
+  removeSongTrack(id: string) {
+    const t = this.songTracks.find((x) => x.id === id);
+    if (!t || t.kind !== "synth") return;
+    if (this.part === id) {
+      // The track above it (or below, for the first), else the Keys part.
+      const synth = this.songTracks.filter((x) => x.kind === "synth");
+      const i = synth.indexOf(t);
+      this.selectPart((synth[i - 1] ?? synth[i + 1])?.id ?? "keys");
+    }
+    if (this.lastTrack === id) this.lastTrack = null;
+    this.songTracks = this.songTracks.filter((x) => x !== t);
+    delete this.parts[id];
+    this.engine.removePart(id);
+    this.applyMix();
+    this.saveSong();
+  }
+
+  /** Change a track's name, colour or mix (volume, pan, mute, solo, voices). */
+  setSongTrack(id: string, change: Partial<Omit<Track, "id" | "kind">>) {
+    const name = change.name === undefined ? undefined : cleanName(change.name);
+    if (name === "") delete change.name;
+    else if (name !== undefined) change.name = name;
+    this.songTracks = this.songTracks.map((t) => (t.id === id ? { ...t, ...change } : t));
+    this.applyMix();
+    this.saveSong();
+  }
+
+  /** The next colour for a track. */
+  cycleSongTrackColor(id: string) {
+    const t = this.songTracks.find((x) => x.id === id);
+    if (t) this.setSongTrack(id, { color: (t.color + 1) % TRACK_COLORS.length });
+  }
+
+  moveSongTrack(id: string, delta: number) {
+    this.songTracks = moveTrack(this.songTracks, id, delta);
+    this.saveSong();
+  }
+
+  /** A track's mixer strip (its level meter is `.meter`). */
+  songTrackStrip(id: string): Strip | null {
+    if (id === DRUM_TRACK_ID) return this.drumTrack.strip;
+    return this.engine.parts[id]?.fx.strip ?? null;
+  }
+
+  /** Every track's volume, pan and mute (solo mutes the others), and each synth track's voices. */
+  private applyMix() {
+    for (const t of this.songTracks) {
+      this.songTrackStrip(t.id)?.set(t.volume, t.pan, !audible(t, this.songTracks));
+      const part = this.engine.parts[t.id];
+      if (part) part.voiceCap = t.voices;
+    }
+  }
+
+  private addTrackPart(id: string, state: PartState) {
+    this.parts[id] = state;
+    this.engine.addPart(id, state.values);
+  }
+
+  /** The tracks and their sounds from the last visit (a new song's the first time). */
+  private loadSong() {
+    let saved: { tracks?: unknown; sounds?: Record<string, { preset?: unknown; values?: unknown; dirty?: unknown }> } | null = null;
+    try {
+      saved = JSON.parse(localStorage.getItem(SONG_KEY) ?? "null");
+    } catch {
+      saved = null;
+    }
+    const tracks = readTracks(saved?.tracks);
+    for (const t of tracks) {
+      if (t.kind !== "synth") continue;
+      this.addTrackPart(t.id, this.readSound(saved?.sounds?.[t.id], DEFAULT_TRACK_PRESETS[t.id]));
+    }
+    this.songTracks = tracks;
+    this.applyMix();
+  }
+
+  /**
+   * A track's saved sound: a preset in the list is taken from the list (it may have changed since); another
+   * (a Dice patch, a deleted preset) from what was saved. Unreadable: the start preset.
+   */
+  private readSound(raw: { preset?: unknown; values?: unknown; dirty?: unknown } | undefined, start = "First Saw"): PartState {
+    const fallback = FACTORY_PRESETS.find((p) => p.id === factoryId(start)) ?? FACTORY_PRESETS[0];
+    const stored = raw?.preset as Partial<Preset> | undefined;
+    if (!raw || !stored || typeof stored.id !== "string") return new PartState(fallback);
+    const listed = this.presets.find((p) => p.id === stored.id);
+    const preset: Preset = listed ?? {
+      ...fallback,
+      id: stored.id,
+      name: typeof stored.name === "string" ? stored.name.slice(0, 18) : fallback.name,
+      color: Array.isArray(stored.color) && stored.color.length === 3 ? (stored.color as Rgb) : fallback.color,
+      knobs: Array.isArray(stored.knobs) && stored.knobs.length === 8 && stored.knobs.every((k) => k in PARAMS) ? (stored.knobs as Preset["knobs"]) : fallback.knobs,
+      values: readValues(stored.values, WAVETABLES.length),
+      from: stored.from === "dice" ? "dice" : undefined,
+    };
+    const state = new PartState(preset);
+    state.values = { ...presetValues(preset), ...readValues(raw.values, WAVETABLES.length) };
+    state.dirty = raw.dirty === true;
+    return state;
+  }
+
+  private songTimer = 0;
+  /** Keep the tracks and their sounds soon (a burst of changes is saved once). */
+  private saveSong() {
+    clearTimeout(this.songTimer);
+    this.songTimer = window.setTimeout(this.saveSongNow, 300);
+  }
+
+  private saveSongNow = () => {
+    clearTimeout(this.songTimer);
+    const sounds = Object.fromEntries(
+      this.songTracks.filter((t) => t.kind === "synth" && this.parts[t.id]).map((t) => {
+        const p = this.parts[t.id];
+        return [t.id, { preset: $state.snapshot(p.preset), values: $state.snapshot(p.values), dirty: p.dirty }];
+      }),
+    );
+    try {
+      localStorage.setItem(SONG_KEY, JSON.stringify({ tracks: $state.snapshot(this.songTracks), sounds }));
+    } catch {
+      // Not saved (private window, or full): the tracks last until the page closes.
+    }
+  };
 
   async startAudio() {
     await Promise.all([this.engine.resume(), this.engine.ready]);
@@ -690,8 +933,7 @@ export class Playground {
   }
 
   private clearHistory() {
-    this.parts.keys.history.clear();
-    this.parts.seq.history.clear();
+    for (const part of Object.values(this.parts)) part.history.clear();
     this.historyVersion++;
   }
 
@@ -805,6 +1047,7 @@ export class Playground {
   // ------------------------------------------------------------------ playing
 
   noteOn(note: number, velocity: number) {
+    if (this.keysToDrums) return this.drumKey(note, velocity, true);
     if (this.seqEdit && this.heldStep !== null) {
       // Hold a step pad and press a key: that key becomes the step's note (and you hear it).
       this.stopAudition();
@@ -837,6 +1080,7 @@ export class Playground {
   }
 
   noteOff(note: number) {
+    if (this.keysToDrums) return this.drumKey(note, 0, false);
     if (this.transposeKeys.delete(note)) return;
     const plays = this.keyPlays.get(note) ?? [note];
     this.keyPlays.delete(note);
@@ -853,6 +1097,24 @@ export class Playground {
     }
     if (this.arp.on) this.syncArpClock();
     this.notesChanged(false);
+  }
+
+  /**
+   * The drum track selected in the Song view: from C in every octave, the keys play its kit, one drum a
+   * semitone (C kick, C♯ snare, D clap, D♯ closed hat, E open hat, F and F♯ toms, G cowbell).
+   */
+  private drumKey(note: number, velocity: number, down: boolean) {
+    const drum = ((note % 12) + 12) % 12;
+    if (drum >= DRUM_NAMES.length) return;
+    if (!down) return void this.notes.delete(note);
+    this.drumTrack.drums.trigger(drum, velocity);
+    this.notes.add(note);
+  }
+
+  /** What a key plays while the drum track is selected (null: nothing), short enough for a key. */
+  drumOfKey(note: number): string | null {
+    if (!this.keysToDrums) return null;
+    return DRUM_KEY_LABELS[((note % 12) + 12) % 12] ?? null;
   }
 
   /**
@@ -1442,12 +1704,12 @@ export class Playground {
     for (let i = 0; i < 8; i++) this.device?.send(knobValueMessage(i, KNOB_PARK), `knob-${i}`);
   }
 
-  /** Shift + encoder: Waveform -> Spectrum -> Synth -> Wavetable. */
+  /** Shift + encoder: Waveform -> Spectrum -> Spectrogram -> Synth -> Wavetable -> Song. */
   cycleScreen(delta: number) {
     // The About page and the course aren't among the screens: from there, Shift + encoder starts over from the playground.
     const current = this.view === "playground" || this.view === "about" || this.view === "course" ? this.vizMode : this.view;
     const next = SCREENS[(SCREENS.indexOf(current) + delta + SCREENS.length) % SCREENS.length];
-    if (next === "synth" || next === "wavetable") this.setView(next);
+    if (next === "synth" || next === "wavetable" || next === "song") this.setView(next);
     else {
       this.vizMode = next;
       this.setView("playground");
@@ -1512,8 +1774,7 @@ export class Playground {
     // Table numbers after it move down one, so older undo steps would point at the wrong tables.
     this.clearHistory();
     this.engine.tablesChanged(id, oldCount);
-    for (const owner of ["keys", "seq"] as const) {
-      const part = this.parts[owner];
+    for (const [owner, part] of Object.entries(this.parts)) {
       if (part.values.wtTable === id) part.dirty = true;
       const next = idAfterRemoval(part.values.wtTable, id);
       if (next !== part.values.wtTable) {
@@ -1742,6 +2003,9 @@ export class Playground {
     else if (wasCourse) this.showHome();
     this.patch = null;
     if (view !== "synth") this.listenTo(null);
+    // The drum track is only picked in the Song view.
+    if (view !== "song") this.drumsSelected = false;
+    this.syncPlayer();
     this.syncTaps();
     this.realignKnobs();
   }
@@ -2338,7 +2602,8 @@ export class Playground {
     const list = this.browseList;
     const at = list.findIndex((q) => q.id === p.id);
     const where = p.from === "recipe" ? "Recipe" : p.from === "dice" ? "Dice" : at >= 0 ? `${at + 1}/${list.length}` : this.isListed(p) ? p.category : "Unsaved";
-    this.sendDisplay(`${this.part === "keys" ? "Keys" : "Seq"} ${where}`, this.preset.name);
+    const part = this.part === "keys" ? "Keys" : this.part === "seq" ? "Seq" : this.partName(this.part).slice(0, 8);
+    this.sendDisplay(`${part} ${where}`, this.preset.name);
   }
 
   private messageTimer = 0;

@@ -7,12 +7,13 @@ import { releaseEnd } from "./dsp/voiceMath";
 import type { ParamValues } from "./params";
 import { voiceWeight } from "./voiceLimit";
 
-export type NoteOwner = "keys" | "seq";
+/** The part a note belongs to: "keys", "seq", or a song track's id. */
+export type NoteOwner = string;
 
 let nextId = 1;
 
 export class Voice {
-  /** Who played it: your keys or the step sequencer. Each only releases its own notes. */
+  /** The part that played it: your keys, the step sequencer, or a song track. Each only releases its own notes. */
   owner: NoteOwner = "keys";
   releasedAt: number | null = null;
   readonly startedAt: number;
