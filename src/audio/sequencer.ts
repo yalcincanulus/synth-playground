@@ -30,6 +30,8 @@ export function basicBeat(): Pattern {
 }
 
 const LOOKAHEAD = 0.1;
+/** Play starts this long after it is pressed, so the first step is planned on time. */
+const START_LEAD = 0.05;
 const TICK_MS = 25;
 /**
  * A step found already this far in the past is skipped rather than played late, so the loop stays on
@@ -67,6 +69,8 @@ export class Sequencer {
   arp: Arpeggiator | null = null;
   /** The song's clips, played on the same clock while the transport plays. */
   clips: BeatPlanner | null = null;
+  /** The recording metronome, on the same clock while the transport plays. */
+  metronome: BeatPlanner | null = null;
   playing = false;
   recording = false;
   /** When off, the clock keeps running (for the note sequencer) but the drum loop is silent. */
@@ -100,17 +104,24 @@ export class Sequencer {
     return 60 / this.engine.bpm / 4;
   }
 
-  start() {
+  /**
+   * Play from beat 0, `lead` seconds from now (more than the usual 50 ms for a count-in: the clock waits, and
+   * the arpeggiator with it, so nothing plays before beat 0).
+   */
+  start(lead = START_LEAD) {
     if (this.playing) return;
     this.playing = true;
     this.nextStep = 0;
     this.nextBeat = 0;
     this.notes?.reset();
     this.clips?.reset();
+    this.metronome?.reset();
     this.stats = { lateSteps: 0, closest: null };
     // Already ticking for the arpeggiator: the loop starts where that has planned up to, so no note plays twice.
+    // A count-in starts the clock again instead, at its end.
+    if (this.running && lead > START_LEAD) this.halt();
     if (this.running) this.arp?.restart();
-    this.run(0.05);
+    this.run(lead);
   }
 
   stop() {
@@ -118,6 +129,7 @@ export class Sequencer {
     this.recording = false;
     this.notes?.release(this.engine.ctx.currentTime);
     this.clips?.stop(this.engine.ctx.currentTime);
+    this.metronome?.stop(this.engine.ctx.currentTime);
     if (!this.free) this.halt();
   }
 
@@ -152,6 +164,12 @@ export class Sequencer {
   get beatNow(): number {
     if (!this.playing) return -1;
     return Math.max(0, this.nextBeat - (this.nextTime - this.engine.ctx.currentTime) / (60 / this.engine.bpm));
+  }
+
+  /** Beats since Play at an audio time (negative before beat 0, as in a count-in), or -1 when stopped. */
+  beatAt(time: number): number {
+    if (!this.playing) return -1;
+    return this.nextBeat - (this.nextTime - time) / (60 / this.engine.bpm);
   }
 
   /** Step under the playhead right now, or -1 when stopped. */
@@ -206,6 +224,7 @@ export class Sequencer {
         }
         this.notes?.schedule(this.nextBeat, this.nextBeat + 0.25, timeAt, secPerBeat, late);
         this.clips?.schedule(this.nextBeat, this.nextBeat + 0.25, timeAt, secPerBeat, late);
+        this.metronome?.schedule(this.nextBeat, this.nextBeat + 0.25, timeAt, secPerBeat, late);
       }
       this.arp?.schedule(this.nextBeat, this.nextBeat + 0.25, timeAt, secPerBeat, late);
       this.nextTime += this.stepDuration;

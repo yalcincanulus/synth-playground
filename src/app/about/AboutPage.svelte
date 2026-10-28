@@ -25,7 +25,7 @@
         <li><strong>Two parts:</strong> the keys and an 8-step sequencer each have their own sound, say a pad over a bass line.</li>
         <li><strong>Synth:</strong> the whole synth with plain-English explanations, as blocks joined by cables or as a plugin-style panel. "Listen here" plays any stage on its own.</li>
         <li><strong>Wavetable:</strong> eight built-in wavetables in 3D; import your own or draw one.</li>
-        <li><strong>Song:</strong> up to seven synth tracks and a drum track, each with its own sound, and a mixer with volume, pan, mute and solo. Each track loops a clip: the drum loop or a step sequence sent from the Play view (changed there with "Edit in Play"), or notes drawn in the piano roll.</li>
+        <li><strong>Song:</strong> up to seven synth tracks and a drum track, each with its own sound, and a mixer with volume, pan, mute and solo. Each track loops a clip: the drum loop or a step sequence sent from the Play view (changed there with "Edit in Play"), or notes drawn in the piano roll or recorded from the keys (arm a track with its ●, then press ● Record; overdub or replace, with a count-in and a click).</li>
         <li><strong>Learn:</strong> a five-chapter course on how sound and synths work, one idea per page, with only the controls that page needs.</li>
         <li><strong>Recipes and Classics:</strong> 18 sounds to build step by step, and 21 presets that recreate famous synth sounds.</li>
         <li><strong>Scale lock, chords and arpeggiator:</strong> every key lands in the scale, plays a whole chord, or an arpeggio in time with the drums.</li>
@@ -62,7 +62,7 @@
         <dt>Undo / redo</dt>
         <dd>Ctrl+Z / Ctrl+Shift+Z, or hold Shift and push the pitch strip down or up. In the Song view they undo song edits (tracks and clips); elsewhere, the sound.</dd>
         <dt>Shift + pads</dt>
-        <dd>▶ play, ■ stop, ● record, ⟲ clear the drum loop, Tap tempo</dd>
+        <dd>▶ play, ■ stop, ● record (in the Song view: into the armed track's clip), ⟲ clear the drum loop, Tap tempo</dd>
         <dt>Mouse</dt>
         <dd>Drag a knob or fader up and down; double-click a knob to reset it</dd>
         <dt>Piano roll</dt>

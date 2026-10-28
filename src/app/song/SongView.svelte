@@ -3,6 +3,7 @@
   import { DRUM_NAMES } from "../../audio/drums";
   import { RATES } from "../../audio/stepSequencer";
   import { CLIP_KIND_NAMES, clipBeats, MAX_BARS, type Clip } from "../../song/clips";
+  import { GRIDS } from "../../song/noteEdit";
   import { MAX_SYNTH_TRACKS, MAX_TRACK_VOICES, VOLUME_MAX, VOLUME_MIN, type Track } from "../../song/song";
   import { surface, type Surface } from "../components/canvas";
   import type { Playground } from "../playground.svelte";
@@ -72,6 +73,23 @@
     return { chosen, playing: chosen && pg.playing, waiting: st?.next === c.id, stopping: chosen && st?.next !== undefined };
   }
 
+  /** What recording is doing, in a few words. */
+  function recStatus() {
+    if (frame < 0) return "";
+    const take = pg.take;
+    if (take) {
+      const st = pg.takeState();
+      const name = pg.songClips.find((c) => c.id === take.clip)?.name ?? "";
+      if (!st) return `Recording ${name}`;
+      if (st.phase === "count") return `Count-in… ${st.count}`;
+      if (st.phase === "wait") return `${name} starts on the next bar`;
+      return `Recording ${name}${st.pass > 0 ? ` · time round ${st.pass + 1}` : ""}`;
+    }
+    const armed = pg.songTracks.find((t) => t.id === pg.armedTrack);
+    if (armed) return `${armed.name} is armed: ● records into its clip`;
+    return "Arm a track (● beside M and S) to record on it";
+  }
+
   let clip = $derived(pg.selectedClipData);
   let clipTrack = $derived(clip ? pg.songTracks.find((t) => t.id === clip?.track) : undefined);
 
@@ -133,8 +151,47 @@
       next bar). Send the Play view's drum loop or step sequence here with <strong>Send to song</strong>, or make a new clip with <strong>+</strong>. Click a clip's
       name to open it: a note clip opens in the <strong>piano roll</strong>, where you draw its notes; a step clip in the step sequencer's panel. The Play view's drums and
       step sequencer keep playing on top of the song.
+      To <strong>record</strong>, arm a track with its red ● and press ● Record: what you play on the keys (or the pads, for the drums) goes into its clip, time
+      round after time round. Overdub adds each time; Replace starts from an empty clip.
     </p>
   {/if}
+
+  <div class="rec-bar" class:recording={!!pg.take} role="group" aria-label="Recording">
+    <button class="rec" class:on={!!pg.take} onclick={() => pg.toggleRecord()} title={pg.take ? "Stop recording (the music plays on)" : `Record into the armed track's clip${pg.hw(" (● on the MiniLab)")}`}>
+      ● {pg.take ? "Stop recording" : "Record"}
+    </button>
+    <span class="rec-status">{recStatus()}</span>
+    <label title="A bar of clicks before the music starts (when recording starts it)"><input type="checkbox" checked={pg.rec.countIn} onchange={(e) => pg.setRec({ countIn: e.currentTarget.checked })} /> Count-in</label>
+    <label title="A click on every beat while recording (never in the song itself)">
+      <input type="checkbox" checked={pg.rec.metronome} onchange={(e) => pg.setRec({ metronome: e.currentTarget.checked })} /> Click
+      <input class="click-vol" type="range" min="0" max="1" step="0.05" value={pg.rec.click} oninput={(e) => pg.setRec({ click: +e.currentTarget.value })} aria-label="Click volume" />
+    </label>
+    <select value={pg.rec.mode} onchange={(e) => pg.setRec({ mode: e.currentTarget.value as "overdub" | "replace" })} aria-label="Overdub or replace" title="Overdub adds to the clip each time round; Replace clears it first">
+      <option value="overdub">Overdub</option>
+      <option value="replace">Replace</option>
+    </select>
+    <label title="Pull played notes onto the grid as they are recorded (the piano roll can quantize afterwards either way)">
+      Quantize
+      <select value={pg.rec.quantize} onchange={(e) => pg.setRec({ quantize: +e.currentTarget.value })}>
+        <option value={-1}>Off</option>
+        {#each GRIDS as g, i (g.name)}<option value={i}>{g.name}</option>{/each}
+      </select>
+      {#if pg.rec.quantize >= 0}
+        <select value={pg.rec.strength} onchange={(e) => pg.setRec({ strength: +e.currentTarget.value })} aria-label="Quantize strength">
+          {#each [1, 0.75, 0.5, 0.25] as v (v)}<option value={v}>{v * 100}%</option>{/each}
+        </select>
+      {/if}
+    </label>
+    <label title="How hard the computer keys and the screen's keys play (a MiniLab sends its own)">
+      Velocity <input class="vel" type="number" min="1" max="127" value={pg.rec.velocity} onchange={(e) => pg.setRec({ velocity: Math.max(1, Math.min(127, Math.round(+e.currentTarget.value || 100))) })} />
+    </label>
+    <label title="The length of a new clip made to record into (when the track has no note clip selected or playing)">
+      New clips
+      <select value={pg.rec.bars} onchange={(e) => pg.setRec({ bars: +e.currentTarget.value })}>
+        {#each [1, 2, 4, 8] as n (n)}<option value={n}>{n} bar{n > 1 ? "s" : ""}</option>{/each}
+      </select>
+    </label>
+  </div>
 
   <ol class="tracks">
     {#each pg.songTracks as t, i (t.id)}
@@ -179,6 +236,7 @@
         <div class="ms">
           <button class="mute" class:on={t.mute} onclick={() => pg.setSongTrack(t.id, { mute: !t.mute })} aria-pressed={t.mute} title="Mute">M</button>
           <button class="solo" class:on={t.solo} onclick={() => pg.setSongTrack(t.id, { solo: !t.solo })} aria-pressed={t.solo} title="Solo: hear only the soloed tracks">S</button>
+          <button class="arm" class:on={pg.armedTrack === t.id} class:live={pg.take?.track === t.id} onclick={() => pg.armTrack(t.id)} aria-pressed={pg.armedTrack === t.id} aria-label="Arm {t.name} to record" title="Arm: record on this track (it is selected, and ● records into its clip)">●</button>
         </div>
         <canvas class="meter" use:surface={meter(t.id)} aria-hidden="true"></canvas>
 
@@ -259,6 +317,16 @@
   .history button { padding: 3px 10px; }
   .explain { margin: 0; font-size: 12px; color: #a9b6ba; line-height: 1.45; max-width: 900px; }
 
+  .rec-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: #101416; font-size: 12px; }
+  .rec-bar.recording { border-color: #ff5c5c; }
+  .rec-bar label { display: flex; align-items: center; gap: 4px; color: var(--dim); }
+  .rec-bar select { padding: 2px 4px; font-size: 12px; }
+  .rec-bar .rec { font-size: 12px; padding: 3px 10px; color: #ff7a7a; }
+  .rec-bar .rec.on { background: #ff5c5c; border-color: #ff5c5c; color: #0b1314; }
+  .rec-status { flex: 1 1 200px; min-width: 0; color: var(--dim); }
+  .recording .rec-status { color: #ffb0a8; }
+  .click-vol { width: 70px; padding: 0; accent-color: #7fe0d0; }
+  .vel { width: 52px; padding: 2px 4px; }
   .tracks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
   .track {
     display: grid;
@@ -293,6 +361,9 @@
   .ms button { width: 28px; padding: 3px 0; font-size: 12px; font-weight: 600; }
   .mute.on { background: #ffb347; border-color: #ffb347; color: #0b1314; }
   .solo.on { background: #7fe0d0; border-color: #7fe0d0; color: #0b1314; }
+  .arm { color: #a05050; }
+  .arm.on { background: #5a1f1f; border-color: #ff5c5c; color: #ff7a7a; }
+  .arm.live { background: #ff5c5c; color: #0b1314; }
   .meter { width: 70px; height: 8px; border-radius: 2px; }
   .order { display: flex; gap: 2px; }
   .order button { padding: 2px 7px; font-size: 12px; }
@@ -329,7 +400,7 @@
   .clip-panel .danger { color: #ff8a7a; }
 
   @media (pointer: coarse) {
-    .clip button, .add-clip, .clip-panel button { min-height: 36px; }
+    .clip button, .add-clip, .clip-panel button, .rec-bar .rec, .rec-bar select { min-height: 36px; }
     .ms button, .order button, .sound .step { min-height: 36px; }
     .select { width: 36px; height: 36px; }
   }

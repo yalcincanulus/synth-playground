@@ -5,7 +5,8 @@ import type { Strip } from "../audio/fx";
 import type { NoteOwner } from "../audio/voice";
 import { EFFECT_ON, effectOrder, formatValue, fromControl, fxSlotId, EFFECTS, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, PARAMS, slotIds, toControl, type Effect, type ParamId, type ParamValues } from "../audio/params";
 import { WorkerClock } from "../audio/clock";
-import { Sequencer, type Pattern, type SequencerTiming, basicBeat } from "../audio/sequencer";
+import { Sequencer, type Pattern, type SequencerTiming, basicBeat, emptyPattern, STEPS } from "../audio/sequencer";
+import { ClickSound, Metronome } from "../audio/metronome";
 import {
   defaultNoteSeq,
   DIRECTIONS,
@@ -85,8 +86,9 @@ import {
   TRACK_COLORS,
   type Track,
 } from "../song/song";
-import { barsForSteps, cleanNotes, drumClip, duplicateClip, fitsTrack, noteClip, stepClip, withBars, readClips, BEATS_PER_BAR, type Clip, type ClipKind, type Note } from "../song/clips";
-import { stepsToNotes } from "../song/noteEdit";
+import { barsForSteps, cleanNotes, clipBeats, drumClip, duplicateClip, fitsTrack, noteClip, stepClip, withBars, readClips, BEATS_PER_BAR, MAX_BARS, type Clip, type ClipKind, type Note } from "../song/clips";
+import { GRIDS, stepsToNotes } from "../song/noteEdit";
+import { readRecordSettings, Take, type RecordSettings } from "../song/recorder";
 import { ClipPlayer } from "../song/clipPlayer";
 
 export type MidiStatus = "idle" | "unsupported" | "denied" | "not-found" | "connected";
@@ -104,6 +106,7 @@ const RECIPES_DONE_KEY = "minilab3.recipesDone";
 const FAVOURITES_KEY = "minilab3.favourites";
 /** The Song view's tracks and their sounds (until songs are saved properly, as files of their own). */
 const SONG_KEY = "minilab3.song";
+const RECORD_KEY = "minilab3.record";
 
 /** Your favourite presets' ids, in the order you starred them (pad bank B loads the first 8). */
 function loadFavourites(): string[] {
@@ -135,6 +138,14 @@ function loadScale(): ScaleSettings {
     return s;
   } catch {
     return defaultScale();
+  }
+}
+
+function loadRecordSettings(): RecordSettings {
+  try {
+    return readRecordSettings(JSON.parse(localStorage.getItem(RECORD_KEY) ?? "null"));
+  } catch {
+    return readRecordSettings(null);
   }
 }
 
@@ -290,6 +301,16 @@ export class Playground {
   editClipId = $state<string | null>(null);
   /** The bar of a drum clip the drum loop shows while it is edited. */
   editBar = $state(0);
+  /** The track ● armed in the Song view: it is the selected track, and the record button records into it. */
+  armedTrack = $state<string | null>(null);
+  /** How takes are recorded (count-in, metronome, overdub or replace, quantize, the keys' velocity), kept across reloads. */
+  rec = $state<RecordSettings>(loadRecordSettings());
+  /** The take being recorded: its track and clip. */
+  take = $state.raw<{ track: string; clip: string } | null>(null);
+  /** The take's timing, and the song before it (a take is one undo step). */
+  private takeRun: { take: Take; before: SongSnapshot; label: string } | null = null;
+  readonly metronome: Metronome;
+  private clicks: ClickSound;
   /** Undo and redo for the song (tracks and clips), apart from each part's sound. */
   readonly songHistory = new History<SongSnapshot>();
   readonly clipPlayer: ClipPlayer;
@@ -478,7 +499,8 @@ export class Playground {
       noteOn: (note, velocity, time) => this.engine.noteOn(note, velocity, time),
       noteOff: (note, time) => this.engine.noteOff(note, time),
     });
-    this.arpeggiator.onNote = (note, time, end) => {
+    this.arpeggiator.onNote = (note, time, end, velocity) => {
+      this.recordArpNote(note, velocity, time, end);
       this.atAudioTime(time, () => this.arpNotes.add(note));
       this.atAudioTime(end, () => this.arpNotes.delete(note));
     };
@@ -496,9 +518,16 @@ export class Playground {
       (id) => this.songClips.find((c) => c.id === id),
     );
     this.clipPlayer.pitch = (note) => snapToScale(note, this.scale);
-    this.clipPlayer.onChange = (track, _clip, time) => this.atAudioTime(time, () => this.syncLaunch(track));
+    this.clipPlayer.onChange = (track, clip, time) => {
+      this.takeClipChanged(track, clip, time);
+      this.atAudioTime(time, () => this.syncLaunch(track));
+    };
     this.clipPlayer.onStep = (_track, clip, step, time) => this.atAudioTime(time, () => this.editClipId === clip && this.moveSeqHead(step));
     this.seq.clips = this.clipPlayer;
+    this.clicks = new ClickSound(this.engine.ctx);
+    this.clicks.volume = this.rec.click;
+    this.metronome = new Metronome(this.clicks);
+    this.seq.metronome = this.metronome;
     this.loadSong();
     window.addEventListener("pagehide", this.saveSongNow);
     document.addEventListener("visibilitychange", this.saveSongNow);
@@ -614,6 +643,7 @@ export class Playground {
    * go of the keys held (their notes would otherwise hang on the part they started on).
    */
   private syncPlayer() {
+    this.syncArm();
     const player = this.playerPart;
     const drums = this.keysToDrums;
     if (player === this.engine.player && drums === this.keysWereDrums) return;
@@ -820,6 +850,8 @@ export class Playground {
     const has = (id: string | null | undefined) => !!id && this.songClips.some((c) => c.id === id);
     if (!has(this.selectedClip)) this.selectedClip = null;
     if (this.editClipId && !has(this.editClipId)) this.closeClipEdit();
+    // The take's clip is gone (deleted, or undone): the take ends, with nothing more to write.
+    if (this.take && !has(this.take.clip)) this.endTakeState();
     for (const t of this.songTracks) {
       const st = this.clipPlayer.state(t.id);
       // While playing, the player lets go of a deleted clip itself, at the time it reaches it.
@@ -1036,6 +1068,209 @@ export class Playground {
     this.showMessage("Sent to song", `${t.name}: ${clip.name}`);
   }
 
+  // ------------------------------------------------------------------ recording into clips
+
+  /** Arm a track to record on (it is selected too: your keys play it), or disarm it. Selecting another track disarms it. */
+  armTrack(id: string, on = this.armedTrack !== id) {
+    const t = this.songTracks.find((x) => x.id === id);
+    if (!t) return;
+    if (!on) {
+      if (this.armedTrack !== id) return;
+      if (this.take?.track === id) this.endTake();
+      this.armedTrack = null;
+      this.showHome();
+      return;
+    }
+    this.selectSongTrack(id);
+    this.armedTrack = id;
+    this.showMessage("Armed", t.name);
+  }
+
+  /** The arm follows the selection: a track no longer selected (or gone) is disarmed, and its take ends. */
+  private syncArm() {
+    const armed = this.armedTrack;
+    if (!armed || (armed === this.selectedSongTrack && this.songTracks.some((t) => t.id === armed))) return;
+    if (this.take?.track === armed) this.endTake();
+    this.armedTrack = null;
+  }
+
+  setRec(change: Partial<RecordSettings>) {
+    this.rec = { ...this.rec, ...change };
+    this.clicks.volume = this.rec.click;
+    if (this.take) this.metronome.on = this.rec.metronome;
+    try {
+      localStorage.setItem(RECORD_KEY, JSON.stringify(this.rec));
+    } catch {
+      // Not saved (private window): it still works until the page closes.
+    }
+  }
+
+  /** Whether the record button records a take into a clip (the Song view, or a drum clip edited in Play), not pad hits into the drum loop. */
+  private get recordsTake() {
+    return this.view === "song" || this.editClip?.kind === "drums";
+  }
+
+  /**
+   * Record into a clip on the armed track (the selected one when none is): the clip selected on it, else the
+   * one playing on it, if it takes notes (a note clip, or a drum clip on the drum track); else a new one.
+   * Stopped, the transport starts (after a bar of count-in) with the clip from its start. Playing, the take
+   * starts at once in a clip already playing, or on the next bar with the clip.
+   */
+  startTake() {
+    const editDrums = this.view !== "song" && this.editClip?.kind === "drums";
+    const t = this.songTracks.find((x) => x.id === (editDrums ? this.editClip!.track : (this.armedTrack ?? this.selectedSongTrack)));
+    if (!t) return this.showMessage("Record", "select a track first");
+    if (!editDrums && this.armedTrack !== t.id) this.armTrack(t.id, true);
+    const kind: ClipKind = t.kind === "drums" ? "drums" : "notes";
+    const fits = (id: string | null | undefined) => this.songClips.find((c) => c.id === id && c.track === t.id && c.kind === kind) ?? null;
+    const st = this.clipPlayer.state(t.id);
+    this.flushClipEdit();
+    const before = this.songSnapshot();
+    let clip = (editDrums ? this.editClip : fits(this.selectedClip)) ?? fits(st.next !== undefined ? st.next : st.clip);
+    if (!clip) {
+      clip = kind === "drums" ? drumClip(this.songClips, t, Array.from({ length: Math.min(this.rec.bars, MAX_BARS.drums) }, emptyPattern)) : noteClip(this.songClips, t, [], this.rec.bars);
+      this.songClips = [...this.songClips, clip];
+      clip = this.songClips[this.songClips.length - 1];
+    }
+    if (!editDrums) this.selectClip(clip.id);
+    if (this.rec.mode === "replace") {
+      if (clip.kind === "notes") clip.notes = [];
+      else if (clip.kind === "drums") for (const p of clip.patterns) for (const row of p) row.fill(0);
+    }
+    const id = clip.id;
+    const take = new Take(
+      () => {
+        const c = this.songClips.find((x) => x.id === id);
+        return c ? clipBeats(c) : BEATS_PER_BAR;
+      },
+      this.rec.quantize >= 0 ? GRIDS[this.rec.quantize].ticks : null,
+      this.rec.strength,
+    );
+    this.takeRun = { take, before, label: `Record ${clip.name}` };
+    this.take = { track: t.id, clip: id };
+    this.seq.recording = false;
+    this.recording = true;
+    this.metronome.on = this.rec.metronome;
+    if (!this.playing) {
+      this.clipPlayer.launch(t.id, id);
+      take.start = 0;
+      this.play(this.rec.countIn);
+    } else if (this.clipPlayer.state(t.id).clip === id) {
+      // Already playing (a stop waiting at the next bar is called off): the take starts now, where the clip is.
+      this.clipPlayer.launch(t.id, id);
+      const now = this.seq.beatAt(this.engine.ctx.currentTime);
+      const pos = this.clipPlayer.position(t.id, id, now);
+      take.start = pos >= 0 ? now - pos : 0;
+    } else {
+      // It starts on the next bar, and the take with it (see takeClipChanged).
+      this.clipPlayer.launch(t.id, id);
+    }
+    this.syncLaunch(t.id);
+    this.saveSong();
+    this.syncTransportLeds();
+    this.showMessage("Recording", clip.name);
+  }
+
+  /** No take any more: the record light, the metronome and the screen. */
+  private endTakeState() {
+    this.takeRun = null;
+    this.take = null;
+    this.recording = false;
+    this.metronome.on = false;
+    this.syncTransportLeds();
+    this.showHome();
+  }
+
+  /** End the take: notes still held end now, and the take becomes one undo step. The transport plays on. */
+  endTake() {
+    const run = this.takeRun;
+    const take = this.take;
+    if (!run || !take) return;
+    for (const n of run.take.end(this.heardBeat())) this.writeNote(take.clip, n);
+    this.flushTake();
+    this.endTakeState();
+  }
+
+  /** The take so far becomes an undo step (when the clip changed), and the take goes on from here. */
+  private flushTake() {
+    const run = this.takeRun;
+    if (!run) return;
+    const now = this.songSnapshot();
+    if (JSON.stringify(run.before.clips) === JSON.stringify(now.clips)) return;
+    const before = run.before;
+    this.songHistory.record(() => before, run.label);
+    this.historyVersion++;
+    run.before = now;
+    this.saveSong();
+  }
+
+  /** The clip player started or stopped a clip: a take waiting for its clip starts here; another clip there ends it. */
+  private takeClipChanged(track: string, clip: string | null, time: number) {
+    const run = this.takeRun;
+    if (!run || this.take?.track !== track) return;
+    if (clip === this.take.clip && run.take.start === Infinity) run.take.start = Math.round(this.seq.beatAt(time) * 1e6) / 1e6;
+    else if (clip !== this.take.clip) this.atAudioTime(time, () => this.endTake());
+  }
+
+  /**
+   * The beat heard now: the audio clock's beat less the output's latency, so a note played along with what
+   * you hear lands where you heard it.
+   */
+  private heardBeat(): number {
+    const c = this.engine.ctx;
+    return this.seq.beatAt(c.currentTime - (c.outputLatency || 0) - (c.baseLatency || 0));
+  }
+
+  /** Whether the keys' notes go into the take: it records on the part they play. */
+  private get keysRecord() {
+    return !!this.take && this.take.track === this.engine.player;
+  }
+
+  /** A key's note into the take (on: pressed; off: let go). */
+  private recordKey(note: number, velocity: number, on: boolean) {
+    if (!this.keysRecord) return;
+    const take = this.takeRun!.take;
+    if (on) return take.noteOn(note, velocity, this.heardBeat());
+    const n = take.noteOff(note, this.heardBeat());
+    if (n) this.writeNote(this.take!.clip, n);
+  }
+
+  /** The arpeggiator's notes are recorded as it plays them, at their exact times (they are on the beat already). */
+  private recordArpNote(note: number, velocity: number, time: number, end: number) {
+    if (!this.keysRecord) return;
+    const n = this.takeRun!.take.note(note, velocity, this.seq.beatAt(time), this.seq.beatAt(end), false);
+    if (n) this.writeNote(this.take!.clip, n);
+  }
+
+  /** A drum hit into a take on the drum track (the pads, or the keys with the drum track selected). */
+  private recordDrum(drum: number, velocity: number) {
+    const take = this.take;
+    if (!take || take.track !== DRUM_TRACK_ID) return;
+    const step = this.takeRun!.take.drumStep(this.heardBeat());
+    const clip = this.songClips.find((c) => c.id === take.clip);
+    if (step < 0 || clip?.kind !== "drums") return;
+    const bar = clip.patterns[Math.floor(step / STEPS)];
+    if (bar) bar[drum][step % STEPS] = Math.max(1, Math.min(127, velocity));
+    this.saveSong();
+  }
+
+  private writeNote(id: string, note: Note) {
+    const clip = this.songClips.find((c) => c.id === id);
+    if (clip?.kind !== "notes") return;
+    clip.notes = cleanNotes([...clip.notes, note], clip.bars);
+    this.saveSong();
+  }
+
+  /** Where the take is, for the Song view: counting in, waiting for its bar, or recording (and which time round). */
+  takeState(): { phase: "count" | "wait" | "rec"; count: number; pass: number } | null {
+    const run = this.takeRun;
+    if (!run || !this.playing) return null;
+    const beat = this.seq.beatAt(this.engine.ctx.currentTime);
+    if (run.take.start === Infinity) return { phase: "wait", count: 0, pass: 0 };
+    if (beat < run.take.start) return { phase: "count", count: Math.max(1, Math.min(BEATS_PER_BAR, Math.ceil(run.take.start - beat))), pass: 0 };
+    return { phase: "rec", count: 0, pass: run.take.pass(beat) };
+  }
+
   // ------------------------------------------------------------------ song undo
 
   private songSnapshot(): SongSnapshot {
@@ -1050,6 +1285,7 @@ export class Playground {
   /** Keep the song as it is now, before a change. Changes with the same key close together are one step. */
   private recordSong(label: string, key: string | null = null) {
     this.flushClipEdit();
+    this.flushTake();
     this.songHistory.record(() => this.songSnapshot(), label, key);
     this.historyVersion++;
   }
@@ -1094,12 +1330,14 @@ export class Playground {
 
   private songStep(way: "undo" | "redo") {
     this.flushClipEdit();
+    this.flushTake();
     const step = way === "undo" ? this.songHistory.undo(this.songSnapshot()) : this.songHistory.redo(this.songSnapshot());
     this.historyVersion++;
     const what = way === "undo" ? "Undo" : "Redo";
     if (!step) return this.showMessage(what, "nothing to do");
     this.restoreSong(step.state);
     if (this.editStart) this.editStart = this.songSnapshot();
+    if (this.takeRun) this.takeRun.before = this.songSnapshot();
     this.showMessage(what, step.label);
   }
 
@@ -1532,7 +1770,10 @@ export class Playground {
     for (const n of plays) {
       this.noteHolds.set(n, (this.noteHolds.get(n) ?? 0) + 1);
       if (this.arp.on) this.arpeggiator.press(n, velocity);
-      else this.engine.noteOn(n, velocity);
+      else {
+        this.engine.noteOn(n, velocity);
+        this.recordKey(n, velocity, true);
+      }
       this.notes.add(n);
     }
     if (this.arp.on) this.syncArpClock();
@@ -1558,7 +1799,10 @@ export class Playground {
       }
       this.noteHolds.delete(n);
       if (this.arp.on) this.arpeggiator.release(n);
-      else this.engine.noteOff(n);
+      else {
+        this.engine.noteOff(n);
+        this.recordKey(n, 0, false);
+      }
       this.notes.delete(n);
     }
     if (this.arp.on) this.syncArpClock();
@@ -1574,6 +1818,7 @@ export class Playground {
     if (drum >= DRUM_NAMES.length) return;
     if (!down) return void this.notes.delete(note);
     this.drumTrack.drums.trigger(drum, velocity);
+    this.recordDrum(drum, velocity);
     this.notes.add(note);
   }
 
@@ -1713,8 +1958,14 @@ export class Playground {
   hitPad(i: number, velocity: number) {
     if (this.seqEdit) return this.seqPadDown(i);
     if (this.stepMode) return this.tapStep(i + (this.bank === "B" ? 8 : 0), velocity);
-    this.engine.drums.trigger(i, velocity);
-    this.seq.record(i, velocity);
+    // The song's kit with the drum track selected in the Song view or a drum clip edited, the drum loop's otherwise.
+    if (this.keysToDrums || this.editClip?.kind === "drums") {
+      this.drumTrack.drums.trigger(i, velocity);
+      this.recordDrum(i, velocity);
+    } else {
+      this.engine.drums.trigger(i, velocity);
+      this.seq.record(i, velocity);
+    }
     this.flashPad(i, velocity);
   }
 
@@ -2093,14 +2344,21 @@ export class Playground {
     else this.play();
   }
 
-  play() {
-    this.seq.start();
+  /** Play, after a bar of clicks with `countIn`. */
+  play(countIn = false) {
+    if (countIn && !this.playing) {
+      const secPerBeat = 60 / this.bpm;
+      const lead = 0.05 + BEATS_PER_BAR * secPerBeat;
+      this.seq.start(lead);
+      this.metronome.countIn(this.engine.ctx.currentTime + lead, secPerBeat);
+    } else this.seq.start();
     this.playing = true;
     this.syncTransportLeds();
     this.showHome();
   }
 
   stop() {
+    this.endTake();
     this.seq.stop();
     this.seqBlur = false;
     this.playing = false;
@@ -2112,7 +2370,10 @@ export class Playground {
     this.showHome();
   }
 
+  /** Record: a take into a clip in the Song view (or into a drum clip edited in Play), pad hits into the drum loop otherwise. Again: stop recording. */
   toggleRecord() {
+    if (this.take) return this.endTake();
+    if (this.recordsTake) return this.startTake();
     this.recording = !this.recording;
     // Recording pad hits into a loop you can't hear makes no sense: switch the drums on.
     if (this.recording && !this.drumsOn) this.setDrumsOn(true);
@@ -2461,6 +2722,7 @@ export class Playground {
 
   setView(view: View) {
     if (this.view === view) return;
+    this.endTake();
     this.flushClipEdit();
     if (this.editInSong) this.closeClipEdit();
     const wasCourse = this.view === "course";
@@ -2759,7 +3021,7 @@ export class Playground {
     const i = Playground.KEYMAP.indexOf(k);
     if (i < 0) return;
     const note = 60 + this.keyOctave * 12 + i;
-    if (down) this.noteOn(note, 100);
+    if (down) this.noteOn(note, this.rec.velocity);
     else this.noteOff(note);
     e.preventDefault();
   }
@@ -3059,7 +3321,7 @@ export class Playground {
 
   private sendDisplay(line1: string, line2: string) {
     this.device?.send(
-      displayMessage(line1, line2, { transport: this.recording ? "record" : this.playing ? "play" : "none", arp: this.arp.on }),
+      displayMessage(line1, line2, { transport: this.recording ? "record" : this.playing ? "play" : "none", arp: this.arp.on, arm: this.armedTrack !== null }),
       "display",
     );
   }

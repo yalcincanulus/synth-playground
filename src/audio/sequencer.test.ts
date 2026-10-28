@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Ticker } from "./clock";
+import { Metronome } from "./metronome";
 import { emptyPattern, LATE_TOLERANCE, Sequencer } from "./sequencer";
 import { defaultNoteSeq, NoteSequencer } from "./stepSequencer";
 
@@ -93,5 +94,58 @@ describe("Sequencer timing", () => {
     const times = notes.map(([, t]) => t);
     expect(times.length).toBeGreaterThan(8);
     times.slice(1).forEach((t, i) => expect(t - times[i]).toBeCloseTo(0.2, 9));
+  });
+});
+
+describe("Count-in and metronome", () => {
+  function withClicks() {
+    const s = setup();
+    const clicks: [number, boolean][] = [];
+    let cancelled = -1;
+    const metronome = new Metronome({ click: (t, accent) => clicks.push([t, accent]), cancel: (t) => (cancelled = t) });
+    s.seq.metronome = metronome;
+    return { ...s, clicks, metronome, cancelled: () => cancelled };
+  }
+
+  test("a count-in: a bar of clicks, and beat 0 right after it", () => {
+    const { seq, host, run, clicks, metronome } = withClicks();
+    const lead = 0.05 + 4 * 0.5;
+    seq.start(lead);
+    metronome.countIn(lead, 0.5);
+    expect(clicks.map(([, a]) => a)).toEqual([true, false, false, false]);
+    [0.05, 0.55, 1.05, 1.55].forEach((t, i) => expect(clicks[i][0]).toBeCloseTo(t, 9));
+    // Beats before 0 during the count-in.
+    expect(seq.beatAt(0.05)).toBeCloseTo(-4, 9);
+    run(lead + 0.1);
+    expect(host.hits[0][1]).toBeCloseTo(lead, 9);
+    expect(seq.beatAt(lead + 0.25)).toBeCloseTo(0.5, 9);
+  });
+
+  test("a count-in while the arpeggiator's clock runs still waits for its end", () => {
+    const { seq, host, run, ticker } = setup();
+    seq.setFree(true);
+    run(0.3);
+    seq.start(2);
+    expect(ticker.running).toBe(true);
+    run(2.1);
+    expect(host.hits[0][1]).toBeCloseTo(2.3, 6);
+  });
+
+  test("on, it clicks every beat while playing, the bar's first higher; Stop silences what is planned", () => {
+    const { seq, run, clicks, metronome, cancelled } = withClicks();
+    metronome.on = true;
+    seq.start();
+    run(2);
+    [0.05, 0.55, 1.05, 1.55, 2.05].forEach((t, i) => expect(clicks[i][0]).toBeCloseTo(t, 9));
+    expect(clicks.map(([, a]) => a).slice(0, 5)).toEqual([true, false, false, false, true]);
+    seq.stop();
+    expect(cancelled()).toBeCloseTo(2, 9);
+  });
+
+  test("off, it doesn't click", () => {
+    const { seq, run, clicks } = withClicks();
+    seq.start();
+    run(2);
+    expect(clicks).toEqual([]);
   });
 });

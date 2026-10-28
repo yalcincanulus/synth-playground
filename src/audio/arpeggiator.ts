@@ -44,8 +44,8 @@ export function arpSequence(held: readonly Held[], pattern: (typeof ARP_PATTERNS
 }
 
 export class Arpeggiator {
-  /** Called with each note as it is planned (with the audio time it sounds at, and when it ends). */
-  onNote: (note: number, time: number, end: number) => void = () => {};
+  /** Called with each note as it is planned (with the audio time it sounds at, when it ends, and its velocity). */
+  onNote: (note: number, time: number, end: number, velocity: number) => void = () => {};
 
   /** The notes it plays: the keys held, or latched, in the order they were played. */
   private held: Held[] = [];
@@ -132,6 +132,6 @@ export class Arpeggiator {
     const end = time + duration * this.s.gate;
     this.out.noteOn(note, velocity, time, false);
     this.out.noteOff(note, end);
-    this.onNote(note, time, end);
+    this.onNote(note, time, end, velocity);
   }
 }

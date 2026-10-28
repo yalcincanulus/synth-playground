@@ -262,7 +262,7 @@
 
     <div class="group transport" role="group" aria-label="Transport">
       <button class:active={pg.playing} onclick={() => pg.togglePlay()} title="Play / stop the drums and the step sequencer{pg.hw(' (Shift + ▶)')}">{pg.playing ? "■" : "▶"}</button>
-      <button class="rec" class:active={pg.recording} onclick={() => pg.toggleRecord()} title="Record pads into the drum loop{pg.hw(' (Shift + ●)')}">●</button>
+      <button class="rec" class:active={pg.recording} onclick={() => pg.toggleRecord()} title="{pg.view === 'song' || pg.editClip?.kind === 'drums' ? 'Record into a clip' : 'Record pads into the drum loop'}{pg.hw(' (Shift + ●)')}">●</button>
       <label class="bpm" title={pg.hw("Shift + knobs 2–8 on the MiniLab") || undefined}>
         <input type="number" min="40" max="240" value={pg.bpm} onchange={(e) => pg.setBpm(+e.currentTarget.value)} />
         BPM
@@ -438,7 +438,7 @@
               {#if clip}
                 Drum clip · {clip.name}{clip.bars > 1 ? ` · bar ${pg.editBar + 1}` : ""}
               {:else}
-                Drum loop {pg.recording ? "· recording pad hits" : ""}
+                Drum loop {pg.recording && !pg.take ? "· recording pad hits" : ""}
                 <button class:active={pg.drumsOn} onclick={() => pg.setDrumsOn(!pg.drumsOn)} title="Mute the drum loop (the sequencer keeps playing)">
                   {pg.drumsOn ? "On" : "Off"}
                 </button>
@@ -502,7 +502,7 @@
         to={narrow.current ? 77 + pg.keyOctave * 12 : 84}
         notes={keyboardNotes}
         held={heldNotes}
-        onnoteon={(n) => pg.noteOn(n, 100)}
+        onnoteon={(n) => pg.noteOn(n, pg.rec.velocity)}
         onnoteoff={(n) => pg.noteOff(n)}
         playable={(n) => pg.drumsSelected || playable(n, pg.scale)}
         root={pg.scale.scale === "off" || pg.drumsSelected ? null : pg.scale.root}
