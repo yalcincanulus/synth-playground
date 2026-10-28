@@ -15,7 +15,6 @@
   import CourseGlossary from "./CourseGlossary.svelte";
   import LessonWidget from "./LessonWidget.svelte";
   import SongLessons from "../songGuide/SongLessons.svelte";
-  import { SONG_LESSONS } from "../../course/song/lessons";
 
   let { pg, accent }: { pg: Playground; accent: string } = $props();
 
@@ -59,7 +58,7 @@
     });
   });
 
-  const togglePanel = (panel: "contents" | "glossary" | "song") => (course.panel = course.panel === panel ? null : panel);
+  const togglePanel = (panel: NonNullable<typeof course.panel>) => (course.panel = course.panel === panel ? null : panel);
   const pageNumber = (id: string) => PAGES.findIndex((p) => p.lesson.id === id);
   /** Where step i stands: done, being done now, or still to come. */
   const stepState = (i: number) => (!run ? "todo" : run.done || i < run.index ? "done" : i === run.index ? "now" : "todo");
@@ -86,7 +85,10 @@
         Contents <span class="count">{course.done.length}/{course.total}</span>
       </button>
       <button class:on={course.panel === "song"} aria-pressed={course.panel === "song"} onclick={() => togglePanel("song")} title="Lessons on making a song in the Song view, from the very beginning">
-        Make a song <span class="count">{pg.songGuide.done.length}/{SONG_LESSONS.length}</span>
+        Make a song <span class="count">{pg.songGuide.done.length}/{pg.songGuide.lessons.length}</span>
+      </button>
+      <button class:on={course.panel === "loop"} aria-pressed={course.panel === "loop"} onclick={() => togglePanel("loop")} title="Lessons on building music live, a layer at a time, from the MiniLab's pads">
+        Live looping <span class="count">{pg.loopGuide.done.length}/{pg.loopGuide.lessons.length}</span>
       </button>
       <button class:on={course.panel === "glossary"} aria-pressed={course.panel === "glossary"} onclick={() => togglePanel("glossary")}>Glossary</button>
       <span class="gap"></span>
@@ -97,14 +99,15 @@
 
   {#if course.panel === "contents"}
     <CourseContents {pg} />
-  {:else if course.panel === "song"}
+  {:else if course.panel === "song" || course.panel === "loop"}
+    {@const guide = course.panel === "song" ? pg.songGuide : pg.loopGuide}
     <section class="song-part">
-      <h3>Make a song</h3>
-      <p class="song-about">The chapters teach sound. These lessons teach putting sounds together into music, in the Song view: beats and bars, clips, the piano roll, recording, arranging, mixing and exporting. They open beside the Song view.</p>
-      <SongLessons {pg} />
+      <h3>{guide.course.title}</h3>
+      <p class="song-about">The chapters teach sound. These lessons teach {guide.course.about[0].toLowerCase()}{guide.course.about.slice(1)} They open beside the Song view.</p>
+      <SongLessons {pg} {guide} />
     </section>
   {:else if course.panel === "glossary"}
-    <CourseGlossary {course} openLesson={(i) => pg.openSongLesson(i)} />
+    <CourseGlossary {course} openLesson={(guide, i) => pg.openLesson(guide === "song" ? pg.songGuide : pg.loopGuide, i)} />
   {:else}
   <div class="layout">
     <article class="page">

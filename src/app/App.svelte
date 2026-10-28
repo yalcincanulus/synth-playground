@@ -75,7 +75,7 @@
   // Learn on a phone: the page's controls and the keyboard sit in a dock along the bottom.
   let docked = $derived(pg.view === "course" && narrow.current);
   /** A "Make a song" lesson is open: its guide sits beside the view (any view but Learn and About, so a step can send you to Play or Synth). */
-  let guided = $derived(pg.songGuide.index !== null && pg.view !== "course" && pg.view !== "about");
+  let guided = $derived(pg.guide !== null && pg.view !== "course" && pg.view !== "about");
   function closeChanges(e: MouseEvent) {
     if (menuOpen && !(e.target instanceof Element && e.target.closest(".more, .extras"))) menuOpen = false;
     if (showChanges && !(e.target instanceof Element && e.target.closest(".changes-wrap"))) showChanges = false;

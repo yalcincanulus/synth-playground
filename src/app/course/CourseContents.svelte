@@ -53,11 +53,13 @@
     {/each}
   </div>
 
-  <article class="card song">
-    <div class="kicker">Apart from the chapters</div>
-    <h3>Make a song</h3>
-    <SongLessons {pg} />
-  </article>
+  {#each [pg.songGuide, pg.loopGuide] as guide (guide.course.id)}
+    <article class="card song">
+      <div class="kicker">Apart from the chapters</div>
+      <h3>{guide.course.title}</h3>
+      <SongLessons {pg} {guide} />
+    </article>
+  {/each}
 </section>
 
 <style>

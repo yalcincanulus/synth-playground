@@ -1,5 +1,5 @@
-// The "Make a song" lesson being followed: which lesson, which step, and which lessons are done (kept across
-// reloads, with the final project's ticks and its song).
+// A course's lesson being followed ("Make a song", "Live looping"): which lesson, which step, and which lessons
+// are done (kept across reloads, with a final project's ticks and its song).
 //
 // The playground owns the song: it opens a lesson's practice song and gives this a picture of the app
 // (`GuideState`) whenever anything in it changes. A step is done once its check holds (for HOLD_MS with
@@ -7,10 +7,7 @@
 // with Next). A milestone lesson ticks each step whenever it holds, in any order.
 
 import { HOLD_MS, LINGER_MS } from "../../recipes/recipe";
-import type { GuideState, GuideStep, SongLesson } from "../../course/song/guide";
-import { SONG_LESSONS, songLessonIndex } from "../../course/song/lessons";
-
-const KEY = "minilab3.songCourse";
+import type { GuideCourse, GuideState, GuideStep, SongLesson } from "../../course/song/guide";
 
 interface Saved {
   done: string[];
@@ -18,10 +15,10 @@ interface Saved {
   project: { song: string; ticks: string[] } | null;
 }
 
-function load(): Saved {
+function load(course: GuideCourse): Saved {
   try {
-    const s = JSON.parse(localStorage.getItem(KEY) ?? "null");
-    const done = Array.isArray(s?.done) ? s.done.filter((id: unknown) => typeof id === "string" && songLessonIndex(id) >= 0) : [];
+    const s = JSON.parse(localStorage.getItem(course.storageKey) ?? "null");
+    const done = Array.isArray(s?.done) ? s.done.filter((id: unknown) => typeof id === "string" && course.lessons.some((l) => l.id === id)) : [];
     const p = s?.project;
     const project = p && typeof p.song === "string" && Array.isArray(p.ticks) ? { song: p.song, ticks: p.ticks.filter((t: unknown) => typeof t === "string") } : null;
     return { done, project };
@@ -31,7 +28,7 @@ function load(): Saved {
 }
 
 export class SongGuide {
-  /** The lesson open (an index into SONG_LESSONS), or null. */
+  /** The lesson open (an index into the course's lessons), or null. */
   index = $state<number | null>(null);
   step = $state(0);
   /** The current step is done, and the next one comes after a pause to listen. */
@@ -55,22 +52,27 @@ export class SongGuide {
   private lingerTimer = 0;
 
   constructor(
+    readonly course: GuideCourse,
     /** The app now (read reactively by the caller's effect). */
     private now: () => GuideState,
     /** Whether a MiniLab is connected: steps that need one are skipped without it. */
     private hasDevice: () => boolean,
   ) {
-    const saved = load();
+    const saved = load(course);
     this.done = saved.done;
     this.project = saved.project;
   }
 
   get lesson(): SongLesson | null {
-    return this.index === null ? null : SONG_LESSONS[this.index];
+    return this.index === null ? null : this.lessons[this.index];
   }
 
   get current(): GuideStep | null {
     return this.lesson && !this.finished ? (this.lesson.steps[this.step] ?? null) : null;
+  }
+
+  get lessons() {
+    return this.course.lessons;
   }
 
   isDone(id: string) {
@@ -79,7 +81,7 @@ export class SongGuide {
 
   /** The first lesson not done yet (-1: all are). */
   get nextUndone() {
-    return SONG_LESSONS.findIndex((l) => !this.done.includes(l.id));
+    return this.lessons.findIndex((l) => !this.done.includes(l.id));
   }
 
   /** Whether a step can't be done here (it needs a MiniLab, and none is connected). */
@@ -94,7 +96,7 @@ export class SongGuide {
     this.listOpen = false;
     this.folded = false;
     this.base = $state.snapshot(this.now()) as GuideState;
-    const lesson = SONG_LESSONS[i];
+    const lesson = this.lessons[i];
     this.ticks = lesson.milestones ? [...(this.project?.ticks ?? [])] : [];
     this.go(0);
   }
@@ -212,7 +214,7 @@ export class SongGuide {
 
   private save() {
     try {
-      localStorage.setItem(KEY, JSON.stringify({ done: this.done, project: this.project } satisfies Saved));
+      localStorage.setItem(this.course.storageKey, JSON.stringify({ done: this.done, project: this.project } satisfies Saved));
     } catch {
       // Not kept (private window): the progress lasts until the page closes.
     }

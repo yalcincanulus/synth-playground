@@ -40,7 +40,7 @@ export class Course {
   /** The last note played on this page (for the pitch picture). */
   lastNote = $state<number | null>(null);
   /** The overview over the page: the contents (every chapter, its pages and recipes) or the glossary. */
-  panel = $state<"contents" | "glossary" | "song" | null>(null);
+  panel = $state<"contents" | "glossary" | "song" | "loop" | null>(null);
 
   constructor(
     /** The settings being taught (the Keys part's). */

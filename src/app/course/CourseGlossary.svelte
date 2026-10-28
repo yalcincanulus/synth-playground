@@ -4,11 +4,10 @@
   import { GLOSSARY_AZ, introducedOn } from "../../course/glossary";
   import type { Course } from "./course.svelte";
   import { SONG_GLOSSARY, songTermLesson } from "../../course/song/glossary";
-  import { SONG_LESSONS } from "../../course/song/lessons";
 
-  let { course, openLesson }: { course: Course; openLesson: (i: number) => void } = $props();
+  let { course, openLesson }: { course: Course; openLesson: (course: "song" | "loop", i: number) => void } = $props();
 
-  /** "Make a song"'s words, A–Z. */
+  /** The words of "Make a song" and "Live looping", A–Z. */
   const songWords = [...SONG_GLOSSARY].sort((a, b) => a.term.localeCompare(b.term));
 
   /** The terms grouped by first letter. */
@@ -35,13 +34,13 @@
     {/each}
   </div>
   <h3>Making songs</h3>
-  <p class="intro">The words of the "Make a song" lessons.</p>
+  <p class="intro">The words of the "Make a song" and "Live looping" lessons.</p>
   <dl class="letters">
     {#each songWords as t (t.term)}
       {@const at = songTermLesson(t)}
       <div class="group">
         <dt>{t.term}</dt>
-        <dd>{t.text} <button class="link" onclick={() => openLesson(at)}>{SONG_LESSONS[at].title}</button></dd>
+        <dd>{t.text}{#if at} <button class="link" onclick={() => openLesson(at.course.id, at.index)}>{at.course.lessons[at.index].title}</button>{/if}</dd>
       </div>
     {/each}
   </dl>

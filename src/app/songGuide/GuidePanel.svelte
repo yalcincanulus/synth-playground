@@ -4,7 +4,6 @@
   // stuck to the bottom of the screen, and folds to its current step.
   import { LINGER_MS } from "../../recipes/recipe";
   import { lessonTerms } from "../../course/song/glossary";
-  import { SONG_LESSONS } from "../../course/song/lessons";
   import { targetNames, type GuideStep } from "../../course/song/guide";
   import type { Playground } from "../playground.svelte";
   import Diagram from "./Diagram.svelte";
@@ -13,12 +12,15 @@
 
   let { pg }: { pg: Playground } = $props();
 
-  let guide = $derived(pg.songGuide);
+  let guide = $derived(pg.guide!);
+  let lessons = $derived(guide.lessons);
   let lesson = $derived(guide.lesson!);
   let index = $derived(guide.index ?? 0);
   let current = $derived(guide.current);
-  let terms = $derived(lessonTerms(index));
-  let last = $derived(index === SONG_LESSONS.length - 1);
+  let terms = $derived(lessonTerms(lesson));
+  /** The course ends with a project of your own (not counted among the lessons). */
+  let project = $derived(lessons.at(-1)!.practice === null);
+  let last = $derived(index === lessons.length - 1);
 
   /** Steps whose "tell me more" is open. */
   let more = $state<string[]>([]);
@@ -66,15 +68,15 @@
   <header>
     <button class="fold" onclick={() => (guide.folded = !guide.folded)} aria-expanded={!guide.folded} title={guide.folded ? "Show the whole lesson" : "Fold to the current step"}>{guide.folded ? "▴" : "▾"}</button>
     <div class="head">
-      <span class="kicker">Make a song · {last ? "Final project" : `Lesson ${index + 1} of ${SONG_LESSONS.length - 1}`}</span>
+      <span class="kicker">{guide.course.title} · {last && project ? "Final project" : `Lesson ${index + 1} of ${lessons.length - (project ? 1 : 0)}`}</span>
       <h3>{lesson.title}</h3>
     </div>
     <button class:on={guide.listOpen} aria-pressed={guide.listOpen} onclick={() => (guide.listOpen = !guide.listOpen)} title="Every lesson">Lessons</button>
-    <button class="close" onclick={() => pg.closeSongLesson()} aria-label="Close the lesson" title={pg.practiceSong ? "Close the lesson: the practice song goes, and your song comes back" : "Close the lesson"}>✕</button>
+    <button class="close" onclick={() => pg.closeLesson()} aria-label="Close the lesson" title={pg.practiceSong ? "Close the lesson: the practice song goes, and your song comes back" : "Close the lesson"}>✕</button>
   </header>
 
   {#if guide.listOpen}
-    <SongLessons {pg} compact />
+    <SongLessons {pg} {guide} compact />
   {:else}
     {#if pg.practiceSong}
       <p class="practice">A practice song: not among your songs unless you press <span class="ui">Save to my songs</span>.</p>
@@ -125,7 +127,7 @@
       <div class="finished">
         <p>✓ <GuideText {pg} text={lesson.outro} /></p>
         {#if !last}
-          <button class="primary" onclick={() => pg.openSongLesson(index + 1)}>Next: {SONG_LESSONS[index + 1].title} →</button>
+          <button class="primary" onclick={() => pg.openLesson(guide, index + 1)}>Next: {lessons[index + 1].title} →</button>
         {/if}
         {#if pg.practiceSong}<p class="dim">Close the lesson to go back to your own song, or keep this one with <span class="ui">Save to my songs</span>.</p>{/if}
       </div>

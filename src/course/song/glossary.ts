@@ -1,9 +1,10 @@
-// "Make a song"'s words: everything a music app takes for granted, explained for someone who has never used
-// one. A lesson marks a word in **bold** where it explains it; the guide shows its meaning on hover and lists
-// the lesson's words at its end.
+// The words of "Make a song" and "Live looping": everything a music app takes for granted, explained for
+// someone who has never used one. A lesson marks a word in **bold** where it explains it; the guide shows its
+// meaning on hover and lists the lesson's words at its end.
 
 import type { Term } from "../glossary";
-import { SONG_LESSONS } from "./lessons";
+import { COURSES } from "./courses";
+import type { GuideCourse, SongLesson } from "./guide";
 
 export const SONG_GLOSSARY: Term[] = [
   // What a song is made of
@@ -72,6 +73,12 @@ export const SONG_GLOSSARY: Term[] = [
   { term: "export", also: ["exported"], text: "Turn the song into a file that other apps and people can use." },
   { term: "WAV", text: "An audio file that any music player opens: the sound itself, not the notes." },
   { term: "sample rate", text: "How many times a second the sound is measured: 44.1 kHz is CD quality." },
+  // Live looping
+  { term: "looper", text: "A way to build music live: record a short loop, let it repeat, and record the next part on top." },
+  { term: "pad", also: ["pads"], text: "One of the MiniLab's square rubber buttons, or the square beside a track's M and S. Here each pad is a track; its light shows what it does." },
+  { term: "layer", also: ["layers"], text: "One part recorded on top of the others: drums, then bass, then chords. Each layer is a track's loop." },
+  { term: "time round", text: "One pass through the loop, from its start to its end. Every loop starts its time rounds together." },
+  { term: "capture", text: "Writing what you played live onto the timeline, as it happened, so it becomes a song you can edit." },
   { term: "bit depth", text: "How finely each measurement is stored. 16 bit is CD quality; 24 bit leaves more room." },
 ];
 
@@ -86,18 +93,21 @@ export function boldWords(texts: string[]): string[] {
   return texts.flatMap((t) => [...t.matchAll(/\*\*(.+?)\*\*/g)].map((m) => m[1]));
 }
 
-export const lessonTexts = (i: number) => {
-  const l = SONG_LESSONS[i];
-  return [...l.intro, ...l.steps.flatMap((s) => [s.text, ...(s.more ?? [])]), l.outro];
-};
+export const lessonTexts = (l: SongLesson) => [...l.intro, ...l.steps.flatMap((s) => [s.text, ...(s.more ?? [])]), l.outro];
 
-/** The lesson that first explains a word (-1: none). */
-export const songTermLesson = (t: Term) => SONG_LESSONS.findIndex((_, i) => boldWords(lessonTexts(i)).some((w) => songTerm(w) === t));
+/** The lesson that first explains a word: "Make a song"'s first, then "Live looping"'s (null: none). */
+export function songTermLesson(t: Term): { course: GuideCourse; index: number } | null {
+  for (const course of COURSES) {
+    const index = course.lessons.findIndex((l) => boldWords(lessonTexts(l)).some((w) => songTerm(w) === t));
+    if (index >= 0) return { course, index };
+  }
+  return null;
+}
 
 /** A lesson's words, in the order it explains them. */
-export function lessonTerms(i: number): Term[] {
+export function lessonTerms(l: SongLesson): Term[] {
   const terms: Term[] = [];
-  for (const w of boldWords(lessonTexts(i))) {
+  for (const w of boldWords(lessonTexts(l))) {
     const t = songTerm(w);
     if (t && !terms.includes(t)) terms.push(t);
   }

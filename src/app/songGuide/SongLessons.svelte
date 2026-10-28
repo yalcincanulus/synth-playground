@@ -1,31 +1,34 @@
 <script lang="ts">
-  // "Make a song": every lesson with its tick, in the suggested order; any can be opened.
-  import { SONG_LESSONS } from "../../course/song/lessons";
+  // A course's lessons ("Make a song", "Live looping"), each with its tick, in the suggested order; any can be opened.
   import type { Playground } from "../playground.svelte";
+  import type { SongGuide } from "./guide.svelte";
 
-  let { pg, compact = false }: { pg: Playground; compact?: boolean } = $props();
+  let { pg, guide, compact = false }: { pg: Playground; guide: SongGuide; compact?: boolean } = $props();
 
-  let guide = $derived(pg.songGuide);
+  let lessons = $derived(guide.lessons);
   let next = $derived(guide.nextUndone);
   const pct = (n: number, of: number) => `${Math.round((n / of) * 100)}%`;
 </script>
 
-<section class="lessons" class:compact aria-label="Make a song">
+<section class="lessons" class:compact aria-label={guide.course.title}>
   <div class="summary">
-    <div class="bar"><i style:width={pct(guide.done.length, SONG_LESSONS.length)}></i></div>
-    <span>{guide.done.length} of {SONG_LESSONS.length} lessons done</span>
+    <div class="bar"><i style:width={pct(guide.done.length, lessons.length)}></i></div>
+    <span>{guide.done.length} of {lessons.length} lessons done</span>
     {#if next >= 0}
-      <button class="primary" onclick={() => pg.openSongLesson(next)}>{guide.done.length ? "Continue" : "Start"}: {SONG_LESSONS[next].title} →</button>
+      <button class="primary" onclick={() => pg.openLesson(guide, next)}>{guide.done.length ? "Continue" : "Start"}: {lessons[next].title} →</button>
     {:else}
       <span class="all">✓ All done</span>
     {/if}
     {#if guide.done.length}<button class="link" onclick={() => confirm("Forget which lessons are done?") && guide.reset()}>reset</button>{/if}
   </div>
-  <p class="about">No music software needed before: each lesson opens a practice song of its own, so nothing touches your songs. Do them in order, or pick any.</p>
+  <p class="about">
+    {guide.course.id === "loop" ? "Best with a MiniLab, and it works with the screen's pads too. " : "No music software needed before: "}Each lesson opens a practice song of its own, so nothing
+    touches your songs. Do them in order, or pick any.
+  </p>
   <ol>
-    {#each SONG_LESSONS as l, i (l.id)}
+    {#each lessons as l, i (l.id)}
       <li>
-        <button class:now={guide.index === i} class:done={guide.isDone(l.id)} onclick={() => pg.openSongLesson(i)}>
+        <button class:now={guide.index === i} class:done={guide.isDone(l.id)} onclick={() => pg.openLesson(guide, i)}>
           <span class="num">{guide.isDone(l.id) ? "✓" : i + 1}</span>
           <span class="txt"><span class="ttl">{l.title}</span>{#if !compact}<span class="sum">{l.summary}</span>{/if}</span>
         </button>

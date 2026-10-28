@@ -8,6 +8,7 @@
 import type { Pattern } from "../../audio/sequencer";
 import type { BarRange, Placement } from "../../song/arrangement";
 import type { Clip, NoteClip } from "../../song/clips";
+import type { PadState } from "../../song/looper";
 import type { Track } from "../../song/song";
 import type { SongDoc } from "../../song/songDoc";
 
@@ -32,7 +33,12 @@ export type GuideEvent =
   | "recordOut" // a recording of what you hear stopped
   | "songFile" // the song exported as a file
   | "link" // a link to the song copied
-  | "saved"; // a practice song kept among your songs
+  | "saved" // a practice song kept among your songs
+  | "overdub" // a looper take started onto a track's loop
+  | "undoLayer" // a looper take undone (Shift + pad)
+  | "loopOut" // a playing loop stopped from its pad
+  | "loopIn" // a stopped loop brought back from its pad
+  | "capture"; // the performance written onto the timeline
 
 /** What a lesson's checks can see: the song and the app, as plain data. */
 export interface GuideState {
@@ -68,6 +74,10 @@ export interface GuideState {
   grid: number;
   snap: boolean;
   browserOpen: boolean;
+  /** The looper: the loops' length (null: the first take sets it), and each track's pad, by track id. */
+  looper: { bars: number | null; pads: Record<string, PadState> };
+  /** A MiniLab is connected. */
+  device: boolean;
   /** How often each event happened since the app started. */
   count: Partial<Record<GuideEvent, number>>;
 }
@@ -76,14 +86,15 @@ export interface GuideState {
 export type Check = (now: GuideState, base: GuideState) => boolean;
 
 /** The drawn pictures a step can show under "Tell me more". */
-export type DiagramKind = "beats" | "grid" | "placements" | "automation";
+export type DiagramKind = "beats" | "grid" | "placements" | "automation" | "pads" | "loop" | "round";
 
 export interface GuideStep {
   /** Unique within its lesson (the walkthrough test acts on it by this). */
   id: string;
   /**
    * What to do, in one or two sentences. `**word**` is a glossary word (or just bold), `[[cutoff]]` a
-   * synth control, `{{…}}` an aside only shown with a MiniLab connected.
+   * synth control, `{{…}}` an aside only shown with a MiniLab connected, `{{…|…}}` the words with a MiniLab
+   * and without one.
    */
   text: string;
   /** "Tell me more": the idea behind the step, in a few short paragraphs (same marks). */
@@ -118,6 +129,17 @@ export interface SongLesson {
   milestones?: true;
   /** Said when every step is done. */
   outro: string;
+}
+
+/** A set of lessons followed in the guide panel: "Make a song", "Live looping". */
+export interface GuideCourse {
+  id: "song" | "loop";
+  title: string;
+  /** One sentence for Learn: what the lessons teach. */
+  about: string;
+  lessons: SongLesson[];
+  /** Where the done lessons are kept. */
+  storageKey: string;
 }
 
 // ------------------------------------------------------------------ helpers for checks
@@ -165,6 +187,7 @@ export const GUIDE_TARGETS = [
   "roll", "grid", "roll-tools", "auto-lane",
   "timeline", "copy-after", "make-unique", "place-transpose", "back-arr",
   "save-song", "song-name", "wav", "wav-record", "song-export", "copy-link",
+  "pad", "looper", "loop-length", "capture", "view-play",
 ] as const;
 
 /** A step's target names, for the app as it is now. */

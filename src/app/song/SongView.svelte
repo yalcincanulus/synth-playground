@@ -273,7 +273,7 @@
     <button onclick={() => (wavPanel = !wavPanel)} aria-expanded={wavPanel} data-guide={wavPanel ? undefined : "wav wav-record"} title="Make an audio file of the song, or record what you hear">WAV {wavPanel ? "▴" : "▾"}</button>
     <button onclick={() => songFileInput.click()} title="Open a song file as a new song">Import…</button>
     <input bind:this={songFileInput} type="file" accept=".json,application/json" hidden onchange={(e) => { void importSong(e.currentTarget.files?.[0]); e.currentTarget.value = ""; }} />
-    <button class="lessons-btn" class:on={lessonList} onclick={() => (lessonList = !lessonList)} aria-expanded={lessonList} title="Make a song: lessons on everything the Song view does, for someone who has never made music on a computer">Lessons {lessonList ? "▴" : "▾"}</button>
+    <button class="lessons-btn" class:on={lessonList} onclick={() => (lessonList = !lessonList)} aria-expanded={lessonList} title="Make a song and Live looping: lessons on everything the Song view does, for someone who has never made music on a computer">Lessons {lessonList ? "▴" : "▾"}</button>
     {#if pg.practiceSong}
       <span class="saved unsaved" title="A lesson's practice song: nothing is saved until you choose Save to my songs">Practice song, not saved</span>
     {:else if pg.linkSong}
@@ -284,7 +284,12 @@
     {#if songMessage}<span class="song-msg" class:bad={!songMessage.ok}>{songMessage.text}</span>{/if}
   </div>
   {#if lessonList}
-    <div class="lesson-list"><SongLessons {pg} /></div>
+    <div class="lesson-list">
+      {#each [pg.songGuide, pg.loopGuide] as guide (guide.course.id)}
+        <h4>{guide.course.title}</h4>
+        <SongLessons {pg} {guide} />
+      {/each}
+    </div>
   {/if}
   {#if wavPanel}
     <div class="wav-panel">
@@ -382,11 +387,11 @@
       step sequencer keep playing on top of the song.
       To <strong>record</strong>, arm a track with its red ● and press ● Record: what you play on the keys (or the pads, for the drums) goes into its clip, time
       round after time round. Overdub adds each time; Replace starts from an empty clip.
-      The <strong>looper</strong> builds a song up live, a layer at a time: each track has a pad (the square beside M and S; on a MiniLab, pad 1 is the top
+      The <strong>looper</strong> (Lessons ▾ has a tutorial: Live looping) builds a song up live, a layer at a time: each track has a pad (the square beside M and S; on a MiniLab, pad 1 is the top
       track). Click it to select the track, again to get it ready, then play: your first note starts recording (and the music, if it was stopped). Click the pad
       to end the take, and the loop plays on while you go to the next track. The first loop's length (1, 2, 4 or 8 bars) is every loop's length, so they fit
       together. Click a playing loop's pad to stop it at the next bar, again to bring it back in. Hold a pad to record more onto its loop; Shift + click undoes its
-      last take. <strong>Capture to arrangement</strong> writes what you played onto the timeline, as it happened, so it becomes a song to edit and export.
+      last take (on a MiniLab, a click on the encoder undoes the last take, and bank B's pads mute their track, held, solo it). <strong>Capture to arrangement</strong> writes what you played onto the timeline, as it happened, so it becomes a song to edit and export.
       The song is <strong>saved</strong> in this browser as you work, with each track's sound (so changing or deleting a preset later doesn't change it) and the
       wavetables it uses. <strong>Songs</strong> lists your songs and three examples; <strong>Export</strong> makes a file you can open on another computer. <strong>WAV</strong> makes an audio file of the song (or its loop region), or records everything you hear as you play.
     </p>
@@ -429,9 +434,9 @@
     </label>
   </div>
 
-  <div class="looper-bar" class:live={!!pg.take || !!pg.loopReady} role="group" aria-label="Looper">
+  <div class="looper-bar" data-guide="looper" class:live={!!pg.take || !!pg.loopReady} role="group" aria-label="Looper">
     <strong>Looper</strong>
-    <label title="Every loop has this length, so they fit together. With 'First take', the first loop you record sets it (rounded to 1, 2, 4 or 8 bars)">
+    <label data-guide="loop-length" title="Every loop has this length, so they fit together. With 'First take', the first loop you record sets it (rounded to 1, 2, 4 or 8 bars)">
       Loops
       <select value={pg.loopGrid?.bars ?? 0} onchange={(e) => pg.setLoopBars(+e.currentTarget.value || null)}>
         <option value={0}>Set by the first take</option>
@@ -443,7 +448,7 @@
       {@const count = pg.loopCount()!}
       <span class="big-count" title={count.what === "end" ? "Beats until the take ends" : "Beats to the next bar"} aria-live="off">{count.beats}</span>
     {/if}
-    <button onclick={() => pg.captureToArrangement()} disabled={!pg.canCapture} title="Write what the launcher played since ▶ onto the timeline, as it happened, from the start bar{pg.hw(' (⟲ loop button on the MiniLab)')}">Capture to arrangement</button>
+    <button data-guide="capture" onclick={() => pg.captureToArrangement()} disabled={!pg.canCapture} title="Write what the launcher played since ▶ onto the timeline, as it happened, from the start bar{pg.hw(' (⟲ loop button on the MiniLab)')}">Capture to arrangement</button>
   </div>
 
   <ol class="tracks">
@@ -494,13 +499,14 @@
           <button class="solo" data-guide={k("solo")} class:on={t.solo} onclick={() => pg.setSongTrack(t.id, { solo: !t.solo })} aria-pressed={t.solo} title="Solo: hear only the soloed tracks">S</button>
           <button
             class="pad {ps}"
+            data-guide={k("pad")}
             class:blink={frame >= 0 && pg.padBlinks(t.id)}
             onpointerdown={(e) => padDown(t, e)}
             onpointerup={(e) => padUp(t, e)}
             onpointerleave={() => clearTimeout(padTimer)}
             oncontextmenu={(e) => e.preventDefault()}
             aria-label="Looper pad of {t.name}: {ps}"
-            title="Looper pad ({PAD_WORDS[ps]}). Hold: ready to record onto its loop. Shift + click: undo its last take.{pg.hw(` On the MiniLab: pad ${i + 1}.`)}"
+            title="Looper pad ({PAD_WORDS[ps]}). Hold: ready to record onto its loop. Shift + click: undo its last take.{pg.hw(` On the MiniLab: pad ${i + 1} (bank B: mute, held: solo); the encoder's click undoes the last take.`)}"
           ></button>
           <button class="arm" data-guide={k("arm")} class:on={pg.armedTrack === t.id} class:live={pg.take?.track === t.id} onclick={() => pg.armTrack(t.id)} aria-pressed={pg.armedTrack === t.id} aria-label="Arm {t.name} to record" title="Arm: record on this track (it is selected, and ● records into its clip)">●</button>
         </div>
@@ -598,7 +604,8 @@
   .song-bar .go { border-color: var(--accent); color: var(--accent); }
   .song-msg { font-size: 12px; color: var(--accent); }
   .song-msg.bad { color: #ff8a80; }
-  .lesson-list { margin-bottom: 10px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; }
+  .lesson-list { margin-bottom: 10px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; display: grid; gap: 6px; }
+  .lesson-list h4 { margin: 4px 0 0; font-size: 13px; color: var(--accent); }
   .lessons-btn.on { border-color: var(--accent); color: var(--text); }
   .song-list { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 10px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; }
   .song-list h3 { margin: 0 0 4px; font-size: 12px; color: var(--dim); font-weight: 600; }

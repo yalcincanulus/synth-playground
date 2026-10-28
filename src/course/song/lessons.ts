@@ -32,7 +32,7 @@ import {
 
 // ------------------------------------------------------------------ the practice band: A minor, Am F C G
 
-const groove = (): Pattern =>
+export const groove = (): Pattern =>
   beat([
     [KICK, [0, 8, 10], 115],
     [SNARE, [4, 12], 105],
@@ -59,7 +59,7 @@ const CHORDS = [
   [55, 60, 64], // C
   [55, 59, 62], // G
 ];
-const bassLine = () =>
+export const bassLine = () =>
   ROOTS.flatMap((r, bar) =>
     notes(
       [
@@ -72,7 +72,7 @@ const bassLine = () =>
       bar,
     ),
   );
-const chordNotes = () => CHORDS.flatMap((c, bar) => notes(chord(0, 4, c, 70), bar));
+export const chordNotes = () => CHORDS.flatMap((c, bar) => notes(chord(0, 4, c, 70), bar));
 const riff = () => [
   ...notes([[0, 1, 76], [1, 1, 72], [2, 2, 69]], 0),
   ...notes([[0, 1, 72], [1, 1, 74], [2, 2, 72]], 1),
@@ -81,26 +81,26 @@ const riff = () => [
 ];
 
 const drums = (): Track => ({ ...defaultTracks()[0] });
-const BAND_SOUNDS = { "track-1": "Round Bass", "track-2": "Juno Pad", "track-3": "Square Lead" };
-const band = () => [drums(), synth("track-1", "Bass", 1), synth("track-2", "Chords", 2), synth("track-3", "Lead", 3)];
+export const BAND_SOUNDS = { "track-1": "Round Bass", "track-2": "Juno Pad", "track-3": "Square Lead" };
+export const band = () => [drums(), synth("track-1", "Bass", 1), synth("track-2", "Chords", 2), synth("track-3", "Lead", 3)];
 
-const practice = (title: string, tempo: number, tracks: Track[], sounds: Record<string, string>, clips: Clip[], placements: ReturnType<typeof place>[], loop?: [number, number]): SongBody => ({
+export const practice = (title: string, tempo: number, tracks: Track[], sounds: Record<string, string>, clips: Clip[], placements: ReturnType<typeof place>[], loop?: [number, number]): SongBody => ({
   ...song(`Practice · ${title}`, tempo, tracks, sounds, clips, placements),
   ...(loop ? { loop: { start: loop[0], end: loop[1] }, loopOn: true } : {}),
 });
 
 // ------------------------------------------------------------------ check helpers for these lessons
 
-const idOf = (s: GuideState, name: string) => trackNamed(s, name)?.id ?? "";
+export const idOf = (s: GuideState, name: string) => trackNamed(s, name)?.id ?? "";
 const trackClips = (s: GuideState, name: string) => s.clips.filter((c) => c.track === idOf(s, name));
-const notesOn = (s: GuideState, name: string) => trackClips(s, name).reduce((n, c) => n + noteCount(c), 0);
-const hitsOn = (s: GuideState, name: string) => trackClips(s, name).reduce((n, c) => n + hits(c), 0);
+export const notesOn = (s: GuideState, name: string) => trackClips(s, name).reduce((n, c) => n + noteCount(c), 0);
+export const hitsOn = (s: GuideState, name: string) => trackClips(s, name).reduce((n, c) => n + hits(c), 0);
 const launchedName = (s: GuideState, track: string) => clipOf(s, s.launched[idOf(s, track)])?.name;
 const tookSince: Check = (now, base) => !now.recording && count(now, "take") > count(base, "take");
 /** A setting of a named track that changed from the step's start and holds a condition. */
-const trackNow = (s: GuideState, name: string) => trackNamed(s, name);
+export const trackNow = (s: GuideState, name: string) => trackNamed(s, name);
 /** The `M` and `S` buttons that are on (to turn off again). */
-const switchedOn = (s: GuideState) => s.tracks.flatMap((t) => [...(t.mute ? [guideKey("mute", t.name)] : []), ...(t.solo ? [guideKey("solo", t.name)] : [])]).join(" ");
+export const switchedOn = (s: GuideState) => s.tracks.flatMap((t) => [...(t.mute ? [guideKey("mute", t.name)] : []), ...(t.solo ? [guideKey("solo", t.name)] : [])]).join(" ");
 /** A clip's ▶ in the launcher. */
 const launchOf = (c: Clip | undefined) => (c ? guideKey("launch", c.name) : "");
 /** The same note (start and pitch) in the step's start. */
@@ -1076,6 +1076,3 @@ export const SONG_LESSONS: SongLesson[] = [
     outro: "You made a song. Play it to someone.",
   },
 ];
-
-/** A lesson's index by id (-1: none). */
-export const songLessonIndex = (id: string) => SONG_LESSONS.findIndex((l) => l.id === id);
