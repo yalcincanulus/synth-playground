@@ -455,3 +455,35 @@ describe("automation", () => {
     expect(autos[autos.length - 1]).toMatchObject({ target: "cutoff", value: null });
   });
 });
+
+describe("launching on the loop grid", () => {
+  test("a clip can wait for its loop's next time round, or start partway through one that began on a given beat", () => {
+    const a = noteClip([], BASS, [{ start: 0, length: Q, pitch: 36, velocity: 100 }], 2);
+    const b = noteClip([a], CHORDS, [{ start: 0, length: Q, pitch: 60, velocity: 100 }, { start: 6 * Q, length: Q, pitch: 62, velocity: 100 }], 2);
+    const { player, seq, events, run, beat } = setup([a, b]);
+    player.launch(BASS.id, a.id);
+    seq.start();
+    run(1.1); // beat ~2: rounds of 2 bars from beat 0
+    player.launch(CHORDS.id, b.id, { origin: 0, period: 8 });
+    run(3);
+    // Not on the next bar (beat 4) but on the next round (beat 8).
+    expect(ons(events, CHORDS.id)[0].time).toBeCloseTo(beat(8), 9);
+    // Stopped, then started partway through a round that began on beat 16: the note on beat 22 plays, the one on 16 doesn't.
+    player.launch(CHORDS.id, null);
+    run(5.5); // beat ~19
+    player.launch(CHORDS.id, b.id, { start: 16 });
+    run(3);
+    const later = ons(events, CHORDS.id).filter((e) => e.time > beat(15));
+    expect(later.map((e) => e.note)).toEqual([62, 60]);
+    expect(later[0].time).toBeCloseTo(beat(22), 9);
+    expect(later[1].time).toBeCloseTo(beat(24), 9);
+    // The log: what the launcher played and from when, its time rounds counted from `start`.
+    expect(player.log.filter((e) => e.track === CHORDS.id).map((e) => [e.clip, e.start])).toEqual([
+      [b.id, 8],
+      [null, 12],
+      [b.id, 16],
+    ]);
+    expect(player.log[0]).toEqual({ track: BASS.id, clip: a.id, at: 0, start: 0 });
+    balanced(events);
+  });
+});

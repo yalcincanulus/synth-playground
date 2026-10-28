@@ -281,6 +281,9 @@
         BPM
       </label>
       <button onclick={() => pg.tap()} title="Tap tempo{pg.hw(' (Shift + Tap)')}">Tap</button>
+      {#if pg.songPlays && pg.view !== "song"}
+        <button class="song-on" onclick={() => pg.setView("song")} title="The song plays along with the toys, on the same clock and tempo. Click to open the Song view">Song ▶</button>
+      {/if}
       {#if pg.outputRec}
         <button class="outrec" onclick={() => pg.toggleOutputRecording()} title="Recording what you hear: click to stop">
           ● {clock(pg.outputRec.seconds)} ■
@@ -639,6 +642,7 @@
   .transport .active { background: var(--accent); color: #0b1314; }
   .transport .rec { color: #ff6b6b; }
   .transport .rec.active { background: #ff6b6b; color: #fff; }
+  .transport .song-on { color: #7fe0d0; border-color: #7fe0d0; font-size: 12px; }
   .transport .outrec { color: #ff6b6b; border-color: #ff6b6b; font: 12px var(--mono); }
   .bpm { display: flex; align-items: center; gap: 4px; color: var(--dim); font-size: 12px; }
   .bpm input { width: 52px; padding: 4px 6px; text-align: center; font: 13px var(--mono); color: var(--text); appearance: textfield; }

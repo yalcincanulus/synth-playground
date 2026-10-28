@@ -122,3 +122,12 @@ describe("record settings", () => {
     expect(readRecordSettings({ mode: "nonsense", quantize: 99 }).quantize).toBe(GRIDS.length - 1);
   });
 });
+
+describe("a take that starts the transport", () => {
+  test("a note played just before the clock's first beat is on it, and keeps its length from there", () => {
+    const t = take(1, 0);
+    t.from = 0;
+    t.noteOn(48, 100, -0.3);
+    expect(t.noteOff(48, 0.5)).toEqual({ start: 0, length: 0.5 * Q, pitch: 48, velocity: 100 });
+  });
+});

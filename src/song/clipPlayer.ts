@@ -10,6 +10,18 @@ import { NoteSequencer } from "../audio/stepSequencer";
 import { placementEnd, SongClock, type Placement } from "./arrangement";
 import { valueAt, type AutoTarget } from "./automation";
 import { BEATS_PER_BAR, clipBeats, TICKS_PER_BEAT, type Clip, type NoteClip, type StepClip } from "./clips";
+import { nextRound, type LaunchEntry } from "./looper";
+
+/**
+ * When a clip chosen while playing starts: on the next start of a time round of `period` beats counted from
+ * `origin` (by default the next bar), or with its first time round on beat `start` (at once, when that has
+ * passed: it starts partway through).
+ */
+export interface LaunchAt {
+  origin?: number;
+  period?: number;
+  start?: number;
+}
 
 /** Where a clip's sound goes. */
 export interface ClipOut {
@@ -40,6 +52,8 @@ interface Lane {
   clip: string | null;
   /** A clip chosen while playing, to start on the next bar (null: stop the track). Undefined: no change waiting. */
   next?: string | null;
+  /** When `next` starts, if not on the next bar. */
+  when?: LaunchAt;
   /** Beat (since Play) the clip's current time round started on. */
   start: number;
   /** Notes sounding (note clips), with the beat each ends on and the audio time it starts at. */
@@ -85,6 +99,9 @@ export class ClipPlayer {
   readonly clock = new SongClock();
   /** The song beat Play starts from. */
   from = 0;
+
+  /** What the launcher played since Play: each change of a track's clip, for writing a performance onto the timeline. */
+  readonly log: LaunchEntry[] = [];
 
   private lanes = new Map<string, Lane>();
   private playing = false;
@@ -133,13 +150,14 @@ export class ClipPlayer {
   }
 
   /**
-   * Choose a track's clip (null: none). While playing it starts on the next bar; stopped, it is simply chosen
-   * and starts with the others on Play.
+   * Choose a track's clip (null: none). While playing it starts on the next bar (or as `at` says); stopped, it
+   * is simply chosen and starts with the others on Play.
    */
-  launch(track: string, clip: string | null) {
+  launch(track: string, clip: string | null, at?: LaunchAt) {
     const lane = this.lane(track);
     if (this.playing) {
       lane.next = clip === lane.clip ? undefined : clip;
+      lane.when = at;
       return;
     }
     lane.clip = clip;
@@ -171,9 +189,12 @@ export class ClipPlayer {
   reset() {
     this.playing = true;
     this.clock.reset(this.from);
-    for (const lane of this.lanes.values()) {
+    this.log.length = 0;
+    for (const [track, lane] of this.lanes) {
       if (lane.next !== undefined) lane.clip = lane.next;
       lane.next = undefined;
+      lane.when = undefined;
+      if (lane.clip !== null) this.log.push({ track, clip: lane.clip, at: 0, start: 0 });
       lane.start = 0;
       lane.held = [];
       lane.seg = null;
@@ -188,6 +209,7 @@ export class ClipPlayer {
       this.release(track, lane, time, true);
       if (lane.next !== undefined) lane.clip = lane.next;
       lane.next = undefined;
+      lane.when = undefined;
       lane.seg = null;
     }
   }
@@ -205,7 +227,7 @@ export class ClipPlayer {
       for (;;) {
         if (lane.clip === null) {
           // The arrangement, until a clip chosen in the launcher starts.
-          const change = lane.next !== undefined ? Math.ceil(b / BEATS_PER_BAR - EPS) * BEATS_PER_BAR : Infinity;
+          const change = this.changeAt(lane, b);
           const seg = this.segment(track, arrangement.get(track) ?? [], b);
           if (lane.seg && (seg.key !== lane.seg.key || b >= lane.seg.end - EPS)) {
             // A new time round, another placement, or a gap: what sounds ends.
@@ -217,13 +239,9 @@ export class ClipPlayer {
           lane.transpose = seg.transpose;
           if (change <= b + EPS) {
             this.release(track, lane, timeAt(b));
-            lane.clip = lane.next ?? null;
-            lane.next = undefined;
-            lane.seg = null;
-            lane.start = b;
+            this.change(track, lane, b, timeAt(b));
             lane.transpose = 0;
             lane.steps?.reset();
-            this.onChange(track, lane.clip, timeAt(b));
             continue;
           }
           if (b >= toBeat - EPS) break;
@@ -243,6 +261,7 @@ export class ClipPlayer {
           this.release(track, lane, timeAt(b));
           lane.clip = null;
           lane.seg = null;
+          this.log.push({ track, clip: null, at: b, start: b });
           this.onChange(track, null, timeAt(b));
           continue;
         }
@@ -252,19 +271,14 @@ export class ClipPlayer {
           this.release(track, lane, timeAt(b));
           lane.start = b - ((b - lane.start) % len);
         }
-        const change = lane.next !== undefined ? Math.ceil(b / BEATS_PER_BAR - EPS) * BEATS_PER_BAR : Infinity;
+        const change = this.changeAt(lane, b);
         const boundary = Math.min(lane.start + len, change);
         if (boundary <= b + EPS) {
           // A clip's end, or a bar where a waiting clip starts: what sounds ends, and the next time round begins.
           const time = timeAt(b);
           this.release(track, lane, time);
-          if (change <= b + EPS) {
-            lane.clip = lane.next ?? null;
-            lane.next = undefined;
-            lane.seg = null;
-            this.onChange(track, lane.clip, time);
-          }
-          lane.start = b;
+          if (change <= b + EPS) this.change(track, lane, b, time);
+          else lane.start = b;
           lane.transpose = 0;
           lane.steps?.reset();
           continue;
@@ -275,6 +289,25 @@ export class ClipPlayer {
         b = until;
       }
     }
+  }
+
+  /** The beat a clip waiting on a track starts at (Infinity: none waiting). */
+  private changeAt(lane: Lane, b: number): number {
+    if (lane.next === undefined) return Infinity;
+    const at = lane.when;
+    if (at?.start !== undefined) return Math.max(b, at.start);
+    return nextRound(b, at?.origin ?? 0, at?.period ?? BEATS_PER_BAR);
+  }
+
+  /** The waiting clip starts at beat `b` (its first time round on the beat asked for, else on `b`). */
+  private change(track: string, lane: Lane, b: number, time: number) {
+    lane.clip = lane.next ?? null;
+    lane.start = lane.when?.start ?? b;
+    lane.next = undefined;
+    lane.when = undefined;
+    lane.seg = null;
+    this.log.push({ track, clip: lane.clip, at: b, start: lane.start });
+    this.onChange(track, lane.clip, time);
   }
 
   private lane(track: string): Lane {

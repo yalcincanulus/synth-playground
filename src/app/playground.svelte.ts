@@ -83,14 +83,17 @@ import {
   moveTrack,
   newSynthTrack,
   TRACK_COLORS,
+  VOLUME_MAX,
+  VOLUME_MIN,
   type Track,
 } from "../song/song";
-import { barsForSteps, cleanNotes, clipBeats, drumClip, duplicateClip, noteClip, stepClip, withBars, withLanes, BEATS_PER_BAR, MAX_BARS, type Clip, type ClipKind, type Note } from "../song/clips";
+import { barsForSteps, cleanNotes, clipBeats, drumClip, duplicateClip, noteClip, stepClip, withBars, withLanes, BEATS_PER_BAR, MAX_BARS, TICKS_PER_BEAT, type Clip, type ClipKind, type Note } from "../song/clips";
 import { barTicks, GRIDS, stepsToNotes } from "../song/noteEdit";
 import { readRecordSettings, Take, type RecordSettings } from "../song/recorder";
 import { clampPlacement, fitPlacement, freeBar, MAX_SONG_BARS, newPlacementId, songEnd, type BarRange, type Placement } from "../song/arrangement";
 import { ClipPlayer } from "../song/clipPlayer";
-import { automatable, cleanLanes, lanesForLength, panControl, paramControl, sendAutomation, setPoint, thin, valueAt, volumeControl, writeRange, type AutoLane, type AutoSink, type AutoTarget } from "../song/automation";
+import { captureRuns, layerEnd, loopBarsFor, padState, roundStart, type LoopGrid, type PadState } from "../song/looper";
+import { automatable, cleanLanes, lanesForLength, panControl, paramControl, sendAutomation, setPoint, thin, valueAt, volumeControl, writeRange, type AutoLane, type AutoPoint, type AutoSink, type AutoTarget } from "../song/automation";
 import { renderSong } from "../song/songRender";
 import { download } from "./download";
 import { encodeWav, peakDb, type WavBits } from "../audio/wav";
@@ -118,6 +121,8 @@ const EXPORT_KEY = "minilab3.export";
 const MAX_RECORDING_S = 20 * 60;
 /** A knob recording automation counts as let go after this long still (its lane then plays again). */
 const AUTO_LET_GO_MS = 400;
+/** A let-go knob's lane glides back onto its old line over a 16th note. */
+const AUTO_GLIDE_TICKS = 24;
 
 /** How a song is exported: the whole song or its loop region, the sample rate, and 16 or 24 bit. */
 export interface WavSettings {
@@ -310,6 +315,28 @@ const linkUrl = (hash: string) => `${location.origin}${location.pathname}${locat
 /** What a song track's change is called in its undo step. */
 const TRACK_CHANGE_LABELS: Record<string, string> = { name: "Rename", color: "Colour", volume: "Volume", pan: "Pan", mute: "Mute", solo: "Solo", voices: "Voices" };
 
+/** The looper's pad lights: off, selected (faint red), ready (brighter), recording (full red), playing (green), stopped (faint green). */
+const LOOP_PAD_COLORS: Record<PadState, Rgb> = { off: [0, 0, 0], selected: [22, 0, 0], ready: [70, 0, 0], recording: [127, 0, 0], playing: [0, 110, 0], stopped: [0, 16, 0] };
+/** A pad held this long is a hold, not a tap. */
+const PAD_HOLD_MS = 450;
+
+/**
+ * A first loop cut down to `bars`: what was played past its end goes round to its start (the notes, the drum
+ * hits), as a loop station's overshoot does.
+ */
+function foldClip(clip: Clip, bars: number): Clip {
+  const end = bars * BEATS_PER_BAR * TICKS_PER_BEAT;
+  if (clip.kind === "notes") return { ...clip, notes: cleanNotes(clip.notes.map((n) => ({ ...n, start: n.start % end })), clip.bars) };
+  if (clip.kind !== "drums") return clip;
+  const patterns = clip.patterns.map((p) => p.map((row) => [...row]));
+  for (let b = bars; b < patterns.length; b++)
+    patterns[b].forEach((row, d) => row.forEach((v, k) => {
+      const into = patterns[b % bars][d];
+      into[k] = Math.max(into[k], v);
+    }));
+  return { ...clip, patterns };
+}
+
 /** The drums' names on the keys (DRUM_NAMES, short enough for a black key). */
 const DRUM_KEY_LABELS = ["Kick", "Snare", "Clap", "Hat", "O.Hat", "Tom L", "Tom H", "Cow"];
 
@@ -369,12 +396,27 @@ export class Playground {
   rec = $state<RecordSettings>(loadRecordSettings());
   /** The take being recorded: its track and clip. */
   take = $state.raw<{ track: string; clip: string } | null>(null);
-  /** The take's timing, and the song before it (a take is one undo step). */
-  private takeRun: { take: Take; before: SongSnapshot; label: string } | null = null;
+  /**
+   * The take's timing, and the song before it (a take is one undo step). A looper take knows whether it is the
+   * first loop (its length isn't set yet), and, once tapped to end, the beat it ends on.
+   */
+  private takeRun: { take: Take; before: SongSnapshot; label: string; loop?: { first: boolean }; endAt?: number } | null = null;
   /** Settings a knob is recording into the take's clip: the tick last written, and when the knob counts as let go. */
-  private autoTouch = new Map<ParamId, { tick: number; timer: number }>();
+  private autoTouch = new Map<ParamId, { tick: number; timer: number; old: AutoPoint[] }>();
   /** The selected part's settings that automation holds now (the Synth view's knobs follow them). */
   autoShown = $state.raw<Partial<ParamValues>>({});
+  /** The looper's grid: every loop keeps to the first one's length (null: no loop recorded yet, the first take sets it). */
+  loopGrid = $state<LoopGrid | null>(null);
+  /** The track ready to record in the looper: the first note played on it starts the take. */
+  loopReady = $state<string | null>(null);
+  /** Each track's loop: the clip last chosen on it in the launcher (its pad plays it again). */
+  lastLoop = $state<Record<string, string>>({});
+  /** Each track's looper takes, the latest last, for Shift + pad: the clip, and the clip as it was before (null: the take made it). */
+  private layers = new Map<string, { clip: string; before: Clip | null }[]>();
+  /** The transport beat Stop came at (the end of a performance to capture). */
+  private stopBeat = 0;
+  /** A performance to write onto the timeline: something was launched since Play. */
+  canCapture = $state(false);
   readonly metronome: Metronome;
   private clicks: ClickSound;
   /** Undo and redo for the song (tracks and clips), apart from each part's sound. */
@@ -603,6 +645,7 @@ export class Playground {
     document.addEventListener("visibilitychange", this.saveSongNow);
     this.intervals.push(window.setInterval(() => (this.cpu = this.engine.cpu), 250));
     this.intervals.push(window.setInterval(() => this.showAutomation(), 40));
+    this.intervals.push(window.setInterval(() => this.loopTick(), 40));
     this.freezes.observe();
     this.intervals.push(window.setInterval(() => this.updateTiming(), 1000));
     this.engine.ctx.onstatechange = () => (this.audioRunning = this.engine.ctx.state === "running");
@@ -915,7 +958,11 @@ export class Playground {
 
   /** Show what the clip player has for a track (as heard: called at the audio time a change happens). */
   private syncLaunch(track: string) {
-    this.clipLaunch[track] = this.clipPlayer.state(track);
+    const st = this.clipPlayer.state(track);
+    this.clipLaunch[track] = st;
+    const chosen = st.next ?? st.clip;
+    if (chosen && this.lastLoop[track] !== chosen) this.lastLoop = { ...this.lastLoop, [track]: chosen };
+    this.canCapture = this.clipPlayer.log.some((e) => e.clip !== null);
   }
 
   /** Clips that no longer exist are no longer chosen, the clip panel and "Edit in Play" let go of them. */
@@ -1364,6 +1411,7 @@ export class Playground {
 
   /** The arm follows the selection: a track no longer selected (or gone) is disarmed, and its take ends. */
   private syncArm() {
+    if (this.loopReady && this.loopReady !== this.selectedSongTrack) this.loopReady = null;
     const armed = this.armedTrack;
     if (!armed || (armed === this.selectedSongTrack && this.songTracks.some((t) => t.id === armed))) return;
     if (this.take?.track === armed) this.endTake();
@@ -1396,6 +1444,7 @@ export class Playground {
     const editDrums = this.view !== "song" && this.editClip?.kind === "drums";
     const t = this.songTracks.find((x) => x.id === (editDrums ? this.editClip!.track : (this.armedTrack ?? this.selectedSongTrack)));
     if (!t) return this.showMessage("Record", "select a track first");
+    this.loopReady = null;
     if (!editDrums && this.armedTrack !== t.id) this.armTrack(t.id, true);
     const kind: ClipKind = t.kind === "drums" ? "drums" : "notes";
     const fits = (id: string | null | undefined) => this.songClips.find((c) => c.id === id && c.track === t.id && c.kind === kind) ?? null;
@@ -1450,6 +1499,8 @@ export class Playground {
   /** No take any more: the record light, the metronome and the screen. */
   private endTakeState() {
     for (const id of [...this.autoTouch.keys()]) this.letGo(id);
+    // A looper take arms its track only while it records.
+    if (this.takeRun?.loop && this.armedTrack === this.take?.track) this.armedTrack = null;
     this.takeRun = null;
     this.take = null;
     this.recording = false;
@@ -1567,7 +1618,7 @@ export class Playground {
     // Round the end of the clip and back to its start.
     else points = writeRange(writeRange(points, touch.tick + 1, end, [], end), 0, tick, [{ tick, value: v }], end);
     clearTimeout(touch?.timer);
-    this.autoTouch.set(id, { tick, timer: window.setTimeout(() => this.letGo(id), AUTO_LET_GO_MS) });
+    this.autoTouch.set(id, { tick, timer: window.setTimeout(() => this.letGo(id), AUTO_LET_GO_MS), old: touch?.old ?? lane?.points ?? [] });
     clip.lanes = lane ? lanes.map((l) => (l === lane ? { target: id, points } : l)) : [...lanes, { target: id, points }];
     this.engine.parts[take.track]?.automate(id, value, this.engine.ctx.currentTime);
     this.autoShown = { ...this.autoShown, [id]: value };
@@ -1576,7 +1627,11 @@ export class Playground {
     return true;
   }
 
-  /** A knob recording automation is let go: its lane keeps fewer points for the same line, and plays again. */
+  /**
+   * A knob recording automation is let go: the value it was left at is held up to here (as it was heard), then
+   * the lane glides back onto the line it had before, over a 16th, as a DAW's "touch" does. Its lane keeps
+   * fewer points for the same line, and plays again.
+   */
   private letGo(id: ParamId) {
     const touch = this.autoTouch.get(id);
     if (!touch) return;
@@ -1584,7 +1639,15 @@ export class Playground {
     this.autoTouch.delete(id);
     const take = this.take;
     const clip = take && this.songClips.find((c) => c.id === take.clip);
-    if (clip?.kind === "notes" && clip.lanes) clip.lanes = clip.lanes.map((l) => (l.target === id ? { target: id, points: thin(l.points) } : l));
+    const now = this.takeRun?.take.tickAt(this.heardBeat()) ?? -1;
+    const back = (points: AutoPoint[]) => {
+      const end = clip ? barTicks(clip.bars) : 0;
+      const to = now + AUTO_GLIDE_TICKS;
+      if (!touch.old.length || now <= touch.tick || to >= end) return points;
+      const held = writeRange(points, touch.tick + 1, now, [{ tick: now, value: valueAt(points, touch.tick) }], end);
+      return writeRange(held, now + 1, to, [{ tick: to, value: valueAt(touch.old, to) }], end);
+    };
+    if (clip?.kind === "notes" && clip.lanes) clip.lanes = clip.lanes.map((l) => (l.target === id ? { target: id, points: thin(back(l.points)) } : l));
     if (take) this.clipPlayer.touch(take.track, id, false);
     else for (const t of this.songTracks) this.clipPlayer.touch(t.id, id, false);
   }
@@ -1611,6 +1674,401 @@ export class Playground {
     if (run.take.start === Infinity) return { phase: "wait", count: 0, pass: 0 };
     if (beat < run.take.start) return { phase: "count", count: Math.max(1, Math.min(BEATS_PER_BAR, Math.ceil(run.take.start - beat))), pass: 0 };
     return { phase: "rec", count: 0, pass: run.take.pass(beat) };
+  }
+
+  // ------------------------------------------------------------------ the looper
+
+  /** Whether the pads are the looper's: in the Song view (unless step edit or sequencer edit has them), bank A pad n is the n-th track. */
+  get looperPads() {
+    return this.view === "song" && !this.stepMode && !this.seqEdit;
+  }
+
+  /** Whether a track's loop is chosen in the launcher (playing, or waiting to start or stop). */
+  private loopChosen(id: string) {
+    const st = this.clipLaunch[id];
+    return !!st && (st.clip !== null || (st.next ?? null) !== null);
+  }
+
+  /** A track's loop: the clip last chosen on it, if it is still there. */
+  private loopOf(id: string): Clip | null {
+    const clip = this.lastLoop[id];
+    return (clip && this.songClips.find((c) => c.id === clip)) || null;
+  }
+
+  /** Whether the song plays along: the transport runs and a track has a clip launched or the timeline has something on it. */
+  get songPlays() {
+    return this.playing && (this.placements.length > 0 || this.songTracks.some((t) => this.loopChosen(t.id)));
+  }
+
+  /** A track as its pad shows it. */
+  padStateOf(id: string): PadState {
+    return padState({
+      selected: this.selectedSongTrack === id,
+      ready: this.loopReady === id,
+      recording: this.take?.track === id,
+      chosen: this.loopChosen(id),
+      hasLoop: !!this.loopOf(id),
+    });
+  }
+
+  /** Whether a track's pad blinks: its loop waits to start or stop, or its take to end. */
+  padBlinks(id: string) {
+    if (this.take?.track === id) return this.takeRun?.endAt !== undefined;
+    return this.playing && this.clipLaunch[id]?.next !== undefined;
+  }
+
+  /**
+   * A tap on a track's pad: an empty track is selected (your keys play it), a selected one gets ready (the next
+   * note records), a ready one goes back. Recording, the tap ends the take: the loop plays. A loop playing stops
+   * on the next bar; a stopped one plays again, from the start of the loops' next time round.
+   */
+  tapLoopPad(id: string) {
+    const t = this.songTracks.find((x) => x.id === id);
+    if (!t) return;
+    if (this.take?.track === id) return this.takeRun?.loop ? this.finishLoopTake() : this.endTake();
+    if (this.loopReady === id) return this.setLoopReady(null);
+    const st = this.clipPlayer.state(id);
+    if (this.loopChosen(id)) {
+      if (!this.playing) this.clipPlayer.launch(id, null);
+      // Waiting to start: it doesn't; waiting to stop: it plays on; playing: it stops on the next bar.
+      else if (st.next !== undefined) this.clipPlayer.launch(id, st.clip);
+      else this.clipPlayer.launch(id, null);
+      this.syncLaunch(id);
+      this.saveSong();
+      return this.showMessage(t.name, this.loopChosen(id) ? "plays on" : this.playing ? "stops at the bar" : "stopped");
+    }
+    const loop = this.loopOf(id);
+    if (loop) {
+      const g = this.loopGrid;
+      this.clipPlayer.launch(id, loop.id, g ? { origin: g.origin, period: g.bars * BEATS_PER_BAR } : undefined);
+      this.syncLaunch(id);
+      this.saveSong();
+      return this.showMessage(t.name, this.playing ? "starts with the loop" : "plays on ▶");
+    }
+    if (this.selectedSongTrack === id) return this.setLoopReady(id);
+    this.selectSongTrack(id);
+  }
+
+  /** Hold a track's pad (or ● on the MiniLab): get it ready to record, onto its loop if it has one (an overdub). */
+  setLoopReady(id: string | null) {
+    if (id === null) {
+      if (this.armedTrack === this.loopReady) this.armedTrack = null;
+      this.loopReady = null;
+      return this.showHome();
+    }
+    const t = this.songTracks.find((x) => x.id === id);
+    if (!t) return;
+    if (this.take) this.endTake();
+    this.selectSongTrack(id);
+    this.armedTrack = id;
+    this.loopReady = id;
+    this.showHome();
+  }
+
+  /** The first note on a ready track: its take starts, into its loop (overdub) or a new clip. Stopped, the transport starts with it, at bar 1. */
+  private startLoopTake() {
+    const id = this.loopReady;
+    this.loopReady = null;
+    const t = this.songTracks.find((x) => x.id === id);
+    if (!t || id !== this.selectedSongTrack) return;
+    const kind: ClipKind = t.kind === "drums" ? "drums" : "notes";
+    const fits = (c: Clip | null | undefined) => (c && c.track === t.id && c.kind === kind ? c : null);
+    const st = this.clipPlayer.state(t.id);
+    const heard = this.playing ? fits(this.songClips.find((c) => c.id === st.clip)) : null;
+    const target = heard ?? fits(this.loopOf(t.id));
+    this.flushClipEdit();
+    const before = this.songSnapshot();
+    const grid = this.loopGrid;
+    let clip: Clip;
+    if (target) clip = target;
+    else {
+      // The first loop is as long as it can be until the tap that ends it; later ones take the loops' length.
+      const bars = Math.min(grid?.bars ?? MAX_BARS[kind], MAX_BARS[kind]);
+      const made = kind === "drums" ? drumClip(this.songClips, t, Array.from({ length: bars }, emptyPattern)) : noteClip(this.songClips, t, [], bars);
+      this.songClips = [...this.songClips, made];
+      clip = this.songClips[this.songClips.length - 1];
+    }
+    const layers = this.layers.get(t.id) ?? [];
+    layers.push({ clip: clip.id, before: target ? ($state.snapshot(target) as Clip) : null });
+    this.layers.set(t.id, layers);
+    const cid = clip.id;
+    const take = new Take(
+      () => {
+        const c = this.songClips.find((x) => x.id === cid);
+        return c ? clipBeats(c) : BEATS_PER_BAR;
+      },
+      this.rec.quantize >= 0 ? GRIDS[this.rec.quantize].ticks : null,
+      this.rec.strength,
+    );
+    if (!this.playing) {
+      take.start = 0;
+      take.from = 0;
+      this.clipPlayer.launch(t.id, cid);
+    } else if (heard?.id === cid) {
+      // Its loop plays: the take goes on from where it is (a stop waiting at the next bar is called off).
+      this.clipPlayer.launch(t.id, cid);
+      const now = this.seq.beatAt(this.engine.ctx.currentTime);
+      const pos = this.clipPlayer.position(t.id, cid, now);
+      take.start = pos >= 0 ? now - pos : 0;
+    } else {
+      // Its first time round starts on the bar of this note (the first loop), or with the loops' time round (the
+      // others): partway through it, so the loops stay together.
+      const period = grid ? Math.max(grid.bars * BEATS_PER_BAR, clipBeats(clip)) : BEATS_PER_BAR;
+      take.start = roundStart(this.heardBeat(), grid?.origin ?? 0, period);
+      this.clipPlayer.launch(t.id, cid, { start: take.start });
+    }
+    this.takeRun = { take, before, label: `Record ${clip.name}`, loop: { first: !target && !grid } };
+    this.take = { track: t.id, clip: cid };
+    this.armedTrack = t.id;
+    this.seq.recording = false;
+    this.recording = true;
+    this.metronome.on = this.rec.metronome;
+    this.lastLoop = { ...this.lastLoop, [t.id]: cid };
+    if (!this.playing) this.play();
+    this.syncLaunch(t.id);
+    this.syncTransportLeds();
+    this.showHome();
+  }
+
+  /**
+   * The tap that ends a looper take. The first loop ends now, rounded to 1, 2, 4 or 8 bars, and that is the
+   * loops' length from now on (what was played past the end goes round to its start). A later take ends at the
+   * end of its time round.
+   */
+  private finishLoopTake() {
+    const run = this.takeRun;
+    const take = this.take;
+    if (!run?.loop || !take) return;
+    const now = this.heardBeat();
+    const clip = this.songClips.find((c) => c.id === take.clip);
+    if (!clip) return this.endTake();
+    if (!run.loop.first) {
+      run.endAt = layerEnd(now, run.take.start, clipBeats(clip));
+      if (run.endAt <= now) return this.endTake();
+      return this.showHome();
+    }
+    for (const n of run.take.end(now)) this.writeNote(take.clip, n);
+    const bars = loopBarsFor(now - run.take.start, MAX_BARS[clip.kind]);
+    const i = this.songClips.indexOf(clip);
+    this.songClips[i] = withBars(foldClip($state.snapshot(clip) as Clip, bars), bars);
+    this.loopGrid = { bars, origin: run.take.start };
+    this.flushTake();
+    this.endTakeState();
+    this.showMessage("Loop", `${bars} bar${bars > 1 ? "s" : ""}`);
+  }
+
+  /** Shift + a track's pad: its last looper take is undone (one song undo step). */
+  undoLoopLayer(id: string) {
+    const t = this.songTracks.find((x) => x.id === id);
+    if (!t) return;
+    if (this.take?.track === id) this.endTake();
+    const stack = this.layers.get(id) ?? [];
+    let layer = stack.pop();
+    while (layer && !this.songClips.some((c) => c.id === layer!.clip)) layer = stack.pop();
+    if (!layer) return this.showMessage(t.name, "no take to undo");
+    const clip = this.songClips.find((c) => c.id === layer.clip)!;
+    this.recordSong(`Undo take on ${clip.name}`);
+    const before = layer.before;
+    if (before) this.songClips = this.songClips.map((c) => (c.id === before.id ? structuredClone(before) : c));
+    else {
+      this.songClips = this.songClips.filter((c) => c.id !== clip.id);
+      this.placements = this.placements.filter((p) => p.clip !== clip.id);
+    }
+    this.forgetMissingClips();
+    // No loop left from the looper: the next one sets the length again.
+    if (![...this.layers.values()].some((l) => l.some((x) => this.songClips.some((c) => c.id === x.clip)))) this.loopGrid = null;
+    this.saveSong();
+    this.showMessage(t.name, "take undone");
+  }
+
+  /** The loops' length, set by hand (null: the first take sets it). Their time rounds count from the start of the music. */
+  setLoopBars(bars: number | null) {
+    this.loopGrid = bars === null ? null : { bars, origin: this.loopGrid?.origin ?? 0 };
+  }
+
+  /** Beats to the next bar (or to the end of a take tapped to end), as heard, for the big count; 0 when there is nothing to count. */
+  loopCount(): { what: "bar" | "end"; beats: number } | null {
+    if (!this.playing) return null;
+    const now = this.heardBeat();
+    const endAt = this.takeRun?.endAt;
+    if (endAt !== undefined) return { what: "end", beats: Math.max(1, Math.ceil(endAt - now - 1e-6)) };
+    if (!this.loopReady) return null;
+    const beats = BEATS_PER_BAR - (((Math.floor(now + 1e-6) % BEATS_PER_BAR) + BEATS_PER_BAR) % BEATS_PER_BAR);
+    return { what: "bar", beats };
+  }
+
+  /** Where the take is in its loop, for the screens: the bar, and of how many (null: the first loop, its length not set yet). */
+  loopBar(): { bar: number; of: number | null } | null {
+    const run = this.takeRun;
+    const take = this.take;
+    if (!run || !take || !this.playing || run.take.start === Infinity) return null;
+    const clip = this.songClips.find((c) => c.id === take.clip);
+    const beats = Math.max(0, this.heardBeat() - run.take.start);
+    if (run.loop?.first || !clip) return { bar: Math.floor(beats / BEATS_PER_BAR) + 1, of: null };
+    return { bar: (Math.floor(beats / BEATS_PER_BAR) % clip.bars) + 1, of: clip.bars };
+  }
+
+  /**
+   * The performance since Play written onto the timeline: each stretch a track played a clip from the launcher
+   * becomes a placement, from the start bar on, as it happened (one undo step). Stopped, the tracks then go back
+   * to the arrangement, so ▶ plays it as a song.
+   */
+  captureToArrangement() {
+    const end = this.playing ? this.seq.beatAt(this.engine.ctx.currentTime) : this.stopBeat;
+    const runs = captureRuns(this.clipPlayer.log, end, this.songStart).filter((r) => this.songClips.some((c) => c.id === r.clip));
+    if (!runs.length) return this.showMessage("Capture", "nothing played yet");
+    this.recordSong("Capture performance");
+    let ps = $state.snapshot(this.placements) as Placement[];
+    for (const r of runs) ps = fitPlacement(ps, { id: newPlacementId(ps), clip: r.clip, bar: r.bar, bars: Math.min(r.bars, MAX_SONG_BARS - r.bar), transpose: 0 }, this.trackOfClip);
+    this.placements = ps;
+    if (!this.playing) {
+      for (const t of this.songTracks) this.clipPlayer.launch(t.id, null);
+      for (const t of this.songTracks) this.syncLaunch(t.id);
+      this.canCapture = false;
+    }
+    this.saveSong();
+    const bars = Math.max(...runs.map((r) => r.bar + r.bars)) - this.songStart;
+    this.showMessage("Captured", `${bars} bars`);
+  }
+
+  /** The looper's light and screen, kept up with the music (every 40 ms). A take tapped to end ends here, at its beat. */
+  private loopTick() {
+    const run = this.takeRun;
+    if (run?.endAt !== undefined && this.playing && this.heardBeat() >= run.endAt) this.endTake();
+    if (!this.device || this.view !== "song") return;
+    if (this.looperPads) this.paintLooper();
+    if (!this.messageShowing && this.songScreen().join("\n") !== this.lastSongScreen) this.showHome();
+  }
+  private lastSongScreen = "";
+
+  /** The OLED in the Song view: the selected track and its sound; recording, the bar of the loop. */
+  private songScreen(): [string, string] {
+    const t = this.songTracks.find((x) => x.id === (this.take?.track ?? this.selectedSongTrack));
+    if (!t) return ["Song", "pick a track"];
+    const sound = t.kind === "drums" ? "Drum kit" : this.presetOf(t.id).name;
+    if (this.take?.track === t.id) {
+      const at = this.loopBar();
+      const count = this.loopCount();
+      const where = at ? ` · ${at.bar}${at.of ? `/${at.of}` : ""}` : "";
+      return [`REC ${t.name}${where}`, count?.what === "end" ? `ends in ${count.beats}` : sound];
+    }
+    if (this.loopReady === t.id) return [`READY ${t.name}`, this.loopOf(t.id) ? "play to overdub" : "play to record"];
+    return [t.name, sound];
+  }
+
+  /** The pads' lights in the looper: bank A the tracks' states, bank B the selected track's clips (with Shift: the tracks' mute and solo). */
+  private paintLooper() {
+    const blinkOff = Math.floor(performance.now() / 200) % 2 === 1;
+    LED_IDS.padsA.forEach((led, i) => {
+      const t = this.songTracks[i];
+      let rgb: Rgb = [0, 0, 0];
+      if (t) {
+        rgb = LOOP_PAD_COLORS[this.padStateOf(t.id)];
+        if (blinkOff && this.padBlinks(t.id)) rgb = this.padStateOf(t.id) === "recording" ? [0, 90, 0] : [0, 0, 0];
+      }
+      this.paintLed(led, rgb);
+    });
+    const sel = this.songTracks.find((x) => x.id === this.selectedSongTrack);
+    const clips = sel ? this.clipsOf(sel.id) : [];
+    LED_IDS.padsB.forEach((led, i) => {
+      let rgb: Rgb = [0, 0, 0];
+      if (this.shift) {
+        const t = this.songTracks[i];
+        if (t) rgb = t.solo ? [0, 110, 110] : t.mute ? [127, 60, 0] : dim(TRACK_COLORS[t.color], 0.15);
+      } else if (sel && clips[i]) {
+        const st = this.clipLaunch[sel.id];
+        const c = clips[i];
+        const chosen = st?.next !== undefined ? st.next === c.id || st.clip === c.id : st?.clip === c.id;
+        rgb = dim(TRACK_COLORS[sel.color], chosen ? 1 : 0.12);
+        if (chosen && blinkOff && this.playing && st?.next !== undefined) rgb = [0, 0, 0];
+      }
+      this.paintLed(led, rgb);
+    });
+  }
+  /** The colour each pad light was last sent, to send only changes. */
+  private ledSent = new Map<number, string>();
+  private paintLed(id: number, rgb: Rgb) {
+    const key = rgb.map(Math.round).join();
+    if (this.ledSent.get(id) === key) return;
+    this.ledSent.set(id, key);
+    this.sendLed(id, rgb);
+  }
+
+  /** Bank B in the Song view: pad n plays (or stops) the selected track's n-th clip; Shift + pad n mutes track n, held, solos it. */
+  private clipPad(i: number, on: boolean) {
+    if (this.shift) {
+      const t = this.songTracks[i];
+      if (!t) return;
+      if (on) {
+        clearTimeout(this.padHold[8 + i]);
+        this.padHold[8 + i] = window.setTimeout(() => {
+          this.padHold[8 + i] = 0;
+          this.setSongTrack(t.id, { solo: !t.solo });
+          this.showMessage(t.name, t.solo ? "solo off" : "solo");
+        }, PAD_HOLD_MS);
+      } else if (this.padHold[8 + i]) {
+        clearTimeout(this.padHold[8 + i]);
+        this.padHold[8 + i] = 0;
+        this.setSongTrack(t.id, { mute: !t.mute });
+        this.showMessage(t.name, t.mute ? "unmuted" : "muted");
+      }
+      return;
+    }
+    const sel = this.selectedSongTrack;
+    const clip = sel ? this.clipsOf(sel)[i] : undefined;
+    if (on && clip) {
+      this.launchClip(clip.id);
+      this.showMessage(clip.name, this.loopChosen(clip.track) ? "▶" : "■");
+    }
+  }
+
+  /** Bank A in the Song view: a tap acts on the track (see tapLoopPad), a hold gets it ready to record, Shift + pad undoes its last take. */
+  private loopPad(i: number, on: boolean) {
+    const t = this.songTracks[i];
+    if (!on) {
+      if (!this.padHold[i]) return;
+      clearTimeout(this.padHold[i]);
+      this.padHold[i] = 0;
+      if (t) this.tapLoopPad(t.id);
+      return;
+    }
+    if (!t) return;
+    if (this.shift) return this.undoLoopLayer(t.id);
+    clearTimeout(this.padHold[i]);
+    this.padHold[i] = window.setTimeout(() => {
+      this.padHold[i] = 0;
+      this.setLoopReady(t.id);
+    }, PAD_HOLD_MS);
+  }
+  /** Pads held down (bank A 0–7, bank B 8–15): the timer that makes it a hold. 0 when not held, or the hold has happened. */
+  private padHold: number[] = Array(16).fill(0);
+
+  /** ● on the MiniLab in the Song view: the looper's record. Ends a take as its pad would; else gets the selected track ready, or not. */
+  private looperRecord() {
+    if (this.take) return this.takeRun?.loop ? this.finishLoopTake() : this.endTake();
+    if (this.loopReady) return this.setLoopReady(null);
+    const id = this.selectedSongTrack;
+    if (!id) return this.showMessage("Record", "pick a track");
+    this.setLoopReady(id);
+  }
+
+  /** The encoder in the Song view: the next or previous track. */
+  private stepSongTrack(delta: number) {
+    const ts = this.songTracks;
+    const at = ts.findIndex((t) => t.id === this.selectedSongTrack);
+    const t = ts[Math.max(0, Math.min(ts.length - 1, at < 0 ? 0 : at + delta))];
+    if (t && t.id !== this.selectedSongTrack) this.selectSongTrack(t.id);
+  }
+
+  /** Fader i in the Song view: the volume of track i (picked up first, so it doesn't jump). */
+  private trackFader(i: number, t: number, cc: number) {
+    const track = this.songTracks[i];
+    if (!track) return;
+    const pos = (track.volume - VOLUME_MIN) / (VOLUME_MAX - VOLUME_MIN);
+    if (!this.pickedUp(i, t, pos, cc, `${track.name} vol`)) return;
+    const db = Math.round((VOLUME_MIN + t * (VOLUME_MAX - VOLUME_MIN)) * 2) / 2;
+    this.setSongTrack(track.id, { volume: db });
+    this.device?.send(parameterMessage(cc, `${track.name} vol`, db <= VOLUME_MIN ? "off" : `${db > 0 ? "+" : ""}${db.toFixed(1)} dB`), "display");
   }
 
   // ------------------------------------------------------------------ song undo
@@ -1774,6 +2232,12 @@ export class Playground {
     }
     this.songTracks = doc.tracks;
     this.songClips = doc.clips;
+    // The looper starts afresh: no length, no loops, nothing to capture.
+    this.loopGrid = null;
+    this.loopReady = null;
+    this.lastLoop = {};
+    this.layers.clear();
+    this.clipPlayer.log.length = 0;
     for (const t of doc.tracks) {
       const id = doc.chosen[t.id];
       if (id) this.clipPlayer.launch(t.id, id);
@@ -2581,6 +3045,7 @@ export class Playground {
   // ------------------------------------------------------------------ playing
 
   noteOn(note: number, velocity: number) {
+    if (this.loopReady && !this.take) this.startLoopTake();
     if (this.keysToDrums) return this.drumKey(note, velocity, true);
     if (this.seqEdit && this.heldStep !== null) {
       // Hold a step pad and press a key: that key becomes the step's note (and you hear it).
@@ -3183,12 +3648,16 @@ export class Playground {
       this.metronome.countIn(this.engine.ctx.currentTime + lead, secPerBeat);
     } else this.seq.start();
     this.playing = true;
+    // Every chosen clip starts from bar 1: the loops' time rounds count from there.
+    if (this.loopGrid) this.loopGrid.origin = 0;
+    this.canCapture = this.clipPlayer.log.some((e) => e.clip !== null);
     this.syncTransportLeds();
     this.showHome();
   }
 
   stop() {
     this.endTake();
+    if (this.playing) this.stopBeat = this.seq.beatAt(this.engine.ctx.currentTime);
     this.seq.stop();
     this.seqBlur = false;
     this.playing = false;
@@ -3590,7 +4059,11 @@ export class Playground {
     if (view !== "synth") this.listenTo(null);
     // The drum track is only picked in the Song view.
     if (view !== "song") this.drumsSelected = false;
+    this.loopReady = null;
     this.syncPlayer();
+    // The pads become the looper's in the Song view (and the drums' again outside it); the faders the tracks' volumes.
+    this.faderLive.fill(false);
+    this.syncPadLeds();
     this.syncTaps();
     this.realignKnobs();
     if (view === "song") {
@@ -3951,6 +4424,7 @@ export class Playground {
         const cc = CC_MAPS[e.program].faders[e.index];
         const t = e.value / 127;
         if (this.shift) return this.setShiftFader(e.index, t);
+        if (this.view === "song" && !this.seqEdit) return this.trackFader(e.index, t, cc);
         if (this.seqEdit) {
           if (this.pickedUp(e.index, t, this.seqFaderPosition(e.index), cc, SEQ_FADERS[e.index])) this.setSeqFader(e.index, t, cc);
           return;
@@ -3971,6 +4445,7 @@ export class Playground {
           this.bank = e.bank;
           this.syncPadLeds();
         }
+        if (this.looperPads) return e.bank === "A" ? this.loopPad(e.index, e.on) : this.clipPad(e.index, e.on);
         if (e.bank === "B" && !this.stepMode && !this.seqEdit) {
           // The course keeps its page's sound: no preset loads.
           if (this.view === "course") return;
@@ -3983,6 +4458,7 @@ export class Playground {
         if (e.shifted || this.shift) return this.cycleScreen(e.delta);
         if (this.view === "course") return this.turnPage(e.delta);
         if (this.stepMode) return this.selectTrack(this.stepTrack + e.delta);
+        if (this.view === "song") return this.stepSongTrack(e.delta);
         if (this.view === "wavetable") return this.stepTable(e.delta);
         return this.view === "synth" ? this.cycleFocus(e.delta) : this.browse(e.delta);
       case "encoderClick":
@@ -3993,13 +4469,15 @@ export class Playground {
         // without hitting an end, then given back their real values on release.
         if (e.pressed) this.parkKnobs();
         else this.realignKnobs();
+        // Bank B shows the tracks' mute and solo while Shift is held.
+        if (this.looperPads) this.paintLooper();
         return;
       case "transport":
         if (!e.pressed) return;
         if (e.button === "play") return this.togglePlay();
         if (e.button === "stop") return this.stop();
-        if (e.button === "record") return this.toggleRecord();
-        if (e.button === "loop") return this.clearPattern();
+        if (e.button === "record") return this.view === "song" ? this.looperRecord() : this.toggleRecord();
+        if (e.button === "loop") return this.view === "song" ? this.captureToArrangement() : this.clearPattern();
         if (e.button === "tap") return this.tap();
         return;
       case "program":
@@ -4134,6 +4612,8 @@ export class Playground {
 
   private syncPadLeds() {
     if (!this.device) return;
+    this.ledSent.clear();
+    if (this.looperPads) return this.paintLooper();
     if (this.stepMode) {
       for (let step = 0; step < 16; step++) this.paintStep(step);
       return;
@@ -4163,7 +4643,7 @@ export class Playground {
 
   private flashPad(i: number, velocity: number) {
     this.padLevels[i] = velocity / 127;
-    if (this.bank !== "A" || this.stepMode || this.seqEdit || this.spectrumPads) return;
+    if (this.bank !== "A" || this.stepMode || this.seqEdit || this.spectrumPads || this.looperPads) return;
     const id = LED_IDS.padsA[i];
     if (velocity > 0) {
       const k = 0.4 + 0.6 * (velocity / 127);
@@ -4188,6 +4668,11 @@ export class Playground {
   showHome() {
     if (this.view === "course") return this.sendDisplay(...this.courseScreen());
     if (this.recipe) return this.sendDisplay(...this.recipeScreen());
+    if (this.view === "song") {
+      const screen = this.songScreen();
+      this.lastSongScreen = screen.join("\n");
+      return this.sendDisplay(...screen);
+    }
     const p = this.preset;
     const list = this.browseList;
     const at = list.findIndex((q) => q.id === p.id);
@@ -4197,10 +4682,16 @@ export class Playground {
   }
 
   private messageTimer = 0;
+  /** A message is on the OLED for a moment (the looper's screen waits). */
+  private messageShowing = false;
   private showMessage(line1: string, line2: string) {
     this.sendDisplay(line1, line2);
+    this.messageShowing = true;
     clearTimeout(this.messageTimer);
-    this.messageTimer = window.setTimeout(() => this.showHome(), 1500);
+    this.messageTimer = window.setTimeout(() => {
+      this.messageShowing = false;
+      this.showHome();
+    }, 1500);
   }
 
   private popup(id: ParamId, cc?: number) {

@@ -127,6 +127,8 @@ export class Strip {
   private muted = false;
   /** Automation: the volume (dB) and pan a playing clip sets in place of the strip's own (null: none). */
   private auto: { volume: number | null; pan: number | null } = { volume: null, pan: null };
+  /** The automation as planned, with the audio time each value applies from (for the mixer to show it as heard). */
+  private planned: { at: number; what: "volume" | "pan"; value: number | null }[] = [];
 
   constructor(
     private ctx: BaseAudioContext,
@@ -149,6 +151,17 @@ export class Strip {
   automate(what: "volume" | "pan", value: number | null, at: number) {
     this.auto[what] = value;
     this.apply(at);
+    this.planned.push({ at, what, value });
+    // Keep what is still ahead, and the last of each before now.
+    const now = this.ctx.currentTime;
+    if (this.planned.length > 64) this.planned = this.planned.filter((p, i) => p.at > now || !this.planned.slice(i + 1).some((q) => q.what === p.what && q.at <= now));
+  }
+
+  /** The automated volume (dB) and pan heard at audio time `t` (null: the strip's own). */
+  automatedAt(t: number): { volume: number | null; pan: number | null } {
+    const out: { volume: number | null; pan: number | null } = { volume: null, pan: null };
+    for (const p of this.planned) if (p.at <= t) out[p.what] = p.value;
+    return out;
   }
 
   private apply(t: number) {

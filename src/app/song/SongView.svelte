@@ -7,6 +7,7 @@
   import { GRIDS } from "../../song/noteEdit";
   import { EXAMPLE_SONGS } from "../../song/examples";
   import { MAX_SYNTH_TRACKS, MAX_TRACK_VOICES, VOLUME_MAX, VOLUME_MIN, type Track } from "../../song/song";
+  import { LOOP_LENGTHS, type PadState } from "../../song/looper";
   import { surface, type Surface } from "../components/canvas";
   import type { Playground } from "../playground.svelte";
   import SequencerPanel from "../sequencer/SequencerPanel.svelte";
@@ -91,6 +92,48 @@
     const armed = pg.songTracks.find((t) => t.id === pg.armedTrack);
     if (armed) return `${armed.name} is armed: ● records into its clip`;
     return "Arm a track (● beside M and S) to record on it";
+  }
+
+  // ------------------------------------------------------------------ the looper
+
+  const PAD_WORDS: Record<PadState, string> = {
+    off: "empty: click to select it",
+    selected: "selected: click again to get it ready",
+    ready: "ready: the first note you play starts recording",
+    recording: "recording: click to end the take (the loop plays)",
+    playing: "its loop plays: click to stop it at the next bar",
+    stopped: "its loop is stopped: click to play it again",
+  };
+
+  /** A looper pad on screen works as on the MiniLab: click, hold (ready to record, onto its loop), Shift + click (undo its last take). */
+  let padTimer = 0;
+  let padHeld = false;
+  function padDown(t: Track, e: PointerEvent) {
+    if (e.button !== 0) return;
+    if (e.shiftKey) return pg.undoLoopLayer(t.id);
+    padHeld = false;
+    clearTimeout(padTimer);
+    padTimer = window.setTimeout(() => {
+      padHeld = true;
+      pg.setLoopReady(t.id);
+    }, 450);
+  }
+  function padUp(t: Track, e: PointerEvent) {
+    if (e.button !== 0 || e.shiftKey) return;
+    clearTimeout(padTimer);
+    if (!padHeld) pg.tapLoopPad(t.id);
+    padHeld = true;
+  }
+
+  /** The looper's line: the length, and what to do next. */
+  function loopStatus() {
+    if (frame < 0) return "";
+    const take = pg.take;
+    const t = pg.songTracks.find((x) => x.id === (take?.track ?? pg.loopReady));
+    const at = pg.loopBar();
+    if (take && t) return `Recording ${t.name}${at ? ` · bar ${at.bar}${at.of ? ` of ${at.of}` : ""}` : ""}: click its pad to end the take`;
+    if (pg.loopReady && t) return `${t.name} is ready: play to start recording${pg.playing ? "" : " (the music starts with your first note)"}`;
+    return "Click a track's pad to select it, again to get it ready, then play: your first note starts the loop";
   }
 
   let clip = $derived(pg.selectedClipData);
@@ -329,6 +372,11 @@
       step sequencer keep playing on top of the song.
       To <strong>record</strong>, arm a track with its red ● and press ● Record: what you play on the keys (or the pads, for the drums) goes into its clip, time
       round after time round. Overdub adds each time; Replace starts from an empty clip.
+      The <strong>looper</strong> builds a song up live, a layer at a time: each track has a pad (the square beside M and S; on a MiniLab, pad 1 is the top
+      track). Click it to select the track, again to get it ready, then play: your first note starts recording (and the music, if it was stopped). Click the pad
+      to end the take, and the loop plays on while you go to the next track. The first loop's length (1, 2, 4 or 8 bars) is every loop's length, so they fit
+      together. Click a playing loop's pad to stop it at the next bar, again to bring it back in. Hold a pad to record more onto its loop; Shift + click undoes its
+      last take. <strong>Capture to arrangement</strong> writes what you played onto the timeline, as it happened, so it becomes a song to edit and export.
       The song is <strong>saved</strong> in this browser as you work, with each track's sound (so changing or deleting a preset later doesn't change it) and the
       wavetables it uses. <strong>Songs</strong> lists your songs and three examples; <strong>Export</strong> makes a file you can open on another computer. <strong>WAV</strong> makes an audio file of the song (or its loop region), or records everything you hear as you play.
     </p>
@@ -371,8 +419,27 @@
     </label>
   </div>
 
+  <div class="looper-bar" class:live={!!pg.take || !!pg.loopReady} role="group" aria-label="Looper">
+    <strong>Looper</strong>
+    <label title="Every loop has this length, so they fit together. With 'First take', the first loop you record sets it (rounded to 1, 2, 4 or 8 bars)">
+      Loops
+      <select value={pg.loopGrid?.bars ?? 0} onchange={(e) => pg.setLoopBars(+e.currentTarget.value || null)}>
+        <option value={0}>Set by the first take</option>
+        {#each LOOP_LENGTHS as n (n)}<option value={n}>{n} bar{n > 1 ? "s" : ""}</option>{/each}
+      </select>
+    </label>
+    <span class="loop-status">{loopStatus()}</span>
+    {#if pg.loopCount()}
+      {@const count = pg.loopCount()!}
+      <span class="big-count" title={count.what === "end" ? "Beats until the take ends" : "Beats to the next bar"} aria-live="off">{count.beats}</span>
+    {/if}
+    <button onclick={() => pg.captureToArrangement()} disabled={!pg.canCapture} title="Write what the launcher played since ▶ onto the timeline, as it happened, from the start bar{pg.hw(' (⟲ loop button on the MiniLab)')}">Capture to arrangement</button>
+  </div>
+
   <ol class="tracks">
     {#each pg.songTracks as t, i (t.id)}
+      {@const ps = pg.padStateOf(t.id)}
+      {@const auto = frame >= 0 && pg.playing ? pg.songTrackStrip(t.id)?.automatedAt(pg.engine.ctx.currentTime) : null}
       <li class="track" class:selected={pg.selectedSongTrack === t.id} class:silent={t.mute || (anySolo && !t.solo)} style:--track={css(t.color)}>
         <button class="swatch" onclick={() => pg.cycleSongTrackColor(t.id)} aria-label="Colour of {t.name}" title="Change the colour"></button>
         <button class="select" onclick={() => pg.selectSongTrack(t.id)} aria-pressed={pg.selectedSongTrack === t.id} title={t.kind === "synth" ? "Select: edit this sound and play it from the keys" : "Select: the keys from C to G play the drum kit"}>
@@ -403,17 +470,27 @@
           <span class="voices"></span>
         {/if}
 
-        <label class="slider vol" title="Volume (double-click: 0 dB)">
-          <input type="range" min={VOLUME_MIN} max={VOLUME_MAX} step="0.5" value={t.volume} oninput={(e) => pg.setSongTrack(t.id, { volume: +e.currentTarget.value })} ondblclick={() => pg.setSongTrack(t.id, { volume: 0 })} aria-label="Volume of {t.name}" />
-          <span class="val">{volumeText(t.volume)}</span>
+        <label class="slider vol" class:automated={auto?.volume != null} title="Volume (double-click: 0 dB){auto?.volume != null ? '. A clip automates it now: it follows the clip' : ''}">
+          <input type="range" min={VOLUME_MIN} max={VOLUME_MAX} step="0.5" value={auto?.volume ?? t.volume} oninput={(e) => pg.setSongTrack(t.id, { volume: +e.currentTarget.value })} ondblclick={() => pg.setSongTrack(t.id, { volume: 0 })} aria-label="Volume of {t.name}" />
+          <span class="val">{volumeText(auto?.volume ?? t.volume)}</span>
         </label>
-        <label class="slider pan" title="Pan: left to right (double-click: centre)">
-          <input type="range" min="-1" max="1" step="0.02" value={t.pan} oninput={(e) => pg.setSongTrack(t.id, { pan: +e.currentTarget.value })} ondblclick={() => pg.setSongTrack(t.id, { pan: 0 })} aria-label="Pan of {t.name}" />
-          <span class="val">{panText(t.pan)}</span>
+        <label class="slider pan" class:automated={auto?.pan != null} title="Pan: left to right (double-click: centre){auto?.pan != null ? '. A clip automates it now: it follows the clip' : ''}">
+          <input type="range" min="-1" max="1" step="0.02" value={auto?.pan ?? t.pan} oninput={(e) => pg.setSongTrack(t.id, { pan: +e.currentTarget.value })} ondblclick={() => pg.setSongTrack(t.id, { pan: 0 })} aria-label="Pan of {t.name}" />
+          <span class="val">{panText(auto?.pan ?? t.pan)}</span>
         </label>
         <div class="ms">
           <button class="mute" class:on={t.mute} onclick={() => pg.setSongTrack(t.id, { mute: !t.mute })} aria-pressed={t.mute} title="Mute">M</button>
           <button class="solo" class:on={t.solo} onclick={() => pg.setSongTrack(t.id, { solo: !t.solo })} aria-pressed={t.solo} title="Solo: hear only the soloed tracks">S</button>
+          <button
+            class="pad {ps}"
+            class:blink={frame >= 0 && pg.padBlinks(t.id)}
+            onpointerdown={(e) => padDown(t, e)}
+            onpointerup={(e) => padUp(t, e)}
+            onpointerleave={() => clearTimeout(padTimer)}
+            oncontextmenu={(e) => e.preventDefault()}
+            aria-label="Looper pad of {t.name}: {ps}"
+            title="Looper pad ({PAD_WORDS[ps]}). Hold: ready to record onto its loop. Shift + click: undo its last take.{pg.hw(` On the MiniLab: pad ${i + 1}.`)}"
+          ></button>
           <button class="arm" class:on={pg.armedTrack === t.id} class:live={pg.take?.track === t.id} onclick={() => pg.armTrack(t.id)} aria-pressed={pg.armedTrack === t.id} aria-label="Arm {t.name} to record" title="Arm: record on this track (it is selected, and ● records into its clip)">●</button>
         </div>
         <canvas class="meter" use:surface={meter(t.id)} aria-hidden="true"></canvas>
@@ -578,6 +655,7 @@
   .slider input { flex: 1; min-width: 0; padding: 0; accent-color: var(--track); }
   .val { font: 11px var(--mono); color: var(--dim); width: 54px; text-align: right; flex-shrink: 0; }
   .pan .val { width: 34px; }
+  .slider.automated .val { color: #ffcf6b; }
   .ms { display: flex; gap: 3px; }
   .ms button { width: 28px; padding: 3px 0; font-size: 12px; font-weight: 600; }
   .mute.on { background: #ffb347; border-color: #ffb347; color: #0b1314; }
@@ -586,6 +664,21 @@
   .arm.on { background: #5a1f1f; border-color: #ff5c5c; color: #ff7a7a; }
   .arm.live { background: #ff5c5c; color: #0b1314; }
   .meter { width: 70px; height: 8px; border-radius: 2px; }
+  .pad { width: 28px; padding: 0; border-radius: 5px; background: #1c2326; border-color: #2c3539; touch-action: none; }
+  .pad.selected { background: #4a1a1a; }
+  .pad.ready { background: #9a2a2a; }
+  .pad.recording { background: #ff3b3b; border-color: #ff3b3b; }
+  .pad.playing { background: #3fd46a; border-color: #3fd46a; }
+  .pad.stopped { background: #1d4a2a; }
+  .pad.blink { animation: blink 0.4s steps(2, jump-none) infinite; }
+
+  .looper-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: #101416; font-size: 12px; }
+  .looper-bar.live { border-color: #ff5c5c; }
+  .looper-bar label { display: flex; align-items: center; gap: 4px; color: var(--dim); }
+  .looper-bar select, .looper-bar button { padding: 2px 8px; font-size: 12px; }
+  .loop-status { flex: 1 1 200px; min-width: 0; color: var(--dim); }
+  .looper-bar.live .loop-status { color: #ffb0a8; }
+  .big-count { font: 600 28px/1 var(--mono); color: #ff7a7a; min-width: 1.2em; text-align: center; }
   .order { display: flex; gap: 2px; }
   .order button { padding: 2px 7px; font-size: 12px; }
   .order .remove { width: 26px; }

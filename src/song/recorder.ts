@@ -60,6 +60,11 @@ const STEP_TICKS = (BEATS_PER_BAR * TICKS_PER_BEAT) / STEPS;
 export class Take {
   /** The beat (since Play) the clip's first time round starts on; Infinity while that isn't known yet (it waits for the next bar). */
   start = Infinity;
+  /**
+   * Beats before this count as on it: a take that starts the transport with its first note (the looper) puts
+   * that note, played a moment before the clock's first beat, on the first beat.
+   */
+  from = -Infinity;
   /** Notes held down: when each started (beat) and how hard. */
   private held = new Map<number, { beat: number; velocity: number }>();
 
@@ -73,19 +78,19 @@ export class Take {
 
   /** Whether a beat is inside the take (from its start, allowing an early downbeat). */
   covers(beat: number) {
-    return beat >= this.start - EARLY_BEATS;
+    return Math.max(beat, this.from) >= this.start - EARLY_BEATS;
   }
 
   /** Which time round a beat falls in (0 for the first), or -1 before the take. */
   pass(beat: number): number {
     if (!this.covers(beat)) return -1;
-    return Math.max(0, Math.floor((beat - this.start + EARLY_BEATS) / this.beats()));
+    return Math.max(0, Math.floor((Math.max(beat, this.from) - this.start + EARLY_BEATS) / this.beats()));
   }
 
   /** Where a beat is in the clip, in ticks (an early downbeat counts as the clip's start). */
   private ticksAt(beat: number): number {
     const len = this.beats();
-    let pos = (((beat - this.start) % len) + len) % len;
+    let pos = (((Math.max(beat, this.from) - this.start) % len) + len) % len;
     if (len - pos < EARLY_BEATS) pos = 0;
     return pos * TICKS_PER_BEAT;
   }
@@ -123,7 +128,7 @@ export class Take {
     }
     start = Math.round(start);
     // Held over the end of the clip: it ends there (the clip starts again).
-    const length = Math.max(1, Math.min(Math.round((offBeat - onBeat) * TICKS_PER_BEAT), clipTicks - start));
+    const length = Math.max(1, Math.min(Math.round((Math.max(offBeat, this.from) - Math.max(onBeat, this.from)) * TICKS_PER_BEAT), clipTicks - start));
     return { start, length, pitch, velocity: Math.max(1, Math.min(127, Math.round(velocity))) };
   }
 
