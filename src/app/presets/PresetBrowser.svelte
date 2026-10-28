@@ -76,6 +76,23 @@
     message = { ok: true, text: `${pg.userPresets.length} preset${pg.userPresets.length === 1 ? "" : "s"} saved to a file` };
   }
 
+  async function copyLink() {
+    let url: string;
+    try {
+      url = await pg.soundShareLink();
+    } catch (err) {
+      message = { ok: false, text: (err as Error).message };
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      message = { ok: true, text: `Link to "${pg.preset.name}"${pg.dirty ? " (with your changes)" : ""} copied` };
+    } catch {
+      // No clipboard (not allowed here): copy it by hand.
+      prompt("Copy this link:", url);
+    }
+  }
+
   async function importFile(file: File | undefined) {
     if (!file) return;
     try {
@@ -102,6 +119,7 @@
     />
     {#if message}<span class="message" class:bad={!message.ok}>{message.text}</span>{/if}
     <span class="push"></span>
+    <button onclick={copyLink} title="Copy a link that opens the sound you are playing (with your changes) in any browser">Copy link</button>
     <button onclick={() => fileInput.click()} title="Add presets from a file (exported on this or another computer)">Import…</button>
     <button onclick={exportMine} disabled={!pg.userPresets.length} title="Save your own presets to a file, to keep or to open on another computer">Export mine</button>
     <input bind:this={fileInput} type="file" accept=".json,application/json" hidden onchange={(e) => importFile(e.currentTarget.files?.[0])} />

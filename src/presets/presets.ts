@@ -20,8 +20,8 @@ export interface Preset {
   tags?: string[];
   /** Classics: the original instrument and a record to hear it on, and how to play it. Searchable too. */
   about?: string;
-  /** A sound that isn't in the list (until saved): a rolled Dice patch, the one a recipe builds, or a course page's. */
-  from?: "dice" | "recipe" | "course";
+  /** A sound that isn't in the list (until saved): a rolled Dice patch, the one a recipe builds, a course page's, or one opened from a link. */
+  from?: "dice" | "recipe" | "course" | "link";
 }
 
 /** Faders 1-4 are the same for every preset, so the envelope is always under your fingers. */

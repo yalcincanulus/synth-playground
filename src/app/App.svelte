@@ -43,6 +43,7 @@
     const p = pg.preset;
     if (p.from === "recipe") return "Recipe";
     if (p.from === "dice") return "🎲 Dice";
+    if (p.from === "link") return "from a link";
     if (!pg.isListed(p)) return "not saved";
     return pg.isUserPreset(p) ? `mine · ${p.category}` : p.category;
   });
@@ -192,6 +193,13 @@
     <button class="about-link" class:active={pg.view === "about"} onclick={() => { menuOpen = false; pg.setView("about"); }} title="What this is, the shortcuts, and this browser's limits">About & shortcuts</button>
     </div>
   </header>
+
+  {#if pg.linkNotice}
+    <div class="link-notice" class:bad={!pg.linkNotice.ok} role="status">
+      <span>{pg.linkNotice.text}</span>
+      <button onclick={() => (pg.linkNotice = null)} aria-label="Close" title="Close">✕</button>
+    </div>
+  {/if}
 
   <!-- Row 2: the sound being edited, and time (shared by the drums and the sequencer). The course has its own sound for each page. -->
   {#if pg.view !== "course"}
@@ -684,6 +692,16 @@
   .seq-title .active { border-color: var(--accent); color: var(--accent); }
   .seq-title .clear { margin-left: auto; }
   .seq-panel.muted :global(.seq) { opacity: 0.4; }
+
+  /* What opening a link did (or why it couldn't). */
+  .link-notice {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px; border: 1px solid var(--accent); border-radius: 6px;
+    background: color-mix(in srgb, var(--accent) 12%, var(--panel)); font-size: 13px;
+  }
+  .link-notice span { flex: 1; min-width: 0; }
+  .link-notice.bad { border-color: #ff7a5c; background: color-mix(in srgb, #ff7a5c 12%, var(--panel)); }
+  .link-notice button { flex: none; padding: 2px 8px; }
 
   /* "Edit in Play": which clip the editors below work on, in its track's colour. */
   .clip-banner {

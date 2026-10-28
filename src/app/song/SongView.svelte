@@ -120,6 +120,23 @@
     if (confirm(`Delete the song "${name}"? This can't be undone.`)) void pg.deleteSong(id);
   }
 
+  async function copyLink() {
+    let url: string;
+    try {
+      url = await pg.songShareLink();
+    } catch (err) {
+      songMessage = { ok: false, text: (err as Error).message };
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      songMessage = { ok: true, text: `Link copied (${(url.length / 1024).toFixed(1)} KB): it opens this song in any browser` };
+    } catch {
+      // No clipboard (not allowed here): copy it by hand.
+      prompt("Copy this link:", url);
+    }
+  }
+
   function exportSong() {
     download(pg.exportSong(), `${fileName(pg.songName)}.song.json`, "application/json");
     songMessage = { ok: true, text: `${pg.songName} saved to a file` };
@@ -200,12 +217,21 @@
     <input class="song-name" value={pg.songName} maxlength="32" aria-label="Song name" title="The song's name (it is saved as you work)" onchange={(e) => renameSong(e.currentTarget)} />
     <button onclick={() => (songList = !songList)} aria-expanded={songList} title="Your songs, and the example songs">Songs {songList ? "▴" : "▾"}</button>
     <button onclick={() => pg.newSong()} title="A new, empty song (this one stays saved)">New</button>
-    <button onclick={() => pg.duplicateSong()} title="Keep this song as it is, and go on in a copy">Duplicate</button>
+    {#if pg.linkSong}
+      <button class="go" onclick={() => pg.saveLinkedSong()} title="Keep this song among yours: from then on it is saved as you work">Save to my songs</button>
+    {:else}
+      <button onclick={() => pg.duplicateSong()} title="Keep this song as it is, and go on in a copy">Duplicate</button>
+    {/if}
     <button onclick={exportSong} title="Save the song as a file, with its sounds and wavetables, to keep or open on another computer">Export</button>
+    <button onclick={copyLink} title="Copy a link that opens this song in any browser (nothing is uploaded: the song is in the link)">Copy link</button>
     <button onclick={() => (wavPanel = !wavPanel)} aria-expanded={wavPanel} title="Make an audio file of the song, or record what you hear">WAV {wavPanel ? "▴" : "▾"}</button>
     <button onclick={() => songFileInput.click()} title="Open a song file as a new song">Import…</button>
     <input bind:this={songFileInput} type="file" accept=".json,application/json" hidden onchange={(e) => { void importSong(e.currentTarget.files?.[0]); e.currentTarget.value = ""; }} />
-    <span class="saved" title="Songs are saved in this browser as you work">Saved</span>
+    {#if pg.linkSong}
+      <span class="saved unsaved" title="This song came from a link: nothing is saved until you choose Save to my songs">From a link, not saved</span>
+    {:else}
+      <span class="saved" title="Songs are saved in this browser as you work">Saved</span>
+    {/if}
     {#if songMessage}<span class="song-msg" class:bad={!songMessage.ok}>{songMessage.text}</span>{/if}
   </div>
   {#if wavPanel}
@@ -479,6 +505,8 @@
   .song-name { font: inherit; font-size: 15px; font-weight: 600; width: 16em; max-width: 100%; min-width: 0; padding: 2px 6px; background: transparent; color: inherit; border: 1px solid transparent; border-radius: 4px; }
   .song-name:hover, .song-name:focus { border-color: var(--line); }
   .saved { font-size: 11px; color: var(--dim); }
+  .saved.unsaved { color: #ffb15c; }
+  .song-bar .go { border-color: var(--accent); color: var(--accent); }
   .song-msg { font-size: 12px; color: var(--accent); }
   .song-msg.bad { color: #ff8a80; }
   .song-list { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 10px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; }

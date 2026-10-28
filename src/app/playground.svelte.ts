@@ -72,7 +72,7 @@ import {
 } from "../minilab/protocol";
 import { rollDice } from "../presets/dice";
 import { BLOCK_TAPS, BLOCKS, blockDest, blockSource, KNOB_PAGES, MOD_SHORT, pageOf, paramLabel, routeStartAmount, TAP_NAMES, usesTable, WAVETABLE_KNOBS, type BlockId } from "./synth/blocks";
-import { DEFAULT_FAVOURITES, FACTORY_PRESETS, factoryId, FADERS, loadUserPresets, presetValues, saveUserPresets, userId, type Preset, type Rgb } from "../presets/presets";
+import { CATEGORIES, DEFAULT_FAVOURITES, FACTORY_PRESETS, factoryId, FADERS, loadUserPresets, presetValues, saveUserPresets, userId, type Preset, type Rgb } from "../presets/presets";
 import { emptyFilter, filterPresets, isUserPresetId, presetFile, readPresetFile, readValues, type PresetFilter } from "../presets/browser";
 import {
   audible,
@@ -94,6 +94,7 @@ import { renderSong } from "../song/songRender";
 import { download } from "./download";
 import { encodeWav, peakDb, type WavBits } from "../audio/wav";
 import { cleanSongName, emptySong, newSongId, readSongFile, sameTable, songFile, uniqueSongName, type SongDoc, type SongSound, type SongTable } from "../song/songDoc";
+import { linkAtStart, readLink, songLink, soundLink, type LinkData } from "../song/songLink";
 import { deleteSong as deleteStoredSong, getSong, getSongTables, putSong, putSongTables, rememberOpen, songsAtStart } from "../song/songStore";
 import { EXAMPLE_SONGS } from "../song/examples";
 
@@ -294,6 +295,14 @@ export interface SongMeta {
   modified: number;
 }
 const songMeta = (d: SongDoc): SongMeta => ({ id: d.id, name: d.name, modified: d.modified });
+
+/** The address without a link in it (it no longer opens the song or sound when the page is reloaded). */
+function clearLinkHash() {
+  if (location.hash) history.replaceState(history.state, "", location.pathname + location.search);
+}
+
+/** The app's address with a link's "#" part. */
+const linkUrl = (hash: string) => `${location.origin}${location.pathname}${location.search}#${hash}`;
 
 /** What a song track's change is called in its undo step. */
 const TRACK_CHANGE_LABELS: Record<string, string> = { name: "Rename", color: "Colour", volume: "Volume", pan: "Pan", mute: "Mute", solo: "Solo", voices: "Voices" };
@@ -580,6 +589,7 @@ export class Playground {
     this.metronome = new Metronome(this.clicks);
     this.seq.metronome = this.metronome;
     this.startSongs();
+    window.addEventListener("hashchange", this.hashChanged);
     window.addEventListener("pagehide", this.saveSongNow);
     document.addEventListener("visibilitychange", this.saveSongNow);
     this.intervals.push(window.setInterval(() => (this.cpu = this.engine.cpu), 250));
@@ -594,6 +604,7 @@ export class Playground {
    */
   dispose() {
     this.saveSongNow();
+    window.removeEventListener("hashchange", this.hashChanged);
     window.removeEventListener("pagehide", this.saveSongNow);
     document.removeEventListener("visibilitychange", this.saveSongNow);
     this.intervals.forEach(clearInterval);
@@ -1602,9 +1613,14 @@ export class Playground {
   private startSongs() {
     const { songs, open } = songsAtStart();
     this.songs = songs.map(songMeta);
-    if (open) return this.openDoc(open.doc, open.tables);
-    this.openDoc(this.newDoc(EXAMPLE_SONGS[0].make()), []);
-    this.saveSongNow();
+    if (open) this.openDoc(open.doc, open.tables);
+    else {
+      this.openDoc(this.newDoc(EXAMPLE_SONGS[0].make()), []);
+      this.saveSongNow();
+    }
+    const link = linkAtStart();
+    if (link instanceof Error) this.linkNotice = { ok: false, text: link.message };
+    else if (link) this.openLink(link);
   }
 
   /** A song to save as a new one: a fresh id, a name not taken. */
@@ -1641,11 +1657,15 @@ export class Playground {
 
   /**
    * Make a song the open one: its tables join the table list, each synth track gets its part, and the app
-   * takes its tempo. `stored`: its tables are saved already (not a song from a file).
+   * takes its tempo. `stored`: its tables are saved already (not a song from a file or a link).
    */
   private openDoc(doc: SongDoc, tables: SongTable[], stored = true) {
     const wasOnTrack = isTrackPart(this.part);
     if (this.songTracks.length) this.closeSong();
+    // A song from a link, never saved, is let go of: the address no longer opens it.
+    if (this.linkSong) clearLinkHash();
+    this.linkSong = false;
+    this.linkEdited = false;
     this.songId = doc.id;
     this.songName = doc.name;
     rememberOpen(doc.id);
@@ -1746,6 +1766,8 @@ export class Playground {
       name: typeof stored.name === "string" ? stored.name.slice(0, 18) : fallback.name,
       color: Array.isArray(stored.color) && stored.color.length === 3 ? (stored.color as Rgb) : fallback.color,
       knobs: Array.isArray(stored.knobs) && stored.knobs.length === 8 && stored.knobs.every((k) => k in PARAMS) ? (stored.knobs as Preset["knobs"]) : fallback.knobs,
+      category: CATEGORIES.includes(stored.category as Preset["category"]) ? (stored.category as Preset["category"]) : fallback.category,
+      about: typeof stored.about === "string" ? stored.about : undefined,
       values: readValues(presetValuesRaw, WAVETABLES.length),
       from: stored.from === "dice" ? "dice" : undefined,
     };
@@ -1789,13 +1811,15 @@ export class Playground {
   private songTimer = 0;
   /** Save the open song soon (a burst of changes is saved once). */
   private saveSong() {
+    // A song from a link isn't among yours until you save it.
+    if (this.linkSong) return void (this.linkEdited = true);
     clearTimeout(this.songTimer);
     this.songTimer = window.setTimeout(this.saveSongNow, 300);
   }
 
   private saveSongNow = () => {
     clearTimeout(this.songTimer);
-    if (!this.songId) return;
+    if (!this.songId || this.linkSong) return;
     const { doc, defs } = this.currentDoc();
     const saved = this.savedTables;
     const tablesChanged = !saved || saved.song !== doc.id || saved.defs.length !== defs.length || saved.defs.some((d, i) => d !== defs[i]);
@@ -1813,7 +1837,7 @@ export class Playground {
 
   /** Open a saved song (the open one is saved first). */
   async openSong(id: string) {
-    if (id === this.songId) return;
+    if (id === this.songId || !this.mayLeaveLinkSong()) return;
     this.saveSongNow();
     try {
       const [doc, tables] = await Promise.all([getSong(id), getSongTables(id)]);
@@ -1827,6 +1851,7 @@ export class Playground {
 
   /** A new song: the drums and three synth tracks, empty. */
   newSong() {
+    if (!this.mayLeaveLinkSong()) return;
     this.saveSongNow();
     const { id: _, modified: __, ...empty } = emptySong("New song");
     this.openDoc(this.newDoc(empty), []);
@@ -1837,7 +1862,7 @@ export class Playground {
   /** Open a copy of a factory song among yours. */
   openExample(i: number) {
     const ex = EXAMPLE_SONGS[i];
-    if (!ex) return;
+    if (!ex || !this.mayLeaveLinkSong()) return;
     this.saveSongNow();
     this.openDoc(this.newDoc(ex.make()), []);
     this.saveSongNow();
@@ -1890,11 +1915,99 @@ export class Playground {
   /** Open a song from a file, as a new song among yours. */
   async importSong(file: File): Promise<string> {
     const { doc, tables } = readSongFile(await file.text());
+    if (!this.mayLeaveLinkSong()) return "";
     this.saveSongNow();
     const named = { ...doc, name: uniqueSongName(doc.name, this.songs.map((s) => s.name)) };
     this.openDoc(named, tables, false);
     this.saveSongNow();
     return `Opened ${named.name}${tables.length ? ` (with ${tables.length} wavetable${tables.length === 1 ? "" : "s"})` : ""}`;
+  }
+
+  // ------------------------------------------------------------------ links
+
+  /** The open song came from a link: it isn't among your songs (nothing is saved) until you save it. */
+  linkSong = $state(false);
+  /** The song from a link was changed since it opened (leaving it asks first). */
+  private linkEdited = false;
+  /** What opening a link did, or why it couldn't, shown until it is closed. */
+  linkNotice = $state<{ ok: boolean; text: string } | null>(null);
+
+  /** The address changed to a link (one pasted into this tab): open it. */
+  private hashChanged = () => {
+    readLink(location.hash).then(
+      (link) => link && this.openLink(link),
+      (e: Error) => (this.linkNotice = { ok: false, text: e.message }),
+    );
+  };
+
+  /** Open what a link holds: a song (as a new song, not saved) or a sound (on the part you are editing). */
+  private openLink(link: LinkData) {
+    if (link.kind === "sound") {
+      clearLinkHash();
+      const state = this.readSound({ preset: link.preset, values: link.values, dirty: link.dirty });
+      const preset: Preset = this.isListed(state.preset) ? state.preset : { ...state.preset, from: "link" };
+      this.remember(`Sound ${preset.name}`);
+      this.preset = preset;
+      this.browseId = null;
+      this.values = state.values;
+      this.dirty = state.dirty;
+      this.engine.setParams(this.values);
+      if (this.part === "keys") this.stopRecipe();
+      this.syncHardware();
+      this.linkNotice = { ok: true, text: `Opened the sound "${preset.name}" from a link, on the ${this.partName(this.part)} part. Save as… keeps it among your presets.` };
+      return;
+    }
+    if (!this.mayLeaveLinkSong()) return clearLinkHash();
+    this.saveSongNow();
+    const hash = location.hash;
+    this.openDoc(link.doc, [], false);
+    // openDoc remembered it as the song to open next time: it isn't saved, so the last saved one opens instead.
+    const last = this.songs[0];
+    if (last) rememberOpen(last.id);
+    this.linkSong = true;
+    this.linkEdited = false;
+    // A reload opens the link again, until the song is saved or another one opened.
+    if (!location.hash) history.replaceState(history.state, "", `#${hash.replace(/^#/, "")}`);
+    this.setView("song");
+    this.linkNotice = { ok: true, text: `Opened "${link.doc.name}" from a link. It isn't among your songs until you save it.` };
+  }
+
+  /** Leaving a changed song from a link loses it: ask first. */
+  private mayLeaveLinkSong(): boolean {
+    return !this.linkSong || !this.linkEdited || confirm("The song from the link isn't among your songs, and your changes to it would be lost. Open another song anyway?");
+  }
+
+  /** Keep the song from a link among yours (from now on it is saved as you work). */
+  saveLinkedSong() {
+    if (!this.linkSong) return;
+    this.linkSong = false;
+    this.linkEdited = false;
+    this.songName = uniqueSongName(this.songName, this.songs.map((s) => s.name));
+    rememberOpen(this.songId);
+    this.saveSongNow();
+    clearLinkHash();
+    this.linkNotice = null;
+    this.showMessage("Song", "saved");
+  }
+
+  /** A link to the open song. Throws, in words, when the song plays custom wavetables (too big for a link). */
+  async songShareLink(): Promise<string> {
+    this.flushClipEdit();
+    const { doc, defs } = this.currentDoc();
+    if (defs.length) {
+      const names = defs.map((d) => `"${d.name}"`).join(", ");
+      throw new Error(`This song plays your own wavetable${defs.length === 1 ? "" : "s"} (${names}), too big for a link. Share the song file instead (Export).`);
+    }
+    return linkUrl(await songLink(doc));
+  }
+
+  /** A link to the sound you are editing, changes and all. Throws, in words, when it plays a custom wavetable. */
+  async soundShareLink(): Promise<string> {
+    const values = $state.snapshot(this.values);
+    if (usesTable(values) && values.wtTable >= BUILTIN_TABLES) {
+      throw new Error(`This sound plays your own wavetable "${WAVETABLES[values.wtTable]?.name}", too big for a link.`);
+    }
+    return linkUrl(await soundLink($state.snapshot(this.preset) as Preset, values, this.dirty));
   }
 
   // ------------------------------------------------------------------ WAV export, and recording the output
@@ -3979,7 +4092,7 @@ export class Playground {
     const p = this.preset;
     const list = this.browseList;
     const at = list.findIndex((q) => q.id === p.id);
-    const where = p.from === "recipe" ? "Recipe" : p.from === "dice" ? "Dice" : at >= 0 ? `${at + 1}/${list.length}` : this.isListed(p) ? p.category : "Unsaved";
+    const where = p.from === "recipe" ? "Recipe" : p.from === "dice" ? "Dice" : p.from === "link" ? "Link" : at >= 0 ? `${at + 1}/${list.length}` : this.isListed(p) ? p.category : "Unsaved";
     const part = this.part === "keys" ? "Keys" : this.part === "seq" ? "Seq" : this.partName(this.part).slice(0, 8);
     this.sendDisplay(`${part} ${where}`, this.preset.name);
   }
