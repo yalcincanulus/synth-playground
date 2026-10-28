@@ -434,8 +434,13 @@
       }
       if (pointers.size > 2) return;
     }
-    if (e.button === 1) return;
     canvas.setPointerCapture(e.pointerId);
+    // The middle button drags the view along, up and down and across, wherever it is pressed (as in most DAWs).
+    if (e.button === 1) {
+      e.preventDefault();
+      drag = { mode: "pan", x, y, sx: scrollX, sy: scrollY };
+      return;
+    }
 
     if (x < KEYS_W && y >= RULER_H && y < RULER_H + areaH()) {
       const p = yPitch(y);
@@ -689,19 +694,19 @@
     if (hit) commit({ notes: deleteNotes(clip.notes, new Set([hit.index])), selected: new Set() }, "Delete note");
   }
 
-  // Wheel: scroll up and down (Shift: across), Ctrl (or a trackpad pinch): zoom across, Alt: zoom up and down.
+  // Wheel, as on the timeline: zoom across around the pointer (a trackpad's pinch too); Shift (or a sideways
+  // swipe): move across; Alt: move up and down; Ctrl + Alt: zoom up and down.
   onMount(() => {
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
       const { x, y } = local(e);
-      const d = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
-      if (e.ctrlKey || e.metaKey) zoomX(Math.exp(-d * 0.004), x);
-      else if (e.altKey) zoomY(Math.exp(-d * 0.004), y);
-      else if (e.shiftKey) scrollX += d;
-      else {
-        scrollY += d;
-        scrollX += e.deltaMode === 1 ? e.deltaX * 16 : e.deltaX;
-      }
+      const lines = e.deltaMode === 1 ? 16 : 1;
+      const d = e.deltaY * lines;
+      const dx = e.deltaX * lines;
+      if ((e.ctrlKey || e.metaKey) && e.altKey) zoomY(Math.exp(-d * 0.004), y);
+      else if (e.altKey) scrollY += d || dx;
+      else if (e.shiftKey || Math.abs(dx) > Math.abs(d)) scrollX += e.shiftKey ? d || dx : dx;
+      else zoomX(Math.exp(-Math.max(-300, Math.min(300, d)) * 0.0014), x);
       clampScroll();
     };
     canvas.addEventListener("wheel", wheel, { passive: false });
@@ -720,6 +725,11 @@
     let done = true;
     if ((k === "Delete" || k === "Backspace") && selected.size) commit({ notes: deleteNotes(clip.notes, selected), selected: new Set() }, selected.size > 1 ? "Delete notes" : "Delete note");
     else if (k === "Escape") selected = new Set();
+    else if (k === "Home") {
+      // Back to the clip's start.
+      scrollX = 0;
+      clampScroll();
+    }
     else if (k === "ArrowLeft" || k === "ArrowRight") {
       if (!selected.size) return;
       const dt = (k === "ArrowLeft" ? -1 : 1) * grid;
@@ -823,8 +833,8 @@
       <span class="sep"></span>
     {/if}
     <span class="group" role="group" aria-label="Zoom">
-      <button onclick={() => zoomX(1 / 1.5)} aria-label="Zoom out" title="Zoom out (Ctrl + wheel)">−</button>
-      <button onclick={() => zoomX(1.5)} aria-label="Zoom in" title="Zoom in (Ctrl + wheel; Alt + wheel: up and down)">+</button>
+      <button onclick={() => zoomX(1 / 1.5)} aria-label="Zoom out" title="Zoom out (mouse wheel on the notes)">−</button>
+      <button onclick={() => zoomX(1.5)} aria-label="Zoom in" title="Zoom in (mouse wheel on the notes; Ctrl + Alt + wheel: up and down)">+</button>
       <button onclick={fit} title="Show the whole clip and all its notes">Fit</button>
     </span>
     <button class:active={tall} aria-pressed={tall} onclick={() => (tall = !tall)} title="Use the whole height of the window">Tall</button>
@@ -840,6 +850,7 @@
     tabindex="0"
     aria-label="Piano roll of {clip.name}: {clip.notes.length} notes"
     onpointerdown={down}
+    onmousedown={(e) => e.button === 1 && e.preventDefault()}
     onpointermove={move}
     onpointerup={up}
     onpointercancel={(e) => {
@@ -863,7 +874,8 @@
         Click an empty place to draw a note (drag to make it longer). Drag a note to move it, drag its right end to change its length; double-click or right-click
         deletes it. Shift + click adds to the selection, Shift + drag (or Ctrl + drag) draws a box. Delete, the arrow keys (Shift: an octave), Ctrl+C, Ctrl+V,
         Ctrl+D and Ctrl+A work on the selection. The bars at the bottom are each note's velocity (how hard it is played): drag them. Click the keys on the left to hear
-        a note.
+        a note. The mouse wheel zooms; Shift + wheel moves across, Alt + wheel up and down, and a drag with the middle button both ways. Home goes back to the
+        clip's start.
       {/if}
       {#if pg.scale.scale !== "off"}With Scale lock on, the scale's rows are lit and new notes snap into it.{/if}
     </p>

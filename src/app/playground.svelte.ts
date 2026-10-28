@@ -2005,10 +2005,22 @@ export class Playground {
     this.showMessage("Captured", `${bars} bars`);
   }
 
+  /**
+   * The arrangement has played to its end in the Song view: nothing more would sound, so it stops (and goes
+   * back to where Play starts). Not while it loops, a clip plays from the launcher, or a take records.
+   */
+  private pastSongEnd() {
+    if (!this.playing || this.view !== "song" || this.take || (this.loopOn && this.loopRange) || this.launcherTracks.length) return false;
+    const end = songEnd(this.placements) * BEATS_PER_BAR;
+    const beat = this.songBeatNow();
+    return end > this.songStart * BEATS_PER_BAR && beat >= end;
+  }
+
   /** The looper's light and screen, kept up with the music (every 40 ms). A take tapped to end ends here, at its beat. */
   private loopTick() {
     const run = this.takeRun;
     if (run?.endAt !== undefined && this.playing && this.heardBeat() >= run.endAt) this.endTake();
+    if (this.pastSongEnd()) this.stop();
     if (!this.device || this.view !== "song") return;
     if (this.looperPads) this.paintLooper();
     if (!this.messageShowing && this.songScreen().join("\n") !== this.lastSongScreen) this.showHome();

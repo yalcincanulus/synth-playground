@@ -4,6 +4,7 @@
 </script>
 
 <script lang="ts">
+  import { untrack } from "svelte";
   import { MAX_SONG_BARS, placementEnd, songEnd, type Placement } from "../../song/arrangement";
   import { BEATS_PER_BAR, TICKS_PER_BEAT, type Clip } from "../../song/clips";
   import type { Track } from "../../song/song";
@@ -369,6 +370,14 @@
   }
 
   function down(e: PointerEvent) {
+    // The middle button drags the view along, wherever it is pressed (as in most DAWs).
+    if (e.button === 1) {
+      e.preventDefault();
+      drag = { mode: "pan", x: local(e).x, sx: scrollX };
+      canvas.setPointerCapture(e.pointerId);
+      canvas.style.cursor = "grabbing";
+      return;
+    }
     if (e.button !== 0) return;
     canvas.focus();
     const { x, y } = local(e);
@@ -406,6 +415,7 @@
     }
     const d = drag;
     if (d.mode === "pan") {
+      canvas.style.cursor = "grabbing";
       scrollX = d.sx - (x - d.x);
       clampScroll();
     } else if (d.mode === "ruler") {
@@ -455,18 +465,34 @@
     if (h) pg.removePlacement(h.p.id);
   }
 
+  /**
+   * The wheel zooms around the pointer (a trackpad's pinch too); Shift + wheel, or a sideways swipe, moves
+   * along the song. The page scrolls with the wheel anywhere but on the timeline.
+   */
   function wheel(e: WheelEvent) {
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      zoom(e.deltaY < 0 ? 1.15 : 1 / 1.15, local(e).x);
-    } else if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-      e.preventDefault();
+    e.preventDefault();
+    if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
       scrollX += e.shiftKey ? e.deltaY || e.deltaX : e.deltaX;
       clampScroll();
+    } else if (e.deltaY) {
+      // A notch of a mouse wheel (about 100) is one step; a trackpad's small deltas zoom smoothly.
+      zoom(Math.pow(1.15, -Math.max(-3, Math.min(3, e.deltaY / 100))), local(e).x);
     }
+    dirty = true;
+  }
+
+  /** Back to the start of the song: Play starts from bar 1, and the view shows it. */
+  function toStart() {
+    pg.setSongStart(0);
+    scrollX = 0;
+    dirty = true;
   }
 
   function key(e: KeyboardEvent) {
+    if (e.key === "Home") {
+      e.preventDefault();
+      return toStart();
+    }
     const p = pg.selectedPlacementData;
     if (!p || readOnly) return;
     const mod = e.ctrlKey || e.metaKey;
@@ -508,10 +534,19 @@
     pg.placeClip(id, barAt(local(e).x));
   }
 
-  // The playhead moves by itself while playing (see painter.idle); once more on stop, to take it away.
+  // The playhead moves by itself while playing (see painter.idle); once more on stop, to take it away. On
+  // stop, the view goes back to where Play starts (if Follow kept it with the playhead).
   $effect(() => {
-    void pg.playing;
+    const playing = pg.playing;
     dirty = true;
+    if (playing || !pg.follow) return;
+    untrack(() => {
+      const x = barX(pg.songStart);
+      if (size.w && (x < HEAD_W || x > size.w - 20)) {
+        scrollX = Math.max(0, pg.songStart * pxPerBar - areaW() * 0.15);
+        clampScroll();
+      }
+    });
   });
 
   const sel = $derived(pg.selectedPlacementData);
@@ -524,13 +559,14 @@
   <div class="tools" role="toolbar" aria-label="Arrangement">
     <h2>Arrangement</h2>
     <span class="start" title="Play starts here (click a bar on the ruler to move it); Stop comes back here">▶ from bar {pg.songStart + 1}</span>
+    <button onclick={toStart} disabled={pg.songStart === 0 && scrollX === 0} title="Back to bar 1: Play starts there, and the view shows it (Home)">⏮ Bar 1</button>
     <button class:active={pg.loopOn} aria-pressed={pg.loopOn} onclick={() => pg.toggleLoop()} title="Play the loop region over and over (drag along the ruler to set it)">
       ⟲ Loop{pg.loopRange ? ` ${pg.loopRange.start + 1}–${pg.loopRange.end}` : ""}
     </button>
     <button class:active={pg.follow} aria-pressed={pg.follow} onclick={() => (pg.follow = !pg.follow)} title="Scroll to keep the playhead in sight">Follow</button>
     <span class="group" role="group" aria-label="Zoom">
-      <button onclick={() => zoom(1 / 1.5)} aria-label="Zoom out" title="Zoom out (Ctrl + wheel)">−</button>
-      <button onclick={() => zoom(1.5)} aria-label="Zoom in" title="Zoom in (Ctrl + wheel)">+</button>
+      <button onclick={() => zoom(1 / 1.5)} aria-label="Zoom out" title="Zoom out (mouse wheel on the timeline)">−</button>
+      <button onclick={() => zoom(1.5)} aria-label="Zoom in" title="Zoom in (mouse wheel on the timeline)">+</button>
       <button onclick={() => { fit(); dirty = true; }} title="Show the whole song">Fit</button>
     </span>
     {#if pg.launcherTracks.length}
@@ -549,6 +585,7 @@
     tabindex="0"
     aria-label="Arrangement: {pg.placements.length} placements over {songEnd(pg.placements)} bars"
     onpointerdown={down}
+    onmousedown={(e) => e.button === 1 && e.preventDefault()}
     onpointermove={move}
     onpointerup={up}
     onpointercancel={() => {
@@ -592,7 +629,8 @@
         The song from start to end, one row per track. Drag a clip from a track's list onto its row, or click its row with the clip selected; drag on an empty place
         to draw a new empty clip. Drag a placement to move it (Alt: a copy), drag its right end to repeat its clip, right-click or Delete removes it. Placements of
         one clip are <strong>linked</strong>: change the clip once and they all change ("Make unique" gives one its own copy). Click the ruler to play from a bar;
-        drag along it to set the loop. A track playing a clip from the launcher (▶ above) leaves the arrangement until you stop that clip.
+        drag along it to set the loop. The mouse wheel zooms, Shift + wheel or a drag with the middle button moves along, and ⏮ Bar 1 (or Home) goes back to the start.
+        Without the loop, the song stops at its end. A track playing a clip from the launcher (▶ above) leaves the arrangement until you stop that clip.
       {/if}
     </p>
   {/if}
