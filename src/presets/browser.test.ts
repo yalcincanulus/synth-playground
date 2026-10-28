@@ -75,6 +75,14 @@ describe("preset files", () => {
     for (const p of back.added) expect(p.id.startsWith("user:")).toBe(true);
   });
 
+  test("a repeat (a hat roll's arpeggiator rate and gate) goes along, checked", () => {
+    const roll = { ...user("My Roll"), arp: { rate: 2, gate: 0.25 } };
+    expect(readPresetFile(presetFile([roll, user("Plain")]), [], 8).added.map((p) => p.arp)).toEqual([{ rate: 2, gate: 0.25 }, undefined]);
+    const file = (arp: unknown) => JSON.stringify({ app: "minilab3-playground", kind: "presets", version: 1, presets: [{ name: "Roll", values: {}, arp }] });
+    expect(readPresetFile(file({ rate: 1, gate: 5 }), [], 8).added[0].arp).toEqual({ rate: 1, gate: 1 });
+    expect(readPresetFile(file({ rate: 9, gate: 0.2 }), [], 8).added[0].arp).toBeUndefined();
+  });
+
   test("presets you already have are skipped; a name taken by another sound gets a number", () => {
     const mine = [user("Low One")];
     const file = presetFile([user("Low One"), user("Low One", { cutoff: 1200 })]);

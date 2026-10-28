@@ -646,6 +646,7 @@ export class Playground {
       this.atAudioTime(end, () => this.arpNotes.delete(note));
     };
     this.seq.arp = this.arpeggiator;
+    this.followPresetArp();
     this.engine.setParams(this.parts.keys.values, "keys");
     this.engine.setParams(this.parts.seq.values, "seq");
     this.drumTrack = this.engine.addDrumTrack();
@@ -754,6 +755,7 @@ export class Playground {
   }
   set preset(p: Preset) {
     this.parts[this.part].preset = p;
+    this.followPresetArp();
   }
 
   /** The preset a part is on. */
@@ -810,6 +812,7 @@ export class Playground {
     this.releaseKeys();
     this.engine.setPlayer(player);
     this.keysWereDrums = drums;
+    this.followPresetArp();
   }
 
   /** In the Song view with the drum track selected, the keys play its kit. */
@@ -3378,12 +3381,36 @@ export class Playground {
       }
     }
     this.syncArpClock();
-    try {
-      localStorage.setItem(ARP_KEY, JSON.stringify(this.arp));
-    } catch {
-      // Not saved (private window): it still works until the page closes.
+    // A preset's repeat isn't kept: the stored settings stay your own.
+    if (!this.arpBeforePreset) {
+      try {
+        localStorage.setItem(ARP_KEY, JSON.stringify(this.arp));
+      } catch {
+        // Not saved (private window): it still works until the page closes.
+      }
     }
     this.showMessage("Arp", this.arpLabel);
+  }
+
+  /** Your arpeggiator settings while a preset with its own repeat (a hat roll) has the arpeggiator; null otherwise. */
+  private arpBeforePreset: ArpSettings | null = null;
+
+  /**
+   * The sound your keys play decides on the arpeggiator when it has a repeat (Preset.arp): it switches the
+   * arpeggiator on at its rate. When your keys move on to a sound without one, your own settings come back.
+   */
+  private followPresetArp() {
+    // Sounds set while the playground is being built: the constructor calls this once it can.
+    if (!this.arpeggiator) return;
+    const { arp } = this.parts[this.playerPart].preset;
+    if (arp) {
+      this.arpBeforePreset ??= $state.snapshot(this.arp);
+      this.setArp({ on: true, pattern: 0, octaves: 1, latch: false, ...arp });
+    } else if (this.arpBeforePreset) {
+      const own = this.arpBeforePreset;
+      this.arpBeforePreset = null;
+      this.setArp(own);
+    }
   }
 
   /** What the arpeggiator does, short enough for the OLED: "Up 2 oct 1/16", or "off". */

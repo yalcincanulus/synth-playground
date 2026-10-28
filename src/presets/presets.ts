@@ -7,10 +7,11 @@ export interface Preset {
   id: string;
   name: string;
   /**
+   * "Drums": one drum each, on every key: the key sets its pitch, so it can be played like an instrument.
    * "Classics": recreations of famous synth sounds, made with this synth's own parts.
    * "Test": small presets that each show one feature, for trying it out quickly.
    */
-  category: "Bass" | "Lead" | "Pad" | "Keys" | "Brass" | "FX" | "Classics" | "Test";
+  category: "Bass" | "Lead" | "Pad" | "Keys" | "Brass" | "FX" | "Drums" | "Classics" | "Test";
   /** Pad LED and UI accent colour. */
   color: Rgb;
   /** What knobs 1-8 control. Faders are always the amp envelope. */
@@ -20,6 +21,11 @@ export interface Preset {
   tags?: string[];
   /** Classics: the original instrument and a record to hear it on, and how to play it. Searchable too. */
   about?: string;
+  /**
+   * Repeats while a key is held: loading the preset switches the arpeggiator on at this rate (an index into
+   * RATES) and gate, one octave, Up. Moving to a preset without it gives your own arpeggiator settings back.
+   */
+  arp?: { rate: number; gate: number };
   /** A sound that isn't in the list (until saved): a rolled Dice patch, the one a recipe builds, a course page's, or one opened from a link. */
   from?: "dice" | "recipe" | "course" | "link";
 }
@@ -254,7 +260,7 @@ const ALL_PRESETS: Omit<Preset, "id">[] = [
   },
   {
     name: "Synth Toms",
-    category: "FX",
+    category: "Drums",
     color: [127, 90, 0],
     knobs: ["pitchEnvAmt", "pitchEnvDecay", "decay", "noiseLevel", "cutoff", "drive", "osc1Wave", "reverbMix"],
     values: { osc1Wave: 0, oscMix: 0, noiseLevel: 0.12, pitchEnvAmt: 14, pitchEnvDecay: 0.18, cutoff: 3000, resonance: 0.7, filterEnvAmt: 1.5, filterDecay: 0.08, filterSustain: 0, keyTrack: 0.5, attack: 0.001, decay: 0.45, sustain: 0, release: 0.4, velocity: 0.9, drive: 0.3, reverbMix: 0.2, reverbSize: 1.5, volume: 0.9 },
@@ -307,6 +313,113 @@ const ALL_PRESETS: Omit<Preset, "id">[] = [
     color: [80, 60, 127],
     knobs: ["mod1Amt", "mod2Amt", "mod3Amt", "mod4Amt", "wtPos", "lfo2Depth", "chorus", "reverbMix"],
     values: { osc1Wave: 4, wtTable: 0, wtPos: 0.4, osc2Wave: 2, osc2Detune: 10, oscMix: 0.4, unison: 2, mod1Src: 10, mod1Dst: 0, mod1Amt: 0.006, mod2Src: 10, mod2Dst: 2, mod2Amt: 0.2, mod3Src: 10, mod3Dst: 5, mod3Amt: 0.3, mod4Src: 8, mod4Dst: 2, mod4Amt: 0.3, lfo2Target: 4, lfo2Wave: 0, lfo2Rate: 0.08, lfo2Depth: 0.4, cutoff: 1800, resonance: 0.9, filterEnvAmt: 0.6, filterAttack: 1, filterDecay: 2, filterSustain: 0.6, keyTrack: 0.2, attack: 1, decay: 1.5, sustain: 0.9, release: 3, velocity: 0.3, chorus: 0.4, reverbMix: 0.55, reverbSize: 6, volume: 0.6 },
+  },
+
+  // ---------------------------------------------------------------- Drums
+  // The pad kit's sounds (drums.ts) rebuilt as synth patches, so the knobs can reshape them. A drum is a
+  // short sound that falls away: Sustain is 0, and Release matches Decay so a quick tap still rings out.
+  // The oscillators can't be switched off, so the noisy drums hide them under filters or make them part of the sound.
+  {
+    // The pitch envelope is the punch: the sine starts 2.5 octaves up and drops to the key in about 30 ms.
+    // The noise, let through by the filter envelope for a moment, is the click. Best around C1-C2.
+    name: "Kick",
+    category: "Drums",
+    color: [127, 20, 0],
+    knobs: ["pitchEnvAmt", "pitchEnvDecay", "noiseLevel", "filterDecay", "filterEnvAmt", "drive", "cutoff", "reverbMix"],
+    values: { osc1Wave: 0, osc2Wave: 0, oscMix: 0, osc2Detune: 0, pitchEnvAmt: 30, pitchEnvDecay: 0.12, noiseLevel: 0.25, cutoff: 220, resonance: 0.7, filterEnvAmt: 6, filterAttack: 0.001, filterDecay: 0.02, filterSustain: 0, filterRelease: 0.02, keyTrack: 0, attack: 0.001, decay: 0.45, sustain: 0, release: 0.4, velocity: 0.8, drive: 0.25, chorusOn: 0, delayOn: 0, reverbMix: 0, volume: 0.9 },
+  },
+  {
+    // A long sine that drops a little at the start: the hip-hop and trap bass drum. Mono with glide, so
+    // overlapping notes slide into each other; play a bass line with it.
+    name: "808 Boom",
+    category: "Drums",
+    color: [127, 0, 40],
+    knobs: ["pitchEnvAmt", "pitchEnvDecay", "glide", "drive", "subLevel", "cutoff", "osc1Wave", "reverbMix"],
+    values: { mono: 1, glide: 0.06, osc1Wave: 0, osc2Wave: 0, oscMix: 0, osc2Detune: 0, pitchEnvAmt: 12, pitchEnvDecay: 0.1, cutoff: 1500, resonance: 0.7, filterEnvAmt: 0, keyTrack: 0, attack: 0.001, decay: 1.6, sustain: 0, release: 1.2, velocity: 0.7, drive: 0.4, chorusOn: 0, delayOn: 0, reverbMix: 0, volume: 0.8 },
+  },
+  {
+    // Two triangle tones for the drum's body, and noise for the wires under it. Best around C3.
+    name: "Snare",
+    category: "Drums",
+    color: [127, 110, 60],
+    knobs: ["noiseLevel", "cutoff", "filterMorph", "oscMix", "osc2Semi", "pitchEnvAmt", "drive", "reverbMix"],
+    values: { osc1Wave: 1, osc2Wave: 1, osc2Semi: 9, osc2Detune: 0, oscMix: 0.35, noiseLevel: 0.9, pitchEnvAmt: 7, pitchEnvDecay: 0.05, cutoff: 3500, resonance: 0.8, filterEnvAmt: 1.5, filterAttack: 0.001, filterDecay: 0.1, filterSustain: 0, filterRelease: 0.1, keyTrack: 0, attack: 0.001, decay: 0.2, sustain: 0, release: 0.2, velocity: 0.8, drive: 0.15, chorusOn: 0, delayOn: 0, reverbMix: 0.12, reverbSize: 1, volume: 0.8 },
+  },
+  {
+    // Noise through a band-pass filter, in a small room. Higher keys open the band a little (Key Track).
+    name: "Clap",
+    category: "Drums",
+    color: [127, 60, 90],
+    knobs: ["cutoff", "resonance", "filterMorph", "keyTrack", "decay", "drive", "reverbMix", "reverbSize"],
+    values: { osc1Wave: 0, osc2Wave: 0, oscMix: 0, osc2Detune: 0, noiseLevel: 1, filterMorph: 0.5, cutoff: 1300, resonance: 2, filterEnvAmt: 0.8, filterAttack: 0.001, filterDecay: 0.05, filterSustain: 0, filterRelease: 0.05, keyTrack: 0.3, attack: 0.002, decay: 0.22, sustain: 0, release: 0.22, velocity: 0.8, drive: 0.2, chorusOn: 0, delayOn: 0, reverbMix: 0.25, reverbSize: 1.2, volume: 0.85 },
+  },
+  {
+    // Noise and two FM squares through a high-pass filter: the oscillators give it the metal. Very short.
+    name: "Closed Hat",
+    category: "Drums",
+    color: [127, 127, 0],
+    knobs: ["cutoff", "resonance", "fmAmount", "osc2Semi", "noiseLevel", "keyTrack", "distDrive", "reverbMix"],
+    values: { osc1Wave: 3, osc2Wave: 3, osc2Semi: 7, osc2Detune: 33, oscMix: 0.5, fmAmount: 0.7, noiseLevel: 1, filterMorph: 1, cutoff: 7000, resonance: 1.2, filterEnvAmt: 0, keyTrack: 0.4, attack: 0.001, decay: 0.05, sustain: 0, release: 0.05, velocity: 0.7, chorusOn: 0, delayOn: 0, reverbMix: 0.05, volume: 0.75 },
+  },
+  {
+    // The closed hat, left to ring: a longer decay and a little more room.
+    name: "Open Hat",
+    category: "Drums",
+    color: [127, 127, 60],
+    knobs: ["cutoff", "resonance", "fmAmount", "osc2Semi", "noiseLevel", "keyTrack", "delayMix", "reverbMix"],
+    values: { osc1Wave: 3, osc2Wave: 3, osc2Semi: 7, osc2Detune: 33, oscMix: 0.5, fmAmount: 0.7, noiseLevel: 1, filterMorph: 1, cutoff: 6500, resonance: 1.2, filterEnvAmt: 0, keyTrack: 0.4, attack: 0.001, decay: 0.45, sustain: 0, release: 0.4, velocity: 0.7, chorusOn: 0, delayOn: 1, delayMix: 0, delayDiv: 1, reverbMix: 0.1, volume: 0.7 },
+  },
+  // Hat rolls: hold a key and the hat repeats in time with the tempo (the arpeggiator plays it). Hold two
+  // keys and it alternates between them; play harder for louder repeats.
+  {
+    name: "Hat Roll 1/8",
+    category: "Drums",
+    color: [127, 127, 30],
+    arp: { rate: 0, gate: 0.25 },
+    knobs: ["cutoff", "resonance", "fmAmount", "osc2Semi", "noiseLevel", "keyTrack", "delayMix", "reverbMix"],
+    values: { osc1Wave: 3, osc2Wave: 3, osc2Semi: 7, osc2Detune: 33, oscMix: 0.5, fmAmount: 0.7, noiseLevel: 1, filterMorph: 1, cutoff: 6500, resonance: 1.2, filterEnvAmt: 0, keyTrack: 0.4, attack: 0.001, decay: 0.12, sustain: 0, release: 0.12, velocity: 0.7, chorusOn: 0, delayOn: 0, reverbMix: 0.08, volume: 0.75 },
+  },
+  {
+    name: "Hat Roll 1/16",
+    category: "Drums",
+    color: [127, 127, 0],
+    arp: { rate: 2, gate: 0.25 },
+    knobs: ["cutoff", "resonance", "fmAmount", "osc2Semi", "noiseLevel", "keyTrack", "distDrive", "reverbMix"],
+    values: { osc1Wave: 3, osc2Wave: 3, osc2Semi: 7, osc2Detune: 33, oscMix: 0.5, fmAmount: 0.7, noiseLevel: 1, filterMorph: 1, cutoff: 7000, resonance: 1.2, filterEnvAmt: 0, keyTrack: 0.4, attack: 0.001, decay: 0.05, sustain: 0, release: 0.05, velocity: 0.7, chorusOn: 0, delayOn: 0, reverbMix: 0.05, volume: 0.75 },
+  },
+  {
+    // Triplet sixteenths: the fast, rattling roll of trap hi-hats. Tap the key for single hits between rolls.
+    name: "Trap Hat 1/16T",
+    category: "Drums",
+    color: [110, 127, 0],
+    arp: { rate: 3, gate: 0.25 },
+    knobs: ["cutoff", "resonance", "fmAmount", "osc2Semi", "noiseLevel", "keyTrack", "distDrive", "reverbMix"],
+    values: { osc1Wave: 3, osc2Wave: 3, osc2Semi: 7, osc2Detune: 33, oscMix: 0.5, fmAmount: 0.7, noiseLevel: 1, filterMorph: 1, cutoff: 8000, resonance: 1.5, filterEnvAmt: 0, keyTrack: 0.4, attack: 0.001, decay: 0.035, sustain: 0, release: 0.035, velocity: 0.9, chorusOn: 0, delayOn: 0, reverbMix: 0.05, volume: 0.75 },
+  },
+  {
+    // Noise only through a band-pass filter, with a soft start: a shaker or maracas, in sixteenths.
+    name: "Shaker 1/16",
+    category: "Drums",
+    color: [127, 100, 60],
+    arp: { rate: 2, gate: 0.4 },
+    knobs: ["cutoff", "resonance", "filterMorph", "attack", "noiseLevel", "keyTrack", "delayMix", "reverbMix"],
+    values: { osc1Wave: 0, osc2Wave: 0, oscMix: 0, osc2Detune: 0, noiseLevel: 1, filterMorph: 0.75, cutoff: 5000, resonance: 1.5, filterEnvAmt: 0, keyTrack: 0.3, attack: 0.015, decay: 0.08, sustain: 0, release: 0.08, velocity: 0.8, chorusOn: 0, delayOn: 0, reverbMix: 0.12, reverbSize: 1, volume: 0.85 },
+  },
+  {
+    // Two squares a fifth apart through a band-pass filter that follows the key. Best around C5.
+    name: "Cowbell",
+    category: "Drums",
+    color: [90, 127, 0],
+    knobs: ["osc2Semi", "osc2Detune", "cutoff", "resonance", "filterMorph", "fmAmount", "drive", "reverbMix"],
+    values: { osc1Wave: 3, osc2Wave: 3, osc2Semi: 7, osc2Detune: 0, oscMix: 0.5, filterMorph: 0.45, cutoff: 800, resonance: 2, filterEnvAmt: 0, keyTrack: 1, attack: 0.001, decay: 0.25, sustain: 0, release: 0.25, velocity: 0.7, drive: 0.2, chorusOn: 0, delayOn: 0, reverbMix: 0.1, volume: 1 },
+  },
+  {
+    // A very short triangle click with a touch of noise: rimshot low on the keyboard, a wood block or clave higher up.
+    name: "Rim Click",
+    category: "Drums",
+    color: [127, 80, 30],
+    knobs: ["decay", "noiseLevel", "pitchEnvAmt", "cutoff", "filterMorph", "osc1Wave", "drive", "reverbMix"],
+    values: { osc1Wave: 1, osc2Wave: 1, osc2Semi: 12, osc2Detune: 0, oscMix: 0.3, noiseLevel: 0.5, pitchEnvAmt: 5, pitchEnvDecay: 0.02, filterMorph: 0.35, cutoff: 1200, resonance: 1.5, filterEnvAmt: 0, keyTrack: 1, attack: 0.001, decay: 0.07, sustain: 0, release: 0.07, velocity: 0.8, drive: 0.3, chorusOn: 0, delayOn: 0, reverbMix: 0.15, reverbSize: 0.8, volume: 1 },
   },
 
   // ---- Test: one feature each (slice 11: effects and the shared mod matrix destinations).
@@ -614,7 +727,7 @@ const ALL_PRESETS: Omit<Preset, "id">[] = [
 ];
 
 /** Category order in the preset browser. */
-export const CATEGORIES: Preset["category"][] = ["Lead", "Bass", "Pad", "Brass", "Keys", "FX", "Classics", "Test"];
+export const CATEGORIES: Preset["category"][] = ["Lead", "Bass", "Pad", "Brass", "Keys", "FX", "Drums", "Classics", "Test"];
 
 /**
  * What each factory preset sounds like, in the words someone might search for. The browser offers the
@@ -659,6 +772,18 @@ const TAGS: Record<string, string[]> = {
   "Sci-Fi Drone": ["dark", "drone", "dirty", "spacey", "moving"],
   "Laser Zap": ["zap", "retro", "percussive", "short"],
   "Synth Toms": ["drum", "percussive", "punchy", "short"],
+  Kick: ["drum", "kick", "punchy", "short"],
+  "808 Boom": ["drum", "kick", "808", "fat", "glide", "mono"],
+  Snare: ["drum", "snare", "punchy", "short"],
+  Clap: ["drum", "clap", "short", "spacey"],
+  "Closed Hat": ["drum", "hihat", "hat", "bright", "metallic", "short"],
+  "Open Hat": ["drum", "hihat", "hat", "bright", "metallic"],
+  Cowbell: ["drum", "percussion", "metallic", "short"],
+  "Rim Click": ["drum", "percussion", "wood", "short", "plucky"],
+  "Hat Roll 1/8": ["drum", "hihat", "hat", "roll", "repeat", "arp", "bright", "metallic"],
+  "Hat Roll 1/16": ["drum", "hihat", "hat", "roll", "repeat", "arp", "bright", "metallic"],
+  "Trap Hat 1/16T": ["drum", "hihat", "hat", "roll", "repeat", "arp", "trap", "triplet", "metallic"],
+  "Shaker 1/16": ["drum", "percussion", "shaker", "roll", "repeat", "arp", "soft"],
   "Ping-pong Pluck": ["echo", "plucky", "stereo", "demo"],
   "Damping Room": ["reverb", "spacey", "demo"],
   "Chorus Tide": ["chorus", "wide", "moving", "demo"],

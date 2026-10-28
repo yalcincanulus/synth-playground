@@ -2,6 +2,7 @@
 // as files.
 
 import { PARAMS, type ParamId } from "../audio/params";
+import { RATES } from "../audio/stepSequencer";
 import { CATEGORIES, migrate, userId, type Preset } from "./presets";
 
 /** Where the browser looks: everything, your favourites, your own presets, or one category. */
@@ -60,7 +61,7 @@ const FILE_KIND = "presets";
 
 /** A file of presets (JSON), to keep or to open on another computer. Ids stay behind: they belong to this browser. */
 export function presetFile(presets: readonly Preset[]): string {
-  const out = presets.map(({ name, category, color, knobs, values, tags }) => ({ name, category, color, knobs, values, tags }));
+  const out = presets.map(({ name, category, color, knobs, values, tags, arp }) => ({ name, category, color, knobs, values, tags, ...(arp && { arp }) }));
   return JSON.stringify({ app: FILE_APP, kind: FILE_KIND, version: 1, presets: out }, null, 1);
 }
 
@@ -94,7 +95,16 @@ function readPreset(raw: unknown, tableCount: number): Preset | null {
   const color = Array.isArray(r.color) && r.color.length === 3 && r.color.every((c) => typeof c === "number") ? (r.color.map((c) => Math.min(127, Math.max(0, c))) as Preset["color"]) : ([0, 110, 100] as Preset["color"]);
   const category = CATEGORIES.includes(r.category as Preset["category"]) ? (r.category as Preset["category"]) : "Lead";
   const tags = Array.isArray(r.tags) ? r.tags.filter((t): t is string => typeof t === "string").map((t) => t.toLowerCase().slice(0, 24)).slice(0, 12) : [];
-  return { id: userId(), name: r.name.trim().slice(0, 18), category, color, knobs: knobs as Preset["knobs"], values, tags };
+  const arp = readPresetArp(r.arp);
+  return { id: userId(), name: r.name.trim().slice(0, 18), category, color, knobs: knobs as Preset["knobs"], values, tags, ...(arp && { arp }) };
+}
+
+/** A preset's repeat (its arpeggiator rate and gate), checked; undefined when it has none or it isn't readable. */
+export function readPresetArp(raw: unknown): Preset["arp"] {
+  if (!raw || typeof raw !== "object") return undefined;
+  const { rate, gate } = raw as Record<string, unknown>;
+  if (!Number.isInteger(rate) || (rate as number) < 0 || (rate as number) >= RATES.length || typeof gate !== "number" || !Number.isFinite(gate)) return undefined;
+  return { rate: rate as number, gate: Math.max(0.05, Math.min(1, gate)) };
 }
 
 export interface ImportResult {
