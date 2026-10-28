@@ -4,6 +4,7 @@ import { emptyPattern, Sequencer } from "../audio/sequencer";
 import { defaultNoteSeq, NoteSequencer } from "../audio/stepSequencer";
 import { drumClip, noteClip, stepClip, TICKS_PER_BEAT, type Clip } from "./clips";
 import { ClipPlayer } from "./clipPlayer";
+import type { Placement } from "./arrangement";
 import { defaultTracks } from "./song";
 
 const [DRUMS, BASS, CHORDS] = defaultTracks();
@@ -290,5 +291,108 @@ describe("clip player", () => {
     seq.start();
     run(0.5);
     expect(ons(events).length).toBe(1);
+  });
+});
+
+describe("the arrangement", () => {
+  /** A player whose arrangement is `places` (bass and chords clips), on the fake clock. */
+  function arranged(clips: Clip[], places: Placement[]) {
+    const s = setup(clips);
+    s.player.arrangement = () => {
+      const m = new Map<string, Placement[]>();
+      for (const p of places) {
+        const track = clips.find((c) => c.id === p.clip)!.track;
+        m.set(track, [...(m.get(track) ?? []), p]);
+      }
+      return m;
+    };
+    return s;
+  }
+  const bassClip = () => noteClip([], BASS, [{ start: 0, length: Q / 2, pitch: 40, velocity: 100 }], 1);
+
+  test("a placement plays its clip from its bar, again for each of its bars, transposed", () => {
+    const clip = bassClip();
+    const { seq, events, run, beat } = arranged([clip], [{ id: "p", clip: clip.id, bar: 1, bars: 3, transpose: 2 }]);
+    seq.start();
+    run(10);
+    const got = ons(events, BASS.id).map((e) => [e.note, e.time]);
+    expect(got.map(([n]) => n)).toEqual([42, 42, 42]);
+    [4, 8, 12].forEach((b, i) => expect(got[i][1]).toBeCloseTo(beat(b), 9));
+    balanced(events);
+  });
+
+  test("a placement longer than its clip cuts its last time round at its end", () => {
+    const clip = noteClip([], BASS, [{ start: 4 * Q + Q, length: 2 * Q, pitch: 40, velocity: 100 }], 2);
+    const { seq, events, run, beat } = arranged([clip], [{ id: "p", clip: clip.id, bar: 0, bars: 3, transpose: 0 }]);
+    seq.start();
+    run(8);
+    // Bar 2's note (beat 5) plays; bar 4 of the clip is never reached (cut at bar 3).
+    expect(ons(events, BASS.id).map((e) => e.time)).toEqual([beat(5)]);
+    balanced(events);
+  });
+
+  test("Play from a bar: the arrangement starts there, mid-placement too", () => {
+    const clip = bassClip();
+    const { seq, player, events, run, beat } = arranged([clip], [{ id: "p", clip: clip.id, bar: 0, bars: 8, transpose: 0 }]);
+    player.from = 2 * 4 + 2; // two beats into bar 3
+    seq.start();
+    run(3);
+    expect(ons(events, BASS.id)[0].time).toBeCloseTo(beat(2), 9);
+    expect(player.songBeat(0)).toBe(10);
+  });
+
+  test("a loop region plays over and over, and a note held at its end ends there", () => {
+    const clip = noteClip([], BASS, [{ start: 3 * Q, length: 4 * Q, pitch: 40, velocity: 100 }], 1);
+    const { seq, player, events, run, beat } = arranged([clip], [{ id: "p", clip: clip.id, bar: 0, bars: 8, transpose: 0 }]);
+    player.clock.loop = { start: 4, end: 12 };
+    seq.start();
+    run(12);
+    const times = ons(events, BASS.id).map((e) => e.time);
+    // Song beats 3, 7, 11, then the loop: 15→7, 19→11, ...
+    [3, 7, 11, 15, 19].forEach((b, i) => expect(times[i]).toBeCloseTo(beat(b), 9));
+    const firstOff = offs(events, BASS.id)[0].time;
+    expect(firstOff).toBeCloseTo(beat(4), 9);
+    balanced(events);
+  });
+
+  test("a clip from the launcher takes over the track on the next bar; stopped, the arrangement comes back", () => {
+    const clip = bassClip();
+    const other = noteClip([clip], BASS, [{ start: 0, length: Q / 2, pitch: 50, velocity: 100 }], 1);
+    const { seq, player, events, run, beat } = arranged([clip, other], [{ id: "p", clip: clip.id, bar: 0, bars: 16, transpose: 0 }]);
+    seq.start();
+    run(1.2);
+    player.launch(BASS.id, other.id);
+    run(2);
+    player.launch(BASS.id, null);
+    run(2.5);
+    const got = ons(events, BASS.id).map((e) => e.note);
+    expect(got).toEqual([40, 50, 40]);
+    expect(ons(events, BASS.id)[1].time).toBeCloseTo(beat(4), 9);
+    expect(ons(events, BASS.id)[2].time).toBeCloseTo(beat(8), 9);
+    balanced(events);
+  });
+
+  test("a gap between placements is silent, and Stop ends what sounds", () => {
+    const clip = noteClip([], BASS, [{ start: 0, length: 16 * Q, pitch: 40, velocity: 100 }], 4);
+    const { seq, events, run, host } = arranged([clip], [{ id: "a", clip: clip.id, bar: 0, bars: 1, transpose: 0 }, { id: "b", clip: clip.id, bar: 3, bars: 1, transpose: 0 }]);
+    seq.start();
+    run(7);
+    expect(ons(events, BASS.id).length).toBe(2);
+    run(0.3);
+    seq.stop();
+    expect(offs(events, BASS.id).at(-1)!.time).toBeLessThanOrEqual(host.ctx.currentTime + 1e-9);
+    balanced(events);
+  });
+
+  test("a placement removed while it plays: its note ends at once", () => {
+    const clip = noteClip([], BASS, [{ start: 0, length: 16 * Q, pitch: 40, velocity: 100 }], 4);
+    const places: Placement[] = [{ id: "a", clip: clip.id, bar: 0, bars: 4, transpose: 0 }];
+    const { seq, events, run, host } = arranged([clip], places);
+    seq.start();
+    run(1);
+    places.length = 0;
+    run(0.3);
+    expect(offs(events, BASS.id)[0].time).toBeLessThan(host.ctx.currentTime + 0.2);
+    balanced(events);
   });
 });

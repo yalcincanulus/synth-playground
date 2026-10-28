@@ -89,6 +89,7 @@ import {
 import { barsForSteps, cleanNotes, clipBeats, drumClip, duplicateClip, fitsTrack, noteClip, stepClip, withBars, readClips, BEATS_PER_BAR, MAX_BARS, type Clip, type ClipKind, type Note } from "../song/clips";
 import { GRIDS, stepsToNotes } from "../song/noteEdit";
 import { readRecordSettings, Take, type RecordSettings } from "../song/recorder";
+import { clampPlacement, fitPlacement, freeBar, MAX_SONG_BARS, newPlacementId, readPlacements, readRange, type BarRange, type Placement } from "../song/arrangement";
 import { ClipPlayer } from "../song/clipPlayer";
 
 export type MidiStatus = "idle" | "unsupported" | "denied" | "not-found" | "connected";
@@ -259,6 +260,7 @@ interface PartSnapshot {
 interface SongSnapshot {
   tracks: Track[];
   clips: Clip[];
+  placements: Placement[];
   sounds: Record<string, PartSnapshot>;
 }
 
@@ -301,6 +303,19 @@ export class Playground {
   editClipId = $state<string | null>(null);
   /** The bar of a drum clip the drum loop shows while it is edited. */
   editBar = $state(0);
+  /** The arrangement: clips placed on the timeline (placements of one clip share it). */
+  placements = $state<Placement[]>([]);
+  /** The placement selected on the timeline. */
+  selectedPlacement = $state<string | null>(null);
+  /** The song's tempo: the app's while the Song view is open (and from the moment the song loads). */
+  songTempo = $state(120);
+  /** The bar Play starts the arrangement from (Stop goes back to it). */
+  songStart = $state(0);
+  /** The loop region, in bars, and whether it loops. */
+  loopRange = $state<BarRange | null>(null);
+  loopOn = $state(false);
+  /** The timeline scrolls to keep the playhead in sight. */
+  follow = $state(true);
   /** The track ● armed in the Song view: it is the selected track, and the record button records into it. */
   armedTrack = $state<string | null>(null);
   /** How takes are recorded (count-in, metronome, overdub or replace, quantize, the keys' velocity), kept across reloads. */
@@ -524,6 +539,7 @@ export class Playground {
     };
     this.clipPlayer.onStep = (_track, clip, step, time) => this.atAudioTime(time, () => this.editClipId === clip && this.moveSeqHead(step));
     this.seq.clips = this.clipPlayer;
+    this.clipPlayer.arrangement = () => this.arrangementMap();
     this.clicks = new ClickSound(this.engine.ctx);
     this.clicks.volume = this.rec.click;
     this.metronome = new Metronome(this.clicks);
@@ -718,6 +734,7 @@ export class Playground {
     this.dropTrackPart(id);
     this.songTracks = this.songTracks.filter((x) => x !== t);
     this.songClips = this.songClips.filter((c) => c.track !== id);
+    this.placements = this.placements.filter((p) => this.songClips.some((c) => c.id === p.clip));
     this.forgetMissingClips();
     this.applyMix();
     this.saveSong();
@@ -849,6 +866,7 @@ export class Playground {
   private forgetMissingClips() {
     const has = (id: string | null | undefined) => !!id && this.songClips.some((c) => c.id === id);
     if (!has(this.selectedClip)) this.selectedClip = null;
+    if (this.selectedPlacement && !this.placements.some((p) => p.id === this.selectedPlacement)) this.selectedPlacement = null;
     if (this.editClipId && !has(this.editClipId)) this.closeClipEdit();
     // The take's clip is gone (deleted, or undone): the take ends, with nothing more to write.
     if (this.take && !has(this.take.clip)) this.endTakeState();
@@ -925,6 +943,7 @@ export class Playground {
     if (!clip) return;
     this.recordSong(`Delete ${clip.name}`);
     this.songClips = this.songClips.filter((c) => c !== clip);
+    this.placements = this.placements.filter((p) => p.clip !== id);
     this.forgetMissingClips();
     this.saveSong();
   }
@@ -1066,6 +1085,185 @@ export class Playground {
     this.selectedClip = clip.id;
     this.saveSong();
     this.showMessage("Sent to song", `${t.name}: ${clip.name}`);
+  }
+
+  // ------------------------------------------------------------------ the arrangement
+
+  private trackOfClip = (id: string) => this.songClips.find((c) => c.id === id)?.track;
+
+  private arrangementCache: { placements: Placement[]; clips: number; map: Map<string, Placement[]> } | null = null;
+  /** Each track's placements in order, for the clip player (made again only when the placements or clips change). */
+  private arrangementMap(): Map<string, Placement[]> {
+    const c = this.arrangementCache;
+    if (c && c.placements === this.placements && c.clips === this.songClips.length) return c.map;
+    const map = new Map<string, Placement[]>();
+    for (const p of this.placements) {
+      const track = this.trackOfClip(p.clip);
+      if (track) map.set(track, [...(map.get(track) ?? []), $state.snapshot(p)]);
+    }
+    this.arrangementCache = { placements: this.placements, clips: this.songClips.length, map };
+    return map;
+  }
+
+  /** A track's placements, in order of bar. */
+  placementsOf(track: string): Placement[] {
+    return this.placements.filter((p) => this.trackOfClip(p.clip) === track);
+  }
+
+  get selectedPlacementData(): Placement | null {
+    return this.placements.find((p) => p.id === this.selectedPlacement) ?? null;
+  }
+
+  /** How many placements play a clip (linked: change it once, they all change). */
+  clipUses(id: string): number {
+    return this.placements.filter((p) => p.clip === id).length;
+  }
+
+  /** Select a placement on the timeline: its clip opens below (in the piano roll, for a note clip). */
+  selectPlacement(id: string | null) {
+    this.selectedPlacement = id;
+    const p = this.selectedPlacementData;
+    if (p && this.selectedClip !== p.clip) this.selectClip(p.clip);
+  }
+
+  /** Put the placements in (one undo step called `label`), making room on their track. */
+  private setPlacement(p: Placement, label: string, key: string | null = null) {
+    this.recordSong(label, key);
+    this.placements = fitPlacement($state.snapshot(this.placements), p, this.trackOfClip);
+    this.selectedPlacement = p.id;
+    this.saveSong();
+  }
+
+  /** Place a clip at a bar, for its own length (or `bars`). */
+  placeClip(clipId: string, bar: number, bars?: number) {
+    const clip = this.songClips.find((c) => c.id === clipId);
+    if (!clip) return;
+    const p = clampPlacement({ id: newPlacementId(this.placements), clip: clipId, bar, bars: bars ?? clip.bars, transpose: 0 });
+    this.setPlacement(p, `Place ${clip.name}`);
+    this.selectClip(clipId);
+  }
+
+  /** Draw a placement of a new, empty clip on a track (a drum clip on the drum track, a note clip on a synth track), as long as drawn. */
+  drawPlacement(track: string, bar: number, bars: number) {
+    const t = this.songTracks.find((x) => x.id === track);
+    if (!t) return;
+    this.recordSong("New clip");
+    const len = Math.max(1, Math.min(bars, t.kind === "drums" ? MAX_BARS.drums : MAX_BARS.notes));
+    const clip = t.kind === "drums" ? drumClip(this.songClips, t, Array.from({ length: len }, emptyPattern)) : noteClip(this.songClips, t, [], len);
+    this.songClips = [...this.songClips, clip];
+    const p = clampPlacement({ id: newPlacementId(this.placements), clip: clip.id, bar, bars, transpose: 0 });
+    this.placements = fitPlacement($state.snapshot(this.placements), p, this.trackOfClip);
+    this.selectedPlacement = p.id;
+    this.selectClip(clip.id);
+    this.saveSong();
+  }
+
+  /** Move a placement to another bar, or put a copy there (linked to the same clip). */
+  movePlacement(id: string, bar: number, copy = false) {
+    const p = this.placements.find((x) => x.id === id);
+    if (!p || (bar === p.bar && !copy)) return;
+    const moved = { ...$state.snapshot(p), bar, id: copy ? newPlacementId(this.placements) : p.id };
+    this.setPlacement(moved, copy ? "Copy placement" : "Move placement");
+  }
+
+  /** A placement's length in bars: longer repeats its clip. */
+  resizePlacement(id: string, bars: number) {
+    const p = this.placements.find((x) => x.id === id);
+    if (!p || bars === p.bars) return;
+    this.setPlacement({ ...$state.snapshot(p), bars }, "Length of placement");
+  }
+
+  /** A linked copy right after the placement (or the next free place on its track). */
+  duplicatePlacement(id: string) {
+    const p = this.placements.find((x) => x.id === id);
+    const track = p && this.trackOfClip(p.clip);
+    if (!p || !track) return;
+    const bar = freeBar(this.placements, track, p.bar + p.bars, p.bars, this.trackOfClip);
+    if (bar >= MAX_SONG_BARS) return;
+    this.setPlacement({ ...$state.snapshot(p), id: newPlacementId(this.placements), bar }, "Copy placement");
+  }
+
+  removePlacement(id: string) {
+    if (!this.placements.some((p) => p.id === id)) return;
+    this.recordSong("Remove placement");
+    this.placements = this.placements.filter((p) => p.id !== id);
+    if (this.selectedPlacement === id) this.selectedPlacement = null;
+    this.saveSong();
+  }
+
+  /** Move a placement's notes up or down (its clip, and the clip's other placements, stay as they are). */
+  transposePlacement(id: string, semitones: number) {
+    const p = this.placements.find((x) => x.id === id);
+    if (!p) return;
+    const t = Math.max(-24, Math.min(24, Math.round(semitones)));
+    if (t === p.transpose) return;
+    this.setPlacement({ ...$state.snapshot(p), transpose: t }, "Transpose placement", `transpose:${id}`);
+  }
+
+  /** "Make unique": the placement gets a copy of its clip, to change without changing the others. */
+  makeUnique(id: string) {
+    const p = this.placements.find((x) => x.id === id);
+    const clip = p && this.songClips.find((c) => c.id === p.clip);
+    const t = clip && this.songTracks.find((x) => x.id === clip.track);
+    if (!p || !clip || !t) return;
+    this.recordSong(`Make ${clip.name} unique`);
+    const copy = duplicateClip(this.songClips, $state.snapshot(clip) as Clip, t);
+    this.songClips = [...this.songClips, copy];
+    this.placements = this.placements.map((x) => (x.id === id ? { ...$state.snapshot(x), clip: copy.id } : x));
+    this.selectClip(copy.id);
+    this.saveSong();
+    this.showMessage("Unique clip", copy.name);
+  }
+
+  /** Where Play starts the arrangement. While playing, the song jumps there at once. */
+  setSongStart(bar: number) {
+    this.songStart = Math.max(0, Math.min(MAX_SONG_BARS - 1, Math.round(bar)));
+    this.clipPlayer.from = this.songStart * BEATS_PER_BAR;
+    this.saveSong();
+    if (this.playing) {
+      this.stop();
+      this.play();
+    }
+  }
+
+  /** The loop region (bars, [start, end)); it loops from now on. */
+  setLoop(range: BarRange | null, on = range !== null) {
+    this.loopRange = range && range.end > range.start ? { start: Math.max(0, range.start), end: Math.min(MAX_SONG_BARS, range.end) } : null;
+    this.loopOn = on && this.loopRange !== null;
+    this.syncLoop();
+    this.saveSong();
+  }
+
+  toggleLoop() {
+    if (!this.loopRange) return this.setLoop({ start: this.songStart, end: this.songStart + 4 });
+    this.setLoop(this.loopRange, !this.loopOn);
+  }
+
+  private syncLoop() {
+    const r = this.loopOn ? this.loopRange : null;
+    this.clipPlayer.clock.loop = r ? { start: r.start * BEATS_PER_BAR, end: r.end * BEATS_PER_BAR } : null;
+  }
+
+  /** The song's beat as heard (-1 when stopped), for the playhead. */
+  songBeatNow(): number {
+    return this.clipPlayer.songBeat(this.seq.beatNow);
+  }
+
+  /** Tracks playing a clip from the launcher, not their part of the arrangement. */
+  get launcherTracks(): string[] {
+    return this.songTracks.filter((t) => {
+      const st = this.clipLaunch[t.id];
+      return st && (st.next !== undefined ? st.next : st.clip);
+    }).map((t) => t.id);
+  }
+
+  /** Stop every launched clip: each track plays the arrangement again (from the next bar while playing). */
+  backToArrangement() {
+    for (const t of this.songTracks) {
+      this.clipPlayer.launch(t.id, null);
+      this.syncLaunch(t.id);
+    }
+    this.saveSong();
   }
 
   // ------------------------------------------------------------------ recording into clips
@@ -1279,7 +1477,7 @@ export class Playground {
       const p = this.parts[t.id];
       if (t.kind === "synth" && p) sounds[t.id] = { preset: p.preset, values: $state.snapshot(p.values), dirty: p.dirty };
     }
-    return { tracks: $state.snapshot(this.songTracks), clips: $state.snapshot(this.songClips) as Clip[], sounds };
+    return { tracks: $state.snapshot(this.songTracks), clips: $state.snapshot(this.songClips) as Clip[], placements: $state.snapshot(this.placements), sounds };
   }
 
   /** Keep the song as it is now, before a change. Changes with the same key close together are one step. */
@@ -1355,6 +1553,7 @@ export class Playground {
     }
     this.songTracks = structuredClone(s.tracks);
     this.songClips = structuredClone(s.clips);
+    this.placements = structuredClone(s.placements);
     this.forgetMissingClips();
     // A converted clip brought back as a step clip is edited in place again (or let go, the other way).
     this.syncSongClipEdit();
@@ -1366,7 +1565,17 @@ export class Playground {
 
   /** The tracks, their sounds and clips from the last visit (a new song's the first time). */
   private loadSong() {
-    let saved: { tracks?: unknown; sounds?: Record<string, { preset?: unknown; values?: unknown; dirty?: unknown }>; clips?: unknown; chosen?: Record<string, unknown> } | null = null;
+    let saved: {
+      tracks?: unknown;
+      sounds?: Record<string, { preset?: unknown; values?: unknown; dirty?: unknown }>;
+      clips?: unknown;
+      chosen?: Record<string, unknown>;
+      placements?: unknown;
+      tempo?: unknown;
+      start?: unknown;
+      loop?: unknown;
+      loopOn?: unknown;
+    } | null = null;
     try {
       saved = JSON.parse(localStorage.getItem(SONG_KEY) ?? "null");
     } catch {
@@ -1385,6 +1594,18 @@ export class Playground {
       if (clip && fitsTrack(clip.kind, t) && clip.track === t.id) this.clipPlayer.launch(t.id, clip.id);
       this.syncLaunch(t.id);
     }
+    this.placements = readPlacements(saved?.placements, this.songClips);
+    const tempo = saved?.tempo;
+    this.songTempo = typeof tempo === "number" && Number.isFinite(tempo) ? Math.round(Math.max(40, Math.min(240, tempo))) : 120;
+    // Opening a song sets the app's tempo.
+    this.bpm = this.songTempo;
+    this.engine.setBpm(this.bpm);
+    const start = saved?.start;
+    this.songStart = typeof start === "number" && Number.isFinite(start) ? Math.round(Math.max(0, Math.min(MAX_SONG_BARS - 1, start))) : 0;
+    this.clipPlayer.from = this.songStart * BEATS_PER_BAR;
+    this.loopRange = readRange(saved?.loop);
+    this.loopOn = saved?.loopOn === true && this.loopRange !== null;
+    this.syncLoop();
     this.applyMix();
   }
 
@@ -1428,7 +1649,17 @@ export class Playground {
       }),
     );
     try {
-      const song = { tracks: $state.snapshot(this.songTracks), sounds, clips: $state.snapshot(this.songClips), chosen: this.clipPlayer.chosen };
+      const song = {
+        tracks: $state.snapshot(this.songTracks),
+        sounds,
+        clips: $state.snapshot(this.songClips),
+        chosen: this.clipPlayer.chosen,
+        placements: $state.snapshot(this.placements),
+        tempo: this.songTempo,
+        start: this.songStart,
+        loop: $state.snapshot(this.loopRange),
+        loopOn: this.loopOn,
+      };
       localStorage.setItem(SONG_KEY, JSON.stringify(song));
     } catch {
       // Not saved (private window, or full): the tracks last until the page closes.
@@ -2403,6 +2634,11 @@ export class Playground {
   setBpm(bpm: number) {
     this.bpm = Math.round(Math.max(40, Math.min(240, bpm)));
     this.engine.setBpm(this.bpm);
+    // The song keeps the tempo set while its view is open.
+    if (this.view === "song" && this.songTempo !== this.bpm) {
+      this.songTempo = this.bpm;
+      this.saveSong();
+    }
   }
 
   tap() {
@@ -2738,7 +2974,11 @@ export class Playground {
     this.syncPlayer();
     this.syncTaps();
     this.realignKnobs();
-    if (view === "song") this.syncSongClipEdit();
+    if (view === "song") {
+      this.syncSongClipEdit();
+      // The song plays at its own tempo.
+      if (this.bpm !== this.songTempo) this.setBpm(this.songTempo);
+    }
   }
 
   // ------------------------------------------------------------------ course

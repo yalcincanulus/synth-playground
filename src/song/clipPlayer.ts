@@ -1,10 +1,12 @@
-// The clip player: each track loops the clip chosen for it, planned at exact audio times on the drum
-// Sequencer's lookahead clock (like the step sequencer and the arpeggiator), so clips and the Play view's
-// toys keep one time. A clip chosen while the transport plays starts on the next bar; on Play every chosen
-// clip starts together from bar 1. Plain code, so it is tested without a browser.
+// The clip player: each track plays its part of the arrangement, or loops a clip chosen for it in the clip
+// launcher instead (until that is stopped), planned at exact audio times on the drum Sequencer's lookahead
+// clock (like the step sequencer and the arpeggiator), so clips and the Play view's toys keep one time. A
+// clip chosen while the transport plays starts on the next bar; on Play every chosen clip starts together
+// from bar 1, and the arrangement from the start bar. Plain code, so it is tested without a browser.
 
 import { TRACKS as DRUMS, STEPS } from "../audio/sequencer";
 import { NoteSequencer } from "../audio/stepSequencer";
+import { placementEnd, SongClock, type Placement } from "./arrangement";
 import { BEATS_PER_BAR, clipBeats, TICKS_PER_BEAT, type Clip, type NoteClip, type StepClip } from "./clips";
 
 /** Where a clip's sound goes. */
@@ -38,6 +40,22 @@ interface Lane {
   stepsClip: string | null;
   /** Step clips: note-offs are kept to this audio time, the end of the time round (or the bar a new clip starts on). */
   cut: number;
+  /** Playing the arrangement (no clip chosen): what plays now, and the transport beat it stops at. */
+  seg: Segment | null;
+  /** Semitones the clip playing now is moved by (its placement's). */
+  transpose: number;
+}
+
+/** A stretch of a track's arrangement: one time round of a placement's clip (or a gap), up to a change. */
+interface Segment {
+  /** The placement and where its time round started (it is a new segment when either changes). */
+  key: string;
+  clip: string | null;
+  /** Transport beat the clip's time round started on. */
+  start: number;
+  /** Transport beat it stops at. */
+  end: number;
+  transpose: number;
 }
 
 export class ClipPlayer {
@@ -47,6 +65,13 @@ export class ClipPlayer {
   onChange: (track: string, clip: string | null, time: number) => void = () => {};
   /** The note a step clip plays (scale lock moves it into the scale, as in the step sequencer). */
   pitch: (note: number) => number = (note) => note;
+
+  /** The arrangement: each track's placements, in order of bar, as they are now (edits are heard at once). */
+  arrangement: () => ReadonlyMap<string, readonly Placement[]> = () => new Map();
+  /** Where the song is: Play starts it from `from`, and the loop region jumps it back. */
+  readonly clock = new SongClock();
+  /** The song beat Play starts from. */
+  from = 0;
 
   private lanes = new Map<string, Lane>();
   private playing = false;
@@ -70,9 +95,16 @@ export class ClipPlayer {
   position(track: string, clip: string, beat: number): number {
     const lane = this.lanes.get(track);
     const c = this.clipOf(clip);
-    if (!this.playing || beat < 0 || !lane || lane.clip !== clip || !c) return -1;
+    if (!this.playing || beat < 0 || !lane || !c) return -1;
+    const start = lane.clip === clip ? lane.start : lane.clip === null && lane.seg?.clip === clip ? lane.seg.start : null;
+    if (start === null) return -1;
     const len = clipBeats(c);
-    return (((beat - lane.start) % len) + len) % len;
+    return (((beat - start) % len) + len) % len;
+  }
+
+  /** The song beat at a transport beat (-1 when stopped). */
+  songBeat(beat: number): number {
+    return this.playing && beat >= 0 ? this.clock.songAt(beat) : -1;
   }
 
   /** The chosen clip of every track that has one. */
@@ -110,11 +142,13 @@ export class ClipPlayer {
   /** Play: every chosen clip starts from its beginning at beat 0. */
   reset() {
     this.playing = true;
+    this.clock.reset(this.from);
     for (const lane of this.lanes.values()) {
       if (lane.next !== undefined) lane.clip = lane.next;
       lane.next = undefined;
       lane.start = 0;
       lane.held = [];
+      lane.seg = null;
       lane.steps?.reset();
     }
   }
@@ -126,6 +160,7 @@ export class ClipPlayer {
       this.release(track, lane, time);
       if (lane.next !== undefined) lane.clip = lane.next;
       lane.next = undefined;
+      lane.seg = null;
     }
   }
 
@@ -134,18 +169,56 @@ export class ClipPlayer {
    * `skip` (that time has already passed) nothing starts, but notes still end, so none hangs.
    */
   schedule(fromBeat: number, toBeat: number, timeAt: (beat: number) => number, secPerBeat: number, skip = false) {
+    this.clock.plan(fromBeat, toBeat);
+    const arrangement = this.arrangement();
+    for (const track of arrangement.keys()) this.lane(track);
     for (const [track, lane] of this.lanes) {
       let b = fromBeat;
       for (;;) {
+        if (lane.clip === null) {
+          // The arrangement, until a clip chosen in the launcher starts.
+          const change = lane.next !== undefined ? Math.ceil(b / BEATS_PER_BAR - EPS) * BEATS_PER_BAR : Infinity;
+          const seg = this.segment(track, arrangement.get(track) ?? [], b);
+          if (lane.seg && (seg.key !== lane.seg.key || b >= lane.seg.end - EPS)) {
+            // A new time round, another placement, or a gap: what sounds ends.
+            this.release(track, lane, timeAt(b));
+            lane.steps?.reset();
+          }
+          // Taken again each time: a placement made shorter while it plays ends sooner.
+          lane.seg = seg;
+          lane.transpose = seg.transpose;
+          if (change <= b + EPS) {
+            this.release(track, lane, timeAt(b));
+            lane.clip = lane.next ?? null;
+            lane.next = undefined;
+            lane.seg = null;
+            lane.start = b;
+            lane.transpose = 0;
+            lane.steps?.reset();
+            this.onChange(track, lane.clip, timeAt(b));
+            continue;
+          }
+          if (b >= toBeat - EPS) break;
+          const end = Math.min(lane.seg.end, change);
+          const until = Math.min(end, toBeat);
+          const clip = lane.seg.clip !== null ? this.clipOf(lane.seg.clip) : undefined;
+          if (clip) {
+            lane.start = lane.seg.start;
+            this.play(track, lane, clip, b, until, end, timeAt, secPerBeat, skip);
+          }
+          b = until;
+          continue;
+        }
         const clip = lane.clip !== null ? this.clipOf(lane.clip) : undefined;
-        if (lane.clip !== null && !clip) {
-          // Deleted while chosen: the track falls silent.
+        if (!clip) {
+          // Deleted while chosen: the track goes back to the arrangement.
           this.release(track, lane, timeAt(b));
           lane.clip = null;
+          lane.seg = null;
           this.onChange(track, null, timeAt(b));
+          continue;
         }
-        if (!clip && lane.next === undefined) break;
-        const len = clip ? clipBeats(clip) : Infinity;
+        const len = clipBeats(clip);
         if (lane.start + len < b - EPS) {
           // Shortened while playing, past where it is now: carry on in the time round that holds `b`.
           this.release(track, lane, timeAt(b));
@@ -160,15 +233,17 @@ export class ClipPlayer {
           if (change <= b + EPS) {
             lane.clip = lane.next ?? null;
             lane.next = undefined;
+            lane.seg = null;
             this.onChange(track, lane.clip, time);
           }
           lane.start = b;
+          lane.transpose = 0;
           lane.steps?.reset();
           continue;
         }
         if (b >= toBeat - EPS) break;
         const until = Math.min(boundary, toBeat);
-        if (clip) this.play(track, lane, clip, b, until, boundary, timeAt, secPerBeat, skip);
+        this.play(track, lane, clip, b, until, boundary, timeAt, secPerBeat, skip);
         b = until;
       }
     }
@@ -176,8 +251,29 @@ export class ClipPlayer {
 
   private lane(track: string): Lane {
     let lane = this.lanes.get(track);
-    if (!lane) this.lanes.set(track, (lane = { clip: null, start: 0, held: [], steps: null, stepsClip: null, cut: Infinity, stepOns: new Map() }));
+    if (!lane) this.lanes.set(track, (lane = { clip: null, start: 0, held: [], steps: null, stepsClip: null, cut: Infinity, stepOns: new Map(), seg: null, transpose: 0 }));
     return lane;
+  }
+
+  /** What a track's arrangement plays from transport beat `b`: a time round of a placement's clip, or a gap, up to the next change. */
+  private segment(track: string, placements: readonly Placement[], b: number): Segment {
+    const s = this.clock.songAt(b);
+    const jump = this.clock.nextJump(b);
+    const bar = BEATS_PER_BAR;
+    const p = placements.find((q) => q.bar * bar <= s + EPS && s < placementEnd(q) * bar - EPS);
+    const clip = p ? this.clipOf(p.clip) : undefined;
+    if (!p || !clip) {
+      const next = placements.find((q) => q.bar * bar > s + EPS);
+      const end = Math.min(jump, next ? b + (next.bar * bar - s) : Infinity, p ? b + (placementEnd(p) * bar - s) : Infinity);
+      return { key: `gap:${track}`, clip: null, start: b, end, transpose: 0 };
+    }
+    const len = clipBeats(clip);
+    const pos = (s - p.bar * bar) % len;
+    // Within a hair of the time round's end: the next one starts here.
+    const into = len - pos < EPS ? 0 : pos;
+    const start = b - into;
+    const end = Math.min(start + len, b + (placementEnd(p) * bar - s), jump);
+    return { key: `${p.id}:${p.clip}:${Math.round((s - into) * 1e6)}`, clip: p.clip, start, end, transpose: p.transpose };
   }
 
   /** End every note the track sounds, at `time` (or as it starts, for one planned to start later: Stop comes before the lookahead runs out). */
@@ -230,14 +326,15 @@ export class ClipPlayer {
       // Notes that end by now end first, so a note played again right after itself starts fresh.
       ends(at, true);
       if (skip) continue;
+      const pitch = Math.max(0, Math.min(127, n.pitch + lane.transpose));
       // The same pitch still sounding (overlapping notes): it ends where the new one starts.
-      const same = lane.held.findIndex((h) => h.note === n.pitch);
+      const same = lane.held.findIndex((h) => h.note === pitch);
       if (same >= 0) {
-        this.out.noteOff(track, n.pitch, timeAt(at));
+        this.out.noteOff(track, pitch, timeAt(at));
         lane.held.splice(same, 1);
       }
-      this.out.noteOn(track, n.pitch, n.velocity, timeAt(at), false);
-      lane.held.push({ note: n.pitch, end: Math.min(at + n.length / TICKS_PER_BEAT, boundary), at: timeAt(at) });
+      this.out.noteOn(track, pitch, n.velocity, timeAt(at), false);
+      lane.held.push({ note: pitch, end: Math.min(at + n.length / TICKS_PER_BEAT, boundary), at: timeAt(at) });
     }
     ends(to, false);
   }
@@ -253,7 +350,7 @@ export class ClipPlayer {
         noteOff: (note, time) => this.out.noteOff(track, note, Math.max(Math.min(time, lane.cut), lane.stepOns.get(note) ?? -Infinity)),
         pitchTo: (from, to, time) => this.out.pitchTo(track, from, to, time),
       });
-      lane.steps.pitch = (note) => this.pitch(note);
+      lane.steps.pitch = (note) => this.pitch(Math.max(0, Math.min(127, note + lane.transpose)));
     }
     // The clip's settings object can be replaced (undo): the same clip goes on where it is, another starts from step 1.
     lane.steps.s = clip.seq;

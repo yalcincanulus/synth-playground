@@ -8,6 +8,7 @@
   import { surface, type Surface } from "../components/canvas";
   import type { Playground } from "../playground.svelte";
   import SequencerPanel from "../sequencer/SequencerPanel.svelte";
+  import Arrangement, { clipDrag } from "./Arrangement.svelte";
   import PianoRoll from "./PianoRoll.svelte";
   import { trackCss as css } from "./trackColor";
 
@@ -260,7 +261,18 @@
                 aria-label="{st.playing && !st.stopping ? 'Stop' : 'Play'} {c.name}"
                 title={st.waiting ? "Starts on the next bar (click to cancel)" : st.playing && !st.stopping ? "Stop this track at the next bar" : pg.playing ? "Play on this track from the next bar" : "Play"}
               >{st.playing && !st.stopping ? "■" : "▶"}</button>
-              <button class="clip-name" onclick={() => pg.selectClip(pg.selectedClip === c.id ? null : c.id)} title="{CLIP_KIND_NAMES[c.kind]} · {c.bars} bar{c.bars > 1 ? 's' : ''} · {summary(c)}">
+              <button
+                class="clip-name"
+                draggable="true"
+                ondragstart={(e) => {
+                  clipDrag.id = c.id;
+                  e.dataTransfer?.setData("text/plain", c.name);
+                  if (e.dataTransfer) e.dataTransfer.effectAllowed = "copy";
+                }}
+                ondragend={() => (clipDrag.id = null)}
+                onclick={() => pg.selectClip(pg.selectedClip === c.id ? null : c.id)}
+                title="{CLIP_KIND_NAMES[c.kind]} · {c.bars} bar{c.bars > 1 ? 's' : ''} · {summary(c)}{pg.clipUses(c.id) ? ` · on the timeline ${pg.clipUses(c.id)}×` : ''} (drag it onto the arrangement)"
+              >
                 {c.name}
               </button>
               {#if st.playing}<span class="progress" style:width="{progress(c) * 100}%"></span>{/if}
@@ -276,6 +288,8 @@
       </li>
     {/each}
   </ol>
+
+  <Arrangement {pg} />
 
   {#if clip && clipTrack}
     <section class="clip-panel" style:--track={css(clipTrack.color)} aria-label="Clip">
