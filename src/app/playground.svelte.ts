@@ -1,3 +1,4 @@
+import { untrack } from "svelte";
 import { SvelteSet } from "svelte/reactivity";
 import { DRUM_NAMES } from "../audio/drums";
 import { Engine, type CpuLoad, type DrumTrack, type ListenTap } from "../audio/engine";
@@ -101,6 +102,9 @@ import { cleanSongName, emptySong, newSongId, readSongFile, sameTable, songFile,
 import { linkAtStart, readLink, songLink, soundLink, type LinkData } from "../song/songLink";
 import { deleteSong as deleteStoredSong, getSong, getSongTables, putSong, putSongTables, rememberOpen, songsAtStart } from "../song/songStore";
 import { EXAMPLE_SONGS } from "../song/examples";
+import { SongGuide } from "./songGuide/guide.svelte";
+import { SONG_LESSONS } from "../course/song/lessons";
+import type { GuideEvent, GuideState } from "../course/song/guide";
 
 export type MidiStatus = "idle" | "unsupported" | "denied" | "not-found" | "connected";
 export type VizMode = "scope" | "spectrum" | "spectrogram";
@@ -305,6 +309,9 @@ export interface SongMeta {
 const songMeta = (d: SongDoc): SongMeta => ({ id: d.id, name: d.name, modified: d.modified });
 
 /** The address without a link in it (it no longer opens the song or sound when the page is reloaded). */
+/** The piano roll's tools, by their undo labels: a lesson counts them as they are used. */
+const NOTE_TOOLS: Record<string, GuideEvent> = { Quantize: "quantize", Transpose: "transpose", Legato: "legato", Reverse: "reverse", "Double the clip": "double" };
+
 function clearLinkHash() {
   if (location.hash) history.replaceState(history.state, "", location.pathname + location.search);
 }
@@ -519,6 +526,20 @@ export class Playground {
     },
     (values) => this.coursePage(values),
   );
+  /** "Make a song": the lesson being followed beside the Song view. */
+  readonly songGuide = new SongGuide(
+    () => this.guideState(),
+    () => this.hasDevice,
+  );
+  /** How often each thing a lesson can ask for (and the song doesn't show) was done. */
+  guideCount = $state<Partial<Record<GuideEvent, number>>>({});
+  /** The open song is a lesson's practice song: not among your songs unless you keep it. */
+  practiceSong = $state(false);
+  /** The song that was open before a lesson opened its practice song: closing the lesson opens it again. */
+  private beforeLesson: string | null = null;
+  /** The piano roll's grid (an index into GRIDS) and snap, kept across clips. */
+  rollGrid = $state(2);
+  rollSnap = $state(true);
   /** What the course put aside while it runs, and gives back when you leave: the Keys part's sound, the arpeggiator and scale lock. */
   private beforeCourse: { sound: PartSnapshot; arp: boolean; scale: ScaleId } | null = null;
   /** The "Draw a table" editor, while it is open. */
@@ -649,7 +670,17 @@ export class Playground {
     this.freezes.observe();
     this.intervals.push(window.setInterval(() => this.updateTiming(), 1000));
     this.engine.ctx.onstatechange = () => (this.audioRunning = this.engine.ctx.state === "running");
+    // A lesson's steps tick when the app changes: the checks' reads decide when this runs again.
+    this.stopGuide = $effect.root(() => {
+      $effect(() => {
+        if (this.songGuide.index === null) return;
+        const holds = this.songGuide.evaluate(this.guideState());
+        untrack(() => this.songGuide.apply(holds));
+      });
+    });
   }
+
+  private stopGuide: () => void;
 
   /**
    * Fall silent for good. The page makes one Playground, but in development a hot reload makes a new one:
@@ -657,6 +688,7 @@ export class Playground {
    */
   dispose() {
     this.saveSongNow();
+    this.stopGuide();
     window.removeEventListener("hashchange", this.hashChanged);
     window.removeEventListener("pagehide", this.saveSongNow);
     document.removeEventListener("visibilitychange", this.saveSongNow);
@@ -1016,6 +1048,8 @@ export class Playground {
     // Only Double changes the length here: the lanes play twice too.
     this.songClips[i] = { ...rest, bars: b, notes: cleanNotes(notes, b), ...withLanes(lanes && lanesForLength(lanes, barTicks(clip.bars), barTicks(b), true)) };
     this.saveSong();
+    const tool = NOTE_TOOLS[label];
+    if (tool) this.guideEvent(tool);
   }
 
   /** A note clip's automation lanes, as drawn in the piano roll (one undo step; changes with the same key close together are one). */
@@ -1048,6 +1082,7 @@ export class Playground {
     const notes = stepsToNotes($state.snapshot(clip.seq), clip.bars, 60 / this.bpm, (n) => snapToScale(n, this.scale));
     this.songClips[i] = { id: clip.id, track: clip.track, name: clip.name, bars: clip.bars, kind: "notes", notes };
     this.saveSong();
+    this.guideEvent("convert");
     this.showMessage("Converted to notes", clip.name);
   }
 
@@ -1082,6 +1117,7 @@ export class Playground {
     this.songClips = [...this.songClips, copy];
     this.selectClip(copy.id);
     this.saveSong();
+    this.guideEvent("duplicate");
   }
 
   renameClip(id: string, name: string) {
@@ -1184,6 +1220,7 @@ export class Playground {
     this.songClips = [...this.songClips, clip];
     this.selectedClip = clip.id;
     this.saveSong();
+    this.guideEvent("sendDrums");
     this.showMessage("Sent to song", `${t.name}: ${clip.name}`);
   }
 
@@ -1209,6 +1246,7 @@ export class Playground {
     this.songClips = [...this.songClips, clip];
     this.selectedClip = clip.id;
     this.saveSong();
+    this.guideEvent("sendSteps");
     this.showMessage("Sent to song", `${t.name}: ${clip.name}`);
   }
 
@@ -1337,6 +1375,7 @@ export class Playground {
     this.placements = this.placements.map((x) => (x.id === id ? { ...$state.snapshot(x), clip: copy.id } : x));
     this.selectClip(copy.id);
     this.saveSong();
+    this.guideEvent("makeUnique");
     this.showMessage("Unique clip", copy.name);
   }
 
@@ -1389,6 +1428,7 @@ export class Playground {
       this.syncLaunch(t.id);
     }
     this.saveSong();
+    this.guideEvent("backToArrangement");
   }
 
   // ------------------------------------------------------------------ recording into clips
@@ -1498,6 +1538,7 @@ export class Playground {
 
   /** No take any more: the record light, the metronome and the screen. */
   private endTakeState() {
+    if (this.take) this.guideEvent("take");
     for (const id of [...this.autoTouch.keys()]) this.letGo(id);
     // A looper take arms its track only while it records.
     if (this.takeRun?.loop && this.armedTrack === this.take?.track) this.armedTrack = null;
@@ -2123,9 +2164,11 @@ export class Playground {
 
   undoSong() {
     this.songStep("undo");
+    this.guideEvent("undo");
   }
   redoSong() {
     this.songStep("redo");
+    this.guideEvent("redo");
   }
 
   private songStep(way: "undo" | "redo") {
@@ -2219,8 +2262,9 @@ export class Playground {
     const wasOnTrack = isTrackPart(this.part);
     if (this.songTracks.length) this.closeSong();
     // A song from a link, never saved, is let go of: the address no longer opens it.
-    if (this.linkSong) clearLinkHash();
+    if (this.linkSong && !this.practiceSong) clearLinkHash();
     this.linkSong = false;
+    this.practiceSong = false;
     this.linkEdited = false;
     this.songId = doc.id;
     this.songName = doc.name;
@@ -2470,6 +2514,7 @@ export class Playground {
 
   /** The open song as a file (JSON, with its custom tables). */
   exportSong(): string {
+    this.guideEvent("songFile");
     const { doc, defs } = this.currentDoc();
     return songFile(doc, defs.map(toStored));
   }
@@ -2536,13 +2581,18 @@ export class Playground {
 
   /** Leaving a changed song from a link loses it: ask first. */
   private mayLeaveLinkSong(): boolean {
-    return !this.linkSong || !this.linkEdited || confirm("The song from the link isn't among your songs, and your changes to it would be lost. Open another song anyway?");
+    // A lesson's practice song is for trying things: it goes without asking.
+    return !this.linkSong || this.practiceSong || !this.linkEdited || confirm("The song from the link isn't among your songs, and your changes to it would be lost. Open another song anyway?");
   }
 
   /** Keep the song from a link among yours (from now on it is saved as you work). */
   saveLinkedSong() {
     if (!this.linkSong) return;
     this.linkSong = false;
+    // A kept practice song is yours now: closing its lesson leaves it open.
+    if (this.practiceSong) this.beforeLesson = null;
+    this.practiceSong = false;
+    this.guideEvent("saved");
     this.linkEdited = false;
     this.songName = uniqueSongName(this.songName, this.songs.map((s) => s.name));
     rememberOpen(this.songId);
@@ -2560,7 +2610,9 @@ export class Playground {
       const names = defs.map((d) => `"${d.name}"`).join(", ");
       throw new Error(`This song plays your own wavetable${defs.length === 1 ? "" : "s"} (${names}), too big for a link. Share the song file instead (Export).`);
     }
-    return linkUrl(await songLink(doc));
+    const url = linkUrl(await songLink(doc));
+    this.guideEvent("link");
+    return url;
   }
 
   /** A link to the sound you are editing, changes and all. Throws, in words, when it plays a custom wavetable. */
@@ -2570,6 +2622,94 @@ export class Playground {
       throw new Error(`This sound plays your own wavetable "${WAVETABLES[values.wtTable]?.name}", too big for a link.`);
     }
     return linkUrl(await soundLink($state.snapshot(this.preset) as Preset, values, this.dirty));
+  }
+
+  // ------------------------------------------------------------------ "Make a song" lessons
+
+  /** Count something a lesson can ask for. */
+  guideEvent(e: GuideEvent) {
+    this.guideCount[e] = (this.guideCount[e] ?? 0) + 1;
+  }
+
+  /** What a lesson's checks see: the song and the app, now. */
+  guideState(): GuideState {
+    const sounds: GuideState["sounds"] = {};
+    const launched: GuideState["launched"] = {};
+    for (const t of this.songTracks) {
+      const p = this.parts[t.id];
+      if (t.kind === "synth" && p) sounds[t.id] = { preset: p.preset.id, dirty: p.dirty, reverb: p.values.reverbMix, delay: p.values.delayMix, cutoff: p.values.cutoff };
+      // What the launcher plays on the track: the clip waiting for the next bar counts already.
+      const st = this.clipLaunch[t.id];
+      launched[t.id] = st ? (st.next !== undefined ? st.next : st.clip) : null;
+    }
+    return {
+      view: this.view,
+      playing: this.playing,
+      tempo: this.bpm,
+      songName: this.songName,
+      practice: this.practiceSong,
+      tracks: this.songTracks,
+      sounds,
+      selectedTrack: this.selectedSongTrack,
+      clips: this.songClips,
+      launched,
+      selectedClip: this.selectedClip,
+      editClip: this.editClipId,
+      placements: this.placements,
+      start: this.songStart,
+      loop: this.loopRange,
+      loopOn: this.loopOn,
+      follow: this.follow,
+      armed: this.armedTrack,
+      recording: !!this.take,
+      rec: { countIn: this.rec.countIn, metronome: this.rec.metronome, mode: this.rec.mode, quantize: this.rec.quantize },
+      scaleOn: this.scale.scale !== "off",
+      arpOn: this.arp.on,
+      grid: this.rollGrid,
+      snap: this.rollSnap,
+      browserOpen: this.browserOpen,
+      count: this.guideCount,
+    };
+  }
+
+  /**
+   * Open lesson i in the Song view: with its practice song (like a song from a link: not among yours unless
+   * you keep it), or, for the final project, your own song for it (a new one the first time).
+   */
+  async openSongLesson(i: number) {
+    const lesson = SONG_LESSONS[i];
+    if (!lesson || !this.mayLeaveLinkSong()) return;
+    if (this.view !== "song") this.setView("song");
+    if (!this.linkSong) this.beforeLesson = this.songId || null;
+    this.saveSongNow();
+    if (lesson.practice) {
+      this.openDoc(this.newDoc(lesson.practice()), [], false);
+      // Not saved: the song open before it opens next time.
+      if (this.beforeLesson) rememberOpen(this.beforeLesson);
+      this.linkSong = true;
+      this.practiceSong = true;
+    } else {
+      const mine = this.songGuide.project?.song;
+      if (mine && this.songs.some((s) => s.id === mine)) {
+        if (mine !== this.songId) await this.openSong(mine);
+      } else {
+        const { id: _, modified: __, ...empty } = emptySong("My first song");
+        this.openDoc(this.newDoc(empty), []);
+        this.saveSongNow();
+      }
+      this.songGuide.setProject(this.songId);
+    }
+    this.songGuide.start(i);
+  }
+
+  /** Close the lesson. A practice song not kept goes, and the song open before it comes back. */
+  closeSongLesson() {
+    this.songGuide.close();
+    if (!this.practiceSong) return;
+    const back = this.beforeLesson ?? this.songs[0]?.id;
+    this.beforeLesson = null;
+    if (back) void this.openSong(back);
+    else this.newSong();
   }
 
   // ------------------------------------------------------------------ WAV export, and recording the output
@@ -2628,7 +2768,9 @@ export class Playground {
         (progress) => this.exporting && (this.exporting = { progress }),
         abort.signal,
       );
-      return { wav: encodeWav(channels, sampleRate, this.wavSettings.bits), seconds: channels[0].length / sampleRate };
+      const wav = encodeWav(channels, sampleRate, this.wavSettings.bits);
+      this.guideEvent("wav");
+      return { wav, seconds: channels[0].length / sampleRate };
     } finally {
       this.exporting = null;
       this.exportAbort = null;
@@ -2700,6 +2842,7 @@ export class Playground {
     const rate = this.engine.ctx.sampleRate;
     this.outputRec = null;
     this.recordedWav = { wav: encodeWav([join(rec.left), join(rec.right)], rate, this.wavSettings.bits), seconds: rec.frames / rate, at: new Date(), saved: false };
+    this.guideEvent("recordOut");
     this.showMessage("Recording", "stopped: save it");
   }
 
@@ -3045,6 +3188,7 @@ export class Playground {
   // ------------------------------------------------------------------ playing
 
   noteOn(note: number, velocity: number) {
+    this.guideEvent("note");
     if (this.loopReady && !this.take) this.startLoopTake();
     if (this.keysToDrums) return this.drumKey(note, velocity, true);
     if (this.seqEdit && this.heldStep !== null) {

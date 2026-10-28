@@ -534,7 +534,7 @@
       <button onclick={() => { fit(); dirty = true; }} title="Show the whole song">Fit</button>
     </span>
     {#if pg.launcherTracks.length}
-      <button class="back" onclick={() => pg.backToArrangement()} title="Stop the clips playing from the launcher: their tracks play the arrangement again (from the next bar while playing)">
+      <button class="back" data-guide="back-arr" onclick={() => pg.backToArrangement()} title="Stop the clips playing from the launcher: their tracks play the arrangement again (from the next bar while playing)">
         Back to arrangement ({pg.launcherTracks.length})
       </button>
     {/if}
@@ -545,6 +545,7 @@
     use:surface={painter}
     style:height="{height}px"
     class:read-only={readOnly}
+    data-guide="timeline"
     tabindex="0"
     aria-label="Arrangement: {pg.placements.length} placements over {songEnd(pg.placements)} bars"
     onpointerdown={down}
@@ -570,7 +571,7 @@
       <span class="dim">{selTrack.name} · bars {sel.bar + 1}–{placementEnd(sel)}{sel.bars > selClip.bars ? ` · plays ${Math.ceil(sel.bars / selClip.bars)}×` : ""}</span>
       {#if selUses > 1}<span class="linked" title="Every placement of this clip plays the same notes: change the clip once and they all change">∞ linked: {selUses} places</span>{/if}
       {#if selClip.kind !== "drums"}
-        <span class="group" role="group" aria-label="Transpose" title="Move this placement's notes up or down (the clip itself stays as it is)">
+        <span class="group" data-guide="place-transpose" role="group" aria-label="Transpose" title="Move this placement's notes up or down (the clip itself stays as it is)">
           Transpose
           <button onclick={() => pg.transposePlacement(sel.id, sel.transpose - 1)} aria-label="Down a semitone">−</button>
           <span class="val">{sel.transpose > 0 ? "+" : ""}{sel.transpose}</span>
@@ -578,8 +579,8 @@
         </span>
       {/if}
       <span class="push"></span>
-      <button onclick={() => pg.makeUnique(sel.id)} disabled={selUses < 2} title="Give this placement its own copy of the clip, to change it without changing the others">Make unique</button>
-      <button onclick={() => pg.duplicatePlacement(sel.id)} title="A linked copy right after it (Ctrl+D)">Copy after</button>
+      <button data-guide="make-unique" onclick={() => pg.makeUnique(sel.id)} disabled={selUses < 2} title="Give this placement its own copy of the clip, to change it without changing the others">Make unique</button>
+      <button data-guide="copy-after" onclick={() => pg.duplicatePlacement(sel.id)} title="A linked copy right after it (Ctrl+D)">Copy after</button>
       <button class="danger" onclick={() => pg.removePlacement(sel.id)} title="Take it off the timeline (the clip stays in the track's list)">Remove</button>
     </div>
   {/if}

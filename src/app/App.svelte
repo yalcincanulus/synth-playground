@@ -28,6 +28,7 @@
   import Marquee from "./components/Marquee.svelte";
   import { trackCss } from "./song/trackColor";
   import { narrow, touch } from "./media.svelte";
+  import GuidePanel from "./songGuide/GuidePanel.svelte";
 
   const pg = new Playground();
   if (import.meta.env.DEV) Object.assign(window, { pg });
@@ -73,6 +74,8 @@
   let menuOpen = $state(false);
   // Learn on a phone: the page's controls and the keyboard sit in a dock along the bottom.
   let docked = $derived(pg.view === "course" && narrow.current);
+  /** A "Make a song" lesson is open: its guide sits beside the view (any view but Learn and About, so a step can send you to Play or Synth). */
+  let guided = $derived(pg.songGuide.index !== null && pg.view !== "course" && pg.view !== "about");
   function closeChanges(e: MouseEvent) {
     if (menuOpen && !(e.target instanceof Element && e.target.closest(".more, .extras"))) menuOpen = false;
     if (showChanges && !(e.target instanceof Element && e.target.closest(".changes-wrap"))) showChanges = false;
@@ -151,10 +154,10 @@
   <header class="top">
     <h1>Synth <span>Playground</span></h1>
     <nav class="views" aria-label="View">
-      <button data-label="Play" class:active={pg.view === "playground"} onclick={() => pg.setView("playground")} title="Play: the preset's main controls, the pads, drums and step sequencer{pg.hw(' (Shift + encoder)')}">Play</button>
-      <button data-label="Synth" class:active={pg.view === "synth"} onclick={() => pg.setView("synth")} title="The whole synth as blocks: see and change every part of the sound{pg.hw(' (Shift + encoder)')}">Synth</button>
+      <button data-label="Play" data-guide="view-play" class:active={pg.view === "playground"} onclick={() => pg.setView("playground")} title="Play: the preset's main controls, the pads, drums and step sequencer{pg.hw(' (Shift + encoder)')}">Play</button>
+      <button data-label="Synth" data-guide="view-synth" class:active={pg.view === "synth"} onclick={() => pg.setView("synth")} title="The whole synth as blocks: see and change every part of the sound{pg.hw(' (Shift + encoder)')}">Synth</button>
       <button data-label="Wavetable" class:active={pg.view === "wavetable"} onclick={() => pg.setView("wavetable")} title="Pick, import and draw wavetables{pg.hw(' (Shift + encoder)')}">Wavetable</button>
-      <button data-label="Song" class:active={pg.view === "song"} onclick={() => pg.setView("song")} title="Tracks, each with a sound of its own, and their mix{pg.hw(' (Shift + encoder)')}">Song</button>
+      <button data-label="Song" data-guide="view-song" class:active={pg.view === "song"} onclick={() => pg.setView("song")} title="Tracks, each with a sound of its own, and their mix{pg.hw(' (Shift + encoder)')}. Experimental: still being worked on">Song<svg class="experimental" viewBox="0 0 12 12" aria-label="experimental"><path d="M4.5 1h3M5 1v3.5L2 10a1 1 0 0 0 .9 1.5h6.2A1 1 0 0 0 10 10L7 4.5V1M3.4 7.5h5.2" /></svg></button>
       <button data-label="Learn" class:active={pg.view === "course"} onclick={() => pg.setView("course")} title="The course: how sound and synths work, one idea per page, with only the controls each page needs">Learn</button>
     </nav>
     <!-- On a narrow screen the rest of the row folds into a menu; on a wide one the wrapper takes no space of its own. -->
@@ -274,9 +277,9 @@
     </div>
 
     <div class="group transport" role="group" aria-label="Transport">
-      <button class:active={pg.playing} onclick={() => pg.togglePlay()} title="Play / stop the drums and the step sequencer{pg.hw(' (Shift + ▶)')}">{pg.playing ? "■" : "▶"}</button>
+      <button class:active={pg.playing} data-guide="play" onclick={() => pg.togglePlay()} title="Play / stop the drums and the step sequencer{pg.hw(' (Shift + ▶)')}">{pg.playing ? "■" : "▶"}</button>
       <button class="rec" class:active={pg.recording} onclick={() => pg.toggleRecord()} title="{pg.view === 'song' || pg.editClip?.kind === 'drums' ? 'Record into a clip' : 'Record pads into the drum loop'}{pg.hw(' (Shift + ●)')}">●</button>
-      <label class="bpm" title={pg.hw("Shift + knobs 2–8 on the MiniLab") || undefined}>
+      <label class="bpm" data-guide="tempo" title={pg.hw("Shift + knobs 2–8 on the MiniLab") || undefined}>
         <input type="number" min="40" max="240" value={pg.bpm} onchange={(e) => pg.setBpm(+e.currentTarget.value)} />
         BPM
       </label>
@@ -296,6 +299,8 @@
   </section>
   {/if}
 
+  <div class="main" class:guided>
+  <div class="view">
   {#if pg.view === "playground"}
     <div class="play">
       <section class="surface panel" aria-label={pg.hasDevice ? "The MiniLab's knobs and faders" : "The preset's main controls"}>
@@ -374,10 +379,10 @@
     <section class="rhythm">
       <div class="rhythm-bar">
         <div class="seg" role="tablist" aria-label="Rhythm">
-          <button role="tab" aria-selected={rhythm === "seq"} class:active={rhythm === "seq"} onclick={() => (rhythm = "seq")}>
+          <button role="tab" aria-selected={rhythm === "seq"} class:active={rhythm === "seq"} data-guide={rhythm === "seq" ? undefined : "send-steps"} onclick={() => (rhythm = "seq")}>
             Step sequencer <i class="dot" class:on={pg.ownNoteSeq.enabled}></i>
           </button>
-          <button role="tab" aria-selected={rhythm === "drums"} class:active={rhythm === "drums"} onclick={() => (rhythm = "drums")}>
+          <button role="tab" aria-selected={rhythm === "drums"} class:active={rhythm === "drums"} data-guide={rhythm === "drums" ? undefined : "send-drums drum-grid"} onclick={() => (rhythm = "drums")}>
             Drums <i class="dot" class:on={pg.drumsOn}></i>
           </button>
         </div>
@@ -395,7 +400,7 @@
               {/each}
             </span>
           {/if}
-          <button class="clip-back" onclick={() => pg.endClipEdit()} title="The drum loop and the step sequencer edit their own patterns again">Back to my pattern</button>
+          <button class="clip-back" data-guide="back-to-pattern" onclick={() => pg.endClipEdit()} title="The drum loop and the step sequencer edit their own patterns again">Back to my pattern</button>
         </div>
       {/if}
 
@@ -466,10 +471,11 @@
                 <button class:active={pg.drumsOn} onclick={() => pg.setDrumsOn(!pg.drumsOn)} title="Mute the drum loop (the sequencer keeps playing)">
                   {pg.drumsOn ? "On" : "Off"}
                 </button>
-                <button class="send" onclick={() => pg.sendDrumsToSong()} title="Copy the drum loop into a new clip on the song's drum track">Send to song</button>
+                <button class="send" data-guide="send-drums" onclick={() => pg.sendDrumsToSong()} title="Copy the drum loop into a new clip on the song's drum track">Send to song</button>
               {/if}
               <button class="clear" onclick={() => pg.clearPattern()} title="{clip ? 'Clear this bar of the clip' : 'Clear the drum loop'}{pg.hw(' (Shift + ⟲)')}">Clear</button>
             </div>
+            <div class="grid-wrap" data-guide="drum-grid">
             <SeqGrid
               pattern={pg.pattern}
               getStep={() => pg.gridStep()}
@@ -478,6 +484,7 @@
               ontoggle={(t, s) => pg.toggleStep(t, s)}
               onselect={(t) => pg.selectTrack(t)}
             />
+            </div>
           </div>
         </div>
       {:else}
@@ -495,11 +502,14 @@
   {:else}
     <AboutPage {pg} />
   {/if}
+  </div>
+  {#if guided}<GuidePanel {pg} />{/if}
+  </div>
 
   <!-- Learn on a phone: the page's controls and the keyboard stay along the bottom of the screen while the page scrolls. -->
   <div class="dock" class:docked>
   {#if docked}<CourseControls {pg} docked />{/if}
-  <section class="panel keys" class:folded={!keysOpen}>
+  <section class="panel keys" class:folded={!keysOpen} data-guide="keys">
     <div class="keys-head">
       {#if !docked}<ChordDisplay {pg} />{/if}
       {#if pg.view !== "course"}
@@ -553,6 +563,13 @@
 <style>
   /* One column that may be narrower than its content: rows like the sound bar then shrink to the window instead of widening the page. */
   .app { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 8px 16px 12px; max-width: 1400px; margin: 0 auto; }
+  /* The view, and a lesson's guide beside it (under it below 1100 px). */
+  .app:has(.main.guided) { max-width: 1740px; }
+  .main, .view { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; min-width: 0; }
+  .main.guided { grid-template-columns: minmax(0, 1fr) 330px; gap: 12px; align-items: start; }
+  @media (max-width: 1100px) {
+    .main.guided { grid-template-columns: minmax(0, 1fr); }
+  }
   .hint { color: var(--dim); font-size: 12px; }
   .shifted { color: var(--accent); }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
@@ -571,6 +588,10 @@
   .views button { display: inline-grid; justify-items: center; }
   .views button::after { content: attr(data-label); font-weight: 600; height: 0; visibility: hidden; overflow: hidden; }
   .views button:hover { color: var(--text); }
+  /* A flask in the corner: the Song view is still experimental. Out of the flow, so the label stays centred. */
+  .views button:has(.experimental) { position: relative; }
+  .experimental { position: absolute; top: 2px; right: 2px; width: 10px; height: 10px; fill: none; stroke: #ffb15c; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+  .views .active .experimental { stroke: #0b1314; }
   .views .active, .views .active:hover { background: var(--accent); color: #0b1314; font-weight: 600; }
   .recipes-link { border-color: color-mix(in srgb, var(--accent) 50%, transparent); color: var(--accent); font-size: 13px; padding: 4px 12px; }
   .recipes-link.active { background: color-mix(in srgb, var(--accent) 18%, transparent); }
@@ -771,6 +792,7 @@
     h1 { font-size: 15px; }
     .views { flex: 1 1 auto; min-width: 0; }
     .views button { flex: 1 1 auto; padding: 6px 8px; }
+    .views button:has(.experimental) { padding-right: 14px; }
     .more { display: block; flex: none; font-size: 18px; line-height: 1; padding: 5px 12px; }
     .more.open { border-color: var(--accent); color: var(--accent); }
     .extras { display: none; }
@@ -798,6 +820,7 @@
   /* Five views beside ⋯ on the smallest phones. */
   @media (max-width: 400px) {
     .views button { padding: 6px 4px; font-size: 12.5px; }
+    .views button:has(.experimental) { padding-right: 14px; }
   }
 
   /* Touch screens: fingers need bigger targets than a mouse. */

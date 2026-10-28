@@ -59,11 +59,9 @@
   /** On a phone the piano roll shows the notes and plays its keys, but doesn't edit. */
   let readOnly = $derived(narrow.current);
 
-  let gridIdx = $state(2); // 1/16
-  let snapOn = $state(true);
   let strength = $state(1);
   let tall = $state(false);
-  let grid = $derived(GRIDS[gridIdx].ticks);
+  let grid = $derived(GRIDS[pg.rollGrid].ticks);
 
   // The view: zoom (pixels a beat, pixels a row) and scroll (pixels from the clip's start, from the top row).
   let pxPerBeat = $state(80);
@@ -174,7 +172,7 @@
     draft = null;
   }
 
-  const canSnap = (alt: boolean) => snapOn && !alt;
+  const canSnap = (alt: boolean) => pg.rollSnap && !alt;
   const scaleOn = () => pg.scale.scale !== "off";
 
   // ------------------------------------------------------------------ drawing
@@ -797,14 +795,15 @@
 <div class="roll" class:tall style:--track={color}>
   <div class="tools" role="toolbar" aria-label="Piano roll">
     {#if !readOnly}
-      <label title="Notes snap to this grid when drawn, moved or lengthened (hold Alt to place them freely)">
+      <label data-guide="grid" title="Notes snap to this grid when drawn, moved or lengthened (hold Alt to place them freely)">
         Grid
-        <select bind:value={gridIdx}>
+        <select bind:value={pg.rollGrid}>
           {#each GRIDS as gr, i (gr.name)}<option value={i}>{gr.name}</option>{/each}
         </select>
       </label>
-      <button class:active={snapOn} aria-pressed={snapOn} onclick={() => (snapOn = !snapOn)} title="Snap to the grid (Alt while dragging: off for that drag)">Snap</button>
+      <button class:active={pg.rollSnap} aria-pressed={pg.rollSnap} onclick={() => (pg.rollSnap = !pg.rollSnap)} title="Snap to the grid (Alt while dragging: off for that drag)">Snap</button>
       <span class="sep"></span>
+      <span class="tool-set" data-guide="roll-tools">
       <span class="group" title="Pull {toolTarget}'s starts to the grid, all the way or part of the way">
         <button onclick={() => tool("quantize")}>Quantize</button>
         <select bind:value={strength} aria-label="Quantize strength">
@@ -820,6 +819,7 @@
       <button onclick={() => tool("legato")} title="Hold each of {toolTarget} until the next note starts">Legato</button>
       <button onclick={() => tool("reverse")} title="Play {toolTarget} backwards">Reverse</button>
       <button onclick={() => tool("double")} disabled={clip.bars * 2 > MAX_BARS.notes} title="Make the clip twice as long, its notes played twice">Double</button>
+      </span>
       <span class="sep"></span>
     {/if}
     <span class="group" role="group" aria-label="Zoom">
@@ -836,6 +836,7 @@
     bind:this={canvas}
     use:surface={painter}
     class:read-only={readOnly}
+    data-guide="roll"
     tabindex="0"
     aria-label="Piano roll of {clip.name}: {clip.notes.length} notes"
     onpointerdown={down}
@@ -850,7 +851,7 @@
     oncontextmenu={(e) => e.preventDefault()}
     onkeydown={key}
   ></canvas>
-  <AutomationLane {pg} {clip} {color} left={KEYS_W} {pxPerBeat} {scrollX} {grid} {snapOn} {readOnly} />
+  <AutomationLane {pg} {clip} {color} left={KEYS_W} {pxPerBeat} {scrollX} {grid} snapOn={pg.rollSnap} {readOnly} />
   {#if readOnly}
     <p class="hint">On a phone the piano roll shows the notes. Edit them on a bigger screen.</p>
   {:else if pg.explain}
@@ -872,6 +873,7 @@
 <style>
   .roll { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
   .tools { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12px; }
+  .tool-set { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; border-radius: 4px; }
   .tools label { display: flex; align-items: center; gap: 4px; color: var(--dim); }
   .tools button { font-size: 12px; padding: 2px 8px; }
   .tools select { font-size: 12px; padding: 2px 4px; }

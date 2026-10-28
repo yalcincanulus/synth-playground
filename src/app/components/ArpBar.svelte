@@ -20,7 +20,7 @@
   const blur = (e: Event) => (e.currentTarget as HTMLElement).blur();
 </script>
 
-<div class="arp">
+<div class="arp" data-guide="arp">
   <Switch on={a.on} label="Arp" title="Arpeggiator: hold notes or a chord and it plays them one at a time, in time with the drums.{pg.hw(' On the MiniLab: Shift + fader 1')}" onchange={() => pg.setArp({ on: !a.on })} />
 
   {#if a.on}

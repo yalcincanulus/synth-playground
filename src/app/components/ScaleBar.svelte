@@ -24,7 +24,7 @@
   const blur = (e: Event) => (e.currentTarget as HTMLElement).blur();
 </script>
 
-<div class="scale" class:on>
+<div class="scale" class:on data-guide="scale">
   <Switch {on} label="Scale lock" title="Every key you press moves to the nearest note of the scale, so nothing sounds wrong" onchange={() => pg.toggleScaleLock()} />
 
   {#if on}

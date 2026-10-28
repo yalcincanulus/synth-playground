@@ -319,7 +319,7 @@
   }
 </script>
 
-<div class="lane" style:--track={color}>
+<div class="lane" style:--track={color} data-guide="auto-lane">
   <div class="tools" role="toolbar" aria-label="Automation">
     <label title="The setting this lane moves while the clip plays. A dot marks the ones that have a line.">
       Automation

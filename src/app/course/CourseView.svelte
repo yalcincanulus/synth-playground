@@ -14,6 +14,8 @@
   import CourseContents from "./CourseContents.svelte";
   import CourseGlossary from "./CourseGlossary.svelte";
   import LessonWidget from "./LessonWidget.svelte";
+  import SongLessons from "../songGuide/SongLessons.svelte";
+  import { SONG_LESSONS } from "../../course/song/lessons";
 
   let { pg, accent }: { pg: Playground; accent: string } = $props();
 
@@ -57,7 +59,7 @@
     });
   });
 
-  const togglePanel = (panel: "contents" | "glossary") => (course.panel = course.panel === panel ? null : panel);
+  const togglePanel = (panel: "contents" | "glossary" | "song") => (course.panel = course.panel === panel ? null : panel);
   const pageNumber = (id: string) => PAGES.findIndex((p) => p.lesson.id === id);
   /** Where step i stands: done, being done now, or still to come. */
   const stepState = (i: number) => (!run ? "todo" : run.done || i < run.index ? "done" : i === run.index ? "now" : "todo");
@@ -83,6 +85,9 @@
       <button class:on={course.panel === "contents"} aria-pressed={course.panel === "contents"} onclick={() => togglePanel("contents")}>
         Contents <span class="count">{course.done.length}/{course.total}</span>
       </button>
+      <button class:on={course.panel === "song"} aria-pressed={course.panel === "song"} onclick={() => togglePanel("song")} title="Lessons on making a song in the Song view, from the very beginning">
+        Make a song <span class="count">{pg.songGuide.done.length}/{SONG_LESSONS.length}</span>
+      </button>
       <button class:on={course.panel === "glossary"} aria-pressed={course.panel === "glossary"} onclick={() => togglePanel("glossary")}>Glossary</button>
       <span class="gap"></span>
       <button onclick={() => course.goTo(course.index - 1)} disabled={course.index === 0}>← Back</button>
@@ -92,8 +97,14 @@
 
   {#if course.panel === "contents"}
     <CourseContents {pg} />
+  {:else if course.panel === "song"}
+    <section class="song-part">
+      <h3>Make a song</h3>
+      <p class="song-about">The chapters teach sound. These lessons teach putting sounds together into music, in the Song view: beats and bars, clips, the piano roll, recording, arranging, mixing and exporting. They open beside the Song view.</p>
+      <SongLessons {pg} />
+    </section>
   {:else if course.panel === "glossary"}
-    <CourseGlossary {course} />
+    <CourseGlossary {course} openLesson={(i) => pg.openSongLesson(i)} />
   {:else}
   <div class="layout">
     <article class="page">
@@ -230,6 +241,9 @@
   .count { font: 11px var(--mono); color: var(--dim); margin-left: 4px; }
   .nav button:disabled { opacity: 0.35; cursor: default; }
 
+  .song-part { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; display: grid; gap: 8px; }
+  .song-part h3 { margin: 0; font-size: 18px; color: var(--accent); }
+  .song-about { margin: 0; font-size: 13.5px; color: #cfd8da; max-width: 90ch; }
   .layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 14px; align-items: start; }
   .page { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 18px; }
   h3 { margin: 0 0 8px; font-size: 20px; display: flex; align-items: center; gap: 10px; }

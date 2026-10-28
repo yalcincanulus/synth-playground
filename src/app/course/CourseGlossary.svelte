@@ -3,8 +3,13 @@
   import { PAGES } from "../../course/course";
   import { GLOSSARY_AZ, introducedOn } from "../../course/glossary";
   import type { Course } from "./course.svelte";
+  import { SONG_GLOSSARY, songTermLesson } from "../../course/song/glossary";
+  import { SONG_LESSONS } from "../../course/song/lessons";
 
-  let { course }: { course: Course } = $props();
+  let { course, openLesson }: { course: Course; openLesson: (i: number) => void } = $props();
+
+  /** "Make a song"'s words, A–Z. */
+  const songWords = [...SONG_GLOSSARY].sort((a, b) => a.term.localeCompare(b.term));
 
   /** The terms grouped by first letter. */
   const letters = [...new Set(GLOSSARY_AZ.map((t) => t.term[0].toUpperCase()))].map((letter) => ({
@@ -29,10 +34,22 @@
       </div>
     {/each}
   </div>
+  <h3>Making songs</h3>
+  <p class="intro">The words of the "Make a song" lessons.</p>
+  <dl class="letters">
+    {#each songWords as t (t.term)}
+      {@const at = songTermLesson(t)}
+      <div class="group">
+        <dt>{t.term}</dt>
+        <dd>{t.text} <button class="link" onclick={() => openLesson(at)}>{SONG_LESSONS[at].title}</button></dd>
+      </div>
+    {/each}
+  </dl>
 </section>
 
 <style>
   .glossary { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; }
+  h3 { margin: 16px 0 2px; font-size: 15px; color: var(--accent); }
   .intro { margin: 0 0 10px; font-size: 13px; color: var(--dim); }
   .letters { column-width: 300px; column-gap: 28px; }
   .group { break-inside: avoid; margin-bottom: 10px; }

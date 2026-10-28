@@ -1,6 +1,6 @@
 // The factory songs: three short pieces on the Classics presets, so the Song view isn't empty the first time
 // and shows what its clips and arrangement can do. Each is opened as a copy among your songs. The tunes are
-// written for this app.
+// written for this app. The helpers that build them build the course's practice songs too.
 
 import { emptyPattern, type Pattern } from "../audio/sequencer";
 import { defaultNoteSeq, type NoteSeqSettings } from "../audio/stepSequencer";
@@ -11,29 +11,29 @@ import { DRUM_TRACK_ID, defaultTracks, type Track } from "./song";
 import { readSongDoc, type SongDoc, type SongSound } from "./songDoc";
 
 // The drums' rows (DRUM_NAMES).
-const KICK = 0;
-const SNARE = 1;
-const CLAP = 2;
-const HAT = 3;
-const OPEN_HAT = 4;
-const TOM_LO = 5;
-const TOM_HI = 6;
+export const KICK = 0;
+export const SNARE = 1;
+export const CLAP = 2;
+export const HAT = 3;
+export const OPEN_HAT = 4;
+export const TOM_LO = 5;
+export const TOM_HI = 6;
 
 /** A drum bar: each drum's steps (0..15), at one velocity or one a step. */
-function beat(hits: [drum: number, steps: number[], velocity: number | number[]][]): Pattern {
+export function beat(hits: [drum: number, steps: number[], velocity: number | number[]][]): Pattern {
   const p = emptyPattern();
   for (const [drum, steps, velocity] of hits) steps.forEach((s, i) => (p[drum][s] = Array.isArray(velocity) ? velocity[i] : velocity));
   return p;
 }
 
 /** Notes from [beat, length in beats, pitch, velocity?]; `bar` moves them along by whole bars. */
-const notes = (list: [number, number, number, number?][], bar = 0): Note[] =>
+export const notes = (list: [number, number, number, number?][], bar = 0): Note[] =>
   list.map(([b, len, pitch, velocity = 100]) => ({ start: Math.round((bar * 4 + b) * TICKS_PER_BEAT), length: Math.round(len * TICKS_PER_BEAT), pitch, velocity }));
 
 /** A chord held from a beat for some beats. */
-const chord = (b: number, len: number, pitches: number[], velocity = 80): [number, number, number, number][] => pitches.map((p) => [b, len, p, velocity]);
+export const chord = (b: number, len: number, pitches: number[], velocity = 80): [number, number, number, number][] => pitches.map((p) => [b, len, p, velocity]);
 
-const synth = (id: string, name: string, color: number): Track => ({ ...defaultTracks()[0], id, kind: "synth", name, color });
+export const synth = (id: string, name: string, color: number): Track => ({ ...defaultTracks()[0], id, kind: "synth", name, color });
 
 function sound(preset: string): SongSound {
   const p = FACTORY_PRESETS.find((x) => x.id === factoryId(preset));
@@ -41,14 +41,14 @@ function sound(preset: string): SongSound {
   return { preset: p, values: presetValues(p), dirty: false };
 }
 
-const noteClip = (id: string, track: string, name: string, bars: number, list: Note[]): Clip => ({ id, track, name, bars, kind: "notes", notes: cleanNotes(list, bars) });
-const drumClip = (id: string, name: string, patterns: Pattern[]): Clip => ({ id, track: DRUM_TRACK_ID, name, bars: patterns.length, kind: "drums", patterns });
-const stepClip = (id: string, track: string, name: string, seq: Partial<NoteSeqSettings>): Clip => ({ id, track, name, bars: 1, kind: "steps", seq: { ...defaultNoteSeq(), ...seq, enabled: true } });
+export const noteClip = (id: string, track: string, name: string, bars: number, list: Note[]): Clip => ({ id, track, name, bars, kind: "notes", notes: cleanNotes(list, bars) });
+export const drumClip = (id: string, name: string, patterns: Pattern[]): Clip => ({ id, track: DRUM_TRACK_ID, name, bars: patterns.length, kind: "drums", patterns });
+export const stepClip = (id: string, track: string, name: string, seq: Partial<NoteSeqSettings>): Clip => ({ id, track, name, bars: 1, kind: "steps", seq: { ...defaultNoteSeq(), ...seq, enabled: true } });
 
 let placeN = 0;
-const place = (clip: string, bar: number, bars: number, transpose = 0): Placement => ({ id: `place-${++placeN}`, clip, bar, bars, transpose });
+export const place = (clip: string, bar: number, bars: number, transpose = 0): Placement => ({ id: `place-${++placeN}`, clip, bar, bars, transpose });
 
-function song(name: string, tempo: number, tracks: Track[], sounds: Record<string, string>, clips: Clip[], placements: Placement[]): Omit<SongDoc, "id" | "modified"> {
+export function song(name: string, tempo: number, tracks: Track[], sounds: Record<string, string>, clips: Clip[], placements: Placement[]): Omit<SongDoc, "id" | "modified"> {
   const doc = readSongDoc({
     name,
     tempo,

@@ -14,6 +14,8 @@
   import Arrangement, { clipDrag } from "./Arrangement.svelte";
   import PianoRoll from "./PianoRoll.svelte";
   import { trackCss as css } from "./trackColor";
+  import { guideKey } from "../../course/song/guide";
+  import SongLessons from "../songGuide/SongLessons.svelte";
 
   interface Props {
     pg: Playground;
@@ -151,6 +153,7 @@
   // ------------------------------------------------------------------ songs
 
   let songList = $state(false);
+  let lessonList = $state(false);
   let songFileInput: HTMLInputElement;
   let songMessage = $state<{ ok: boolean; text: string } | null>(null);
 
@@ -257,26 +260,32 @@
 
 <section class="song panel" aria-label="Song">
   <div class="song-bar" role="group" aria-label="The song">
-    <input class="song-name" value={pg.songName} maxlength="32" aria-label="Song name" title="The song's name (it is saved as you work)" onchange={(e) => renameSong(e.currentTarget)} />
+    <input class="song-name" data-guide="song-name" value={pg.songName} maxlength="32" aria-label="Song name" title="The song's name (it is saved as you work)" onchange={(e) => renameSong(e.currentTarget)} />
     <button onclick={() => (songList = !songList)} aria-expanded={songList} title="Your songs, and the example songs">Songs {songList ? "▴" : "▾"}</button>
     <button onclick={() => pg.newSong()} title="A new, empty song (this one stays saved)">New</button>
     {#if pg.linkSong}
-      <button class="go" onclick={() => pg.saveLinkedSong()} title="Keep this song among yours: from then on it is saved as you work">Save to my songs</button>
+      <button class="go" data-guide="save-song" onclick={() => pg.saveLinkedSong()} title="Keep this song among yours: from then on it is saved as you work">Save to my songs</button>
     {:else}
       <button onclick={() => pg.duplicateSong()} title="Keep this song as it is, and go on in a copy">Duplicate</button>
     {/if}
-    <button onclick={exportSong} title="Save the song as a file, with its sounds and wavetables, to keep or open on another computer">Export</button>
-    <button onclick={copyLink} title="Copy a link that opens this song in any browser (nothing is uploaded: the song is in the link)">Copy link</button>
-    <button onclick={() => (wavPanel = !wavPanel)} aria-expanded={wavPanel} title="Make an audio file of the song, or record what you hear">WAV {wavPanel ? "▴" : "▾"}</button>
+    <button onclick={exportSong} data-guide="song-export" title="Save the song as a file, with its sounds and wavetables, to keep or open on another computer">Export</button>
+    <button onclick={copyLink} data-guide="copy-link" title="Copy a link that opens this song in any browser (nothing is uploaded: the song is in the link)">Copy link</button>
+    <button onclick={() => (wavPanel = !wavPanel)} aria-expanded={wavPanel} data-guide={wavPanel ? undefined : "wav wav-record"} title="Make an audio file of the song, or record what you hear">WAV {wavPanel ? "▴" : "▾"}</button>
     <button onclick={() => songFileInput.click()} title="Open a song file as a new song">Import…</button>
     <input bind:this={songFileInput} type="file" accept=".json,application/json" hidden onchange={(e) => { void importSong(e.currentTarget.files?.[0]); e.currentTarget.value = ""; }} />
-    {#if pg.linkSong}
+    <button class="lessons-btn" class:on={lessonList} onclick={() => (lessonList = !lessonList)} aria-expanded={lessonList} title="Make a song: lessons on everything the Song view does, for someone who has never made music on a computer">Lessons {lessonList ? "▴" : "▾"}</button>
+    {#if pg.practiceSong}
+      <span class="saved unsaved" title="A lesson's practice song: nothing is saved until you choose Save to my songs">Practice song, not saved</span>
+    {:else if pg.linkSong}
       <span class="saved unsaved" title="This song came from a link: nothing is saved until you choose Save to my songs">From a link, not saved</span>
     {:else}
       <span class="saved" title="Songs are saved in this browser as you work">Saved</span>
     {/if}
     {#if songMessage}<span class="song-msg" class:bad={!songMessage.ok}>{songMessage.text}</span>{/if}
   </div>
+  {#if lessonList}
+    <div class="lesson-list"><SongLessons {pg} /></div>
+  {/if}
   {#if wavPanel}
     <div class="wav-panel">
       <div class="wav-export" role="group" aria-label="Export the song as a WAV file">
@@ -298,13 +307,13 @@
             <progress max="1" value={pg.exporting.progress} aria-label="Export progress"></progress>
             <button onclick={() => pg.cancelExport()}>Cancel</button>
           {:else}
-            <button class="go" onclick={exportWav} disabled={!exportBars} title="Render the song (faster than real time) and save the WAV">Export {exportBars ? `${exportBars} bar${exportBars === 1 ? "" : "s"}` : ""}</button>
+            <button class="go" data-guide="wav" onclick={exportWav} disabled={!exportBars} title="Render the song (faster than real time) and save the WAV">Export {exportBars ? `${exportBars} bar${exportBars === 1 ? "" : "s"}` : ""}</button>
           {/if}
         </div>
         <p class="note">The song's tracks, as arranged on the timeline, with the delay and reverb ringing out. The Play view's drum loop and step sequencer aren't in it: send them to the song to keep them.</p>
         {#if wavMessage}<p class="song-msg" class:bad={!wavMessage.ok}>{wavMessage.text}</p>{/if}
       </div>
-      <div class="wav-record" role="group" aria-label="Record what you hear">
+      <div class="wav-record" data-guide="wav-record" role="group" aria-label="Record what you hear">
         <h3>Record what you hear</h3>
         <div class="wav-row">
           <button class="rec-out" class:on={!!pg.outputRec} onclick={() => pg.toggleOutputRecording()} title="Record the app's output as you hear it, toys and all, in real time">
@@ -354,15 +363,16 @@
   {/if}
   <div class="head">
     <h2>Tracks</h2>
-    <button onclick={() => pg.addSongTrack()} disabled={!pg.canAddSongTrack} title={pg.canAddSongTrack ? "A new synth track with a sound of its own" : `Up to ${MAX_SYNTH_TRACKS} synth tracks`}>+ Synth track</button>
+    <button onclick={() => pg.addSongTrack()} data-guide="add-track" disabled={!pg.canAddSongTrack} title={pg.canAddSongTrack ? "A new synth track with a sound of its own" : `Up to ${MAX_SYNTH_TRACKS} synth tracks`}>+ Synth track</button>
     <span class="count">{synthCount} of {MAX_SYNTH_TRACKS} synth tracks</span>
-    <span class="history">
+    <span class="history" data-guide="song-undo">
       <button disabled={!pg.canUndoSong} onclick={() => pg.undoSong()} aria-label="Undo in the song" title={pg.songUndoLabel ? `Undo ${pg.songUndoLabel} (Ctrl+Z)` : "Nothing to undo in the song"}>↶</button>
       <button disabled={!pg.canRedoSong} onclick={() => pg.redoSong()} aria-label="Redo in the song" title={pg.songRedoLabel ? `Redo ${pg.songRedoLabel} (Ctrl+Shift+Z)` : "Nothing to redo in the song"}>↷</button>
     </span>
   </div>
   {#if pg.explain}
     <p class="explain">
+      New to making songs? <strong>Lessons</strong> (above) teaches the Song view step by step, from what a beat is to an exported song.
       Each track has a sound of its own. Select a track to edit its sound (the Synth view and the presets follow it) and to play it from the keys. With the drums
       selected, the keys from C to G play the drum kit. The mixer sets how loud each track is and where it sits left to right; <strong>M</strong> mutes a track,
       <strong>S</strong> plays only the soloed ones.
@@ -383,7 +393,7 @@
   {/if}
 
   <div class="rec-bar" class:recording={!!pg.take} role="group" aria-label="Recording">
-    <button class="rec" class:on={!!pg.take} onclick={() => pg.toggleRecord()} title={pg.take ? "Stop recording (the music plays on)" : `Record into the armed track's clip${pg.hw(" (● on the MiniLab)")}`}>
+    <button class="rec" data-guide="record" class:on={!!pg.take} onclick={() => pg.toggleRecord()} title={pg.take ? "Stop recording (the music plays on)" : `Record into the armed track's clip${pg.hw(" (● on the MiniLab)")}`}>
       ● {pg.take ? "Stop recording" : "Record"}
     </button>
     <span class="rec-status">{recStatus()}</span>
@@ -392,11 +402,11 @@
       <input type="checkbox" checked={pg.rec.metronome} onchange={(e) => pg.setRec({ metronome: e.currentTarget.checked })} /> Click
       <input class="click-vol" type="range" min="0" max="1" step="0.05" value={pg.rec.click} oninput={(e) => pg.setRec({ click: +e.currentTarget.value })} aria-label="Click volume" />
     </label>
-    <select value={pg.rec.mode} onchange={(e) => pg.setRec({ mode: e.currentTarget.value as "overdub" | "replace" })} aria-label="Overdub or replace" title="Overdub adds to the clip each time round; Replace clears it first">
+    <select value={pg.rec.mode} data-guide="rec-mode" onchange={(e) => pg.setRec({ mode: e.currentTarget.value as "overdub" | "replace" })} aria-label="Overdub or replace" title="Overdub adds to the clip each time round; Replace clears it first">
       <option value="overdub">Overdub</option>
       <option value="replace">Replace</option>
     </select>
-    <label title="Pull played notes onto the grid as they are recorded (the piano roll can quantize afterwards either way)">
+    <label data-guide="rec-quantize" title="Pull played notes onto the grid as they are recorded (the piano roll can quantize afterwards either way)">
       Quantize
       <select value={pg.rec.quantize} onchange={(e) => pg.setRec({ quantize: +e.currentTarget.value })}>
         <option value={-1}>Off</option>
@@ -440,14 +450,15 @@
     {#each pg.songTracks as t, i (t.id)}
       {@const ps = pg.padStateOf(t.id)}
       {@const auto = frame >= 0 && pg.playing ? pg.songTrackStrip(t.id)?.automatedAt(pg.engine.ctx.currentTime) : null}
+      {@const k = (kind: string) => `${kind} ${guideKey(kind, t.name)}`}
       <li class="track" class:selected={pg.selectedSongTrack === t.id} class:silent={t.mute || (anySolo && !t.solo)} style:--track={css(t.color)}>
-        <button class="swatch" onclick={() => pg.cycleSongTrackColor(t.id)} aria-label="Colour of {t.name}" title="Change the colour"></button>
-        <button class="select" onclick={() => pg.selectSongTrack(t.id)} aria-pressed={pg.selectedSongTrack === t.id} title={t.kind === "synth" ? "Select: edit this sound and play it from the keys" : "Select: the keys from C to G play the drum kit"}>
+        <button class="swatch" data-guide={k("swatch")} onclick={() => pg.cycleSongTrackColor(t.id)} aria-label="Colour of {t.name}" title="Change the colour"></button>
+        <button class="select" data-guide={k("select")} onclick={() => pg.selectSongTrack(t.id)} aria-pressed={pg.selectedSongTrack === t.id} title={t.kind === "synth" ? "Select: edit this sound and play it from the keys" : "Select: the keys from C to G play the drum kit"}>
           {pg.selectedSongTrack === t.id ? "●" : "○"}
         </button>
-        <input class="name" value={t.name} maxlength="16" aria-label="Track name" onchange={(e) => rename(t, e.currentTarget)} onfocus={() => pg.selectSongTrack(t.id)} />
+        <input class="name" data-guide={k("track-name")} value={t.name} maxlength="16" aria-label="Track name" onchange={(e) => rename(t, e.currentTarget)} onfocus={() => pg.selectSongTrack(t.id)} />
 
-        <div class="sound">
+        <div class="sound" data-guide={k("sound")}>
           {#if t.kind === "synth"}
             <button class="step" onclick={() => { pg.selectSongTrack(t.id); pg.stepPreset(-1); }} aria-label="Previous preset">◀</button>
             <button class="preset" onclick={(e) => browse(t, e)} title={soundTitle(t.id)}>
@@ -470,17 +481,17 @@
           <span class="voices"></span>
         {/if}
 
-        <label class="slider vol" class:automated={auto?.volume != null} title="Volume (double-click: 0 dB){auto?.volume != null ? '. A clip automates it now: it follows the clip' : ''}">
+        <label class="slider vol" data-guide={k("volume")} class:automated={auto?.volume != null} title="Volume (double-click: 0 dB){auto?.volume != null ? '. A clip automates it now: it follows the clip' : ''}">
           <input type="range" min={VOLUME_MIN} max={VOLUME_MAX} step="0.5" value={auto?.volume ?? t.volume} oninput={(e) => pg.setSongTrack(t.id, { volume: +e.currentTarget.value })} ondblclick={() => pg.setSongTrack(t.id, { volume: 0 })} aria-label="Volume of {t.name}" />
           <span class="val">{volumeText(auto?.volume ?? t.volume)}</span>
         </label>
-        <label class="slider pan" class:automated={auto?.pan != null} title="Pan: left to right (double-click: centre){auto?.pan != null ? '. A clip automates it now: it follows the clip' : ''}">
+        <label class="slider pan" data-guide={k("pan")} class:automated={auto?.pan != null} title="Pan: left to right (double-click: centre){auto?.pan != null ? '. A clip automates it now: it follows the clip' : ''}">
           <input type="range" min="-1" max="1" step="0.02" value={auto?.pan ?? t.pan} oninput={(e) => pg.setSongTrack(t.id, { pan: +e.currentTarget.value })} ondblclick={() => pg.setSongTrack(t.id, { pan: 0 })} aria-label="Pan of {t.name}" />
           <span class="val">{panText(auto?.pan ?? t.pan)}</span>
         </label>
         <div class="ms">
-          <button class="mute" class:on={t.mute} onclick={() => pg.setSongTrack(t.id, { mute: !t.mute })} aria-pressed={t.mute} title="Mute">M</button>
-          <button class="solo" class:on={t.solo} onclick={() => pg.setSongTrack(t.id, { solo: !t.solo })} aria-pressed={t.solo} title="Solo: hear only the soloed tracks">S</button>
+          <button class="mute" data-guide={k("mute")} class:on={t.mute} onclick={() => pg.setSongTrack(t.id, { mute: !t.mute })} aria-pressed={t.mute} title="Mute">M</button>
+          <button class="solo" data-guide={k("solo")} class:on={t.solo} onclick={() => pg.setSongTrack(t.id, { solo: !t.solo })} aria-pressed={t.solo} title="Solo: hear only the soloed tracks">S</button>
           <button
             class="pad {ps}"
             class:blink={frame >= 0 && pg.padBlinks(t.id)}
@@ -491,26 +502,27 @@
             aria-label="Looper pad of {t.name}: {ps}"
             title="Looper pad ({PAD_WORDS[ps]}). Hold: ready to record onto its loop. Shift + click: undo its last take.{pg.hw(` On the MiniLab: pad ${i + 1}.`)}"
           ></button>
-          <button class="arm" class:on={pg.armedTrack === t.id} class:live={pg.take?.track === t.id} onclick={() => pg.armTrack(t.id)} aria-pressed={pg.armedTrack === t.id} aria-label="Arm {t.name} to record" title="Arm: record on this track (it is selected, and ● records into its clip)">●</button>
+          <button class="arm" data-guide={k("arm")} class:on={pg.armedTrack === t.id} class:live={pg.take?.track === t.id} onclick={() => pg.armTrack(t.id)} aria-pressed={pg.armedTrack === t.id} aria-label="Arm {t.name} to record" title="Arm: record on this track (it is selected, and ● records into its clip)">●</button>
         </div>
-        <canvas class="meter" use:surface={meter(t.id)} aria-hidden="true"></canvas>
+        <canvas class="meter" data-guide={k("meter")} use:surface={meter(t.id)} aria-hidden="true"></canvas>
 
         <div class="order">
           <button onclick={() => pg.moveSongTrack(t.id, -1)} disabled={i === 0} aria-label="Move {t.name} up">↑</button>
           <button onclick={() => pg.moveSongTrack(t.id, 1)} disabled={i === pg.songTracks.length - 1} aria-label="Move {t.name} down">↓</button>
           {#if t.kind === "synth"}
-            <button class="remove" onclick={() => remove(t)} aria-label="Remove {t.name}" title="Remove the track">✕</button>
+            <button class="remove" data-guide={k("remove")} onclick={() => remove(t)} aria-label="Remove {t.name}" title="Remove the track">✕</button>
           {:else}
             <span class="remove"></span>
           {/if}
         </div>
 
-        <div class="clips" role="group" aria-label="Clips of {t.name}">
+        <div class="clips" data-guide={k("clips")} role="group" aria-label="Clips of {t.name}">
           {#each pg.clipsOf(t.id) as c (c.id)}
             {@const st = launchState(c)}
             <div class="clip" class:selected={pg.selectedClip === c.id} class:chosen={st.chosen} class:playing={st.playing} class:waiting={st.waiting} class:stopping={st.stopping}>
               <button
                 class="launch"
+                data-guide="launch {guideKey('launch', c.name)}"
                 onclick={() => pg.launchClip(c.id)}
                 aria-label="{st.playing && !st.stopping ? 'Stop' : 'Play'} {c.name}"
                 title={st.waiting ? "Starts on the next bar (click to cancel)" : st.playing && !st.stopping ? "Stop this track at the next bar" : pg.playing ? "Play on this track from the next bar" : "Play"}
@@ -533,10 +545,10 @@
             </div>
           {/each}
           {#if t.kind === "drums"}
-            <button class="add-clip" onclick={() => pg.addClip(t.id)} title="A new empty drum clip">+ Drum clip</button>
+            <button class="add-clip" data-guide="add-drum-clip" onclick={() => pg.addClip(t.id)} title="A new empty drum clip">+ Drum clip</button>
           {:else}
             <button class="add-clip" onclick={() => pg.addClip(t.id, "notes")} title="A new empty note clip, to write in the piano roll">+ Note clip</button>
-            <button class="add-clip" onclick={() => pg.addClip(t.id, "steps")} title="A new step clip: 8 steps, like the Play view's step sequencer">+ Step clip</button>
+            <button class="add-clip" data-guide={k("add-step-clip")} onclick={() => pg.addClip(t.id, "steps")} title="A new step clip: 8 steps, like the Play view's step sequencer">+ Step clip</button>
           {/if}
         </div>
       </li>
@@ -549,7 +561,7 @@
     <section class="clip-panel" style:--track={css(clipTrack.color)} aria-label="Clip">
       <span class="kind">{CLIP_KIND_NAMES[clip.kind]} · {clipTrack.name}</span>
       <input class="clip-title" value={clip.name} maxlength="16" aria-label="Clip name" onchange={(e) => renameClip(clip!, e.currentTarget)} />
-      <label class="bars">
+      <label class="bars" data-guide="clip-length">
         Length
         <select value={clip.bars} onchange={(e) => pg.setClipBars(clip!.id, +e.currentTarget.value)}>
           {#each Array.from({ length: MAX_BARS[clip.kind] }, (_, k) => k + 1) as n (n)}<option value={n}>{n} bar{n > 1 ? "s" : ""}</option>{/each}
@@ -558,12 +570,12 @@
       <span class="summary">{summary(clip)}</span>
       <span class="push"></span>
       {#if clip.kind === "steps"}
-        <button onclick={() => pg.convertToNotes(clip!.id)} title="Turn it into a note clip that sounds the same, to edit in the piano roll (undo turns it back)">Convert to notes</button>
+        <button data-guide="convert" onclick={() => pg.convertToNotes(clip!.id)} title="Turn it into a note clip that sounds the same, to edit in the piano roll (undo turns it back)">Convert to notes</button>
       {/if}
       {#if clip.kind !== "notes"}
-        <button onclick={() => pg.editInPlay(clip!.id)} title={clip.kind === "drums" ? "Change it in the Play view's drum loop (and with the pads)" : "Change it in the Play view's step sequencer (and on the MiniLab)"}>Edit in Play</button>
+        <button data-guide="edit-in-play" onclick={() => pg.editInPlay(clip!.id)} title={clip.kind === "drums" ? "Change it in the Play view's drum loop (and with the pads)" : "Change it in the Play view's step sequencer (and on the MiniLab)"}>Edit in Play</button>
       {/if}
-      <button onclick={() => pg.duplicateClip(clip!.id)} title="A copy of this clip on the same track">Duplicate</button>
+      <button data-guide="duplicate" onclick={() => pg.duplicateClip(clip!.id)} title="A copy of this clip on the same track">Duplicate</button>
       <button class="danger" onclick={() => removeClip(clip!)} title="Delete this clip">Delete</button>
       <button class="close" onclick={() => pg.selectClip(null)} aria-label="Close">✕</button>
     </section>
@@ -586,6 +598,8 @@
   .song-bar .go { border-color: var(--accent); color: var(--accent); }
   .song-msg { font-size: 12px; color: var(--accent); }
   .song-msg.bad { color: #ff8a80; }
+  .lesson-list { margin-bottom: 10px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; }
+  .lessons-btn.on { border-color: var(--accent); color: var(--text); }
   .song-list { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 10px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; }
   .song-list h3 { margin: 0 0 4px; font-size: 12px; color: var(--dim); font-weight: 600; }
   .song-list ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; max-height: 260px; overflow-y: auto; }

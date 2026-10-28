@@ -4,6 +4,7 @@
   import { CHAPTERS, PAGES } from "../../course/course";
   import type { Playground } from "../playground.svelte";
   import ChapterRecipes from "./ChapterRecipes.svelte";
+  import SongLessons from "../songGuide/SongLessons.svelte";
 
   let { pg }: { pg: Playground } = $props();
 
@@ -51,6 +52,12 @@
       </article>
     {/each}
   </div>
+
+  <article class="card song">
+    <div class="kicker">Apart from the chapters</div>
+    <h3>Make a song</h3>
+    <SongLessons {pg} />
+  </article>
 </section>
 
 <style>

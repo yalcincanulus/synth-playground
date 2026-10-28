@@ -28,13 +28,13 @@
   const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
 </script>
 
-<section class="panel seq" class:off={!s.enabled}>
+<section class="panel seq" class:off={!s.enabled} data-guide={clip ? "step-panel" : undefined}>
   <div class="head">
     {#if clip}
       <span class="clip">Step clip · {clip.name}</span>
     {:else}
       <button class:active={s.enabled} onclick={() => pg.setSeqEnabled(!s.enabled)}>{s.enabled ? "On" : "Off"}</button>
-      <select class="send" value="" onchange={(e) => send(e.currentTarget)} aria-label="Send to song" title="Copy the step sequence into a new clip on a song track (the Sequencer part's sound goes with it)">
+      <select class="send" data-guide="send-steps" value="" onchange={(e) => send(e.currentTarget)} aria-label="Send to song" title="Copy the step sequence into a new clip on a song track (the Sequencer part's sound goes with it)">
         <option value="" disabled hidden>Send to song…</option>
         {#each synthTracks as t (t.id)}<option value={t.id}>To {t.name}</option>{/each}
         {#if pg.canAddSongTrack}<option value="new">To a new track</option>{/if}
