@@ -315,6 +315,59 @@ const ALL_PRESETS: Omit<Preset, "id">[] = [
     values: { osc1Wave: 4, wtTable: 0, wtPos: 0.4, osc2Wave: 2, osc2Detune: 10, oscMix: 0.4, unison: 2, mod1Src: 10, mod1Dst: 0, mod1Amt: 0.006, mod2Src: 10, mod2Dst: 2, mod2Amt: 0.2, mod3Src: 10, mod3Dst: 5, mod3Amt: 0.3, mod4Src: 8, mod4Dst: 2, mod4Amt: 0.3, lfo2Target: 4, lfo2Wave: 0, lfo2Rate: 0.08, lfo2Depth: 0.4, cutoff: 1800, resonance: 0.9, filterEnvAmt: 0.6, filterAttack: 1, filterDecay: 2, filterSustain: 0.6, keyTrack: 0.2, attack: 1, decay: 1.5, sustain: 0.9, release: 3, velocity: 0.3, chorus: 0.4, reverbMix: 0.55, reverbSize: 6, volume: 0.6 },
   },
 
+  // ---------------------------------------------------------------- Pianos
+  // An acoustic piano from two oscillators. What makes it a piano rather than an organ: each note only
+  // fades (Sustain 0) and the strings stop when the key comes up (a short Release, like the damper); the
+  // highs die away faster than the body (the filter envelope closes over a second or so); harder notes
+  // are brighter, not only louder (velocity -> cutoff); a short noise thump at the start for the hammer
+  // (the mod envelope opens the noise for a few ms); and two oscillators a few cents apart, like the two
+  // or three strings each piano key strikes. A piano note fades in two stages, quickly and then slowly:
+  // the filter envelope also lifts the volume at the start (filter env -> volume). There is no sustain
+  // pedal: hold the keys.
+  // Grand, Upright, Honky-Tonk and Pop Piano are left out: tried by ear, they sounded like synths. They
+  // are built on saw waves, and a bright piano needs what two oscillators can't give: the slightly
+  // out-of-tune overtones of a real string, and highs that change through the note. Felt Piano works
+  // because a felt piano is soft and dark anyway. Kept here for a later try.
+  // {
+  //   name: "Grand Piano",
+  //   category: "Keys",
+  //   color: [110, 90, 70],
+  //   knobs: ["cutoff", "filterEnvAmt", "filterDecay", "mod1Amt", "mod2Amt", "osc2Detune", "compThreshold", "reverbMix"],
+  //   values: { osc1Wave: 2, osc2Wave: 1, osc2Semi: 12, osc2Detune: 3, oscMix: 0.3, cutoff: 600, resonance: 0.7, filterEnvAmt: 3, filterAttack: 0.001, filterDecay: 1.2, filterSustain: 0.12, filterRelease: 0.3, keyTrack: 0.8, attack: 0.001, decay: 4, sustain: 0, release: 0.35, velocity: 0.85, modEnvAttack: 0.001, modEnvDecay: 0.03, modEnvSustain: 0, modEnvRelease: 0.03, mod1Src: 7, mod1Dst: 2, mod1Amt: 0.3, mod2Src: 6, mod2Dst: 10, mod2Amt: 0.35, mod3Src: 3, mod3Dst: 4, mod3Amt: 0.6, compressorOn: 1, compThreshold: -18, compRatio: 2.5, compAttack: 0.01, compRelease: 0.25, chorusOn: 0, delayOn: 0, reverbMix: 0.22, reverbSize: 2.5, reverbDamping: 0.5, volume: 0.8 },
+  // },
+  // {
+  //   // Smaller and darker, with more hammer and a shorter ring: a piano against the wall of a room.
+  //   name: "Upright Piano",
+  //   category: "Keys",
+  //   color: [100, 70, 50],
+  //   knobs: ["cutoff", "filterEnvAmt", "filterDecay", "mod1Amt", "mod2Amt", "osc2Detune", "reverbSize", "reverbMix"],
+  //   values: { osc1Wave: 2, osc2Wave: 2, osc2Semi: 0, osc2Detune: 5, oscMix: 0.4, cutoff: 450, resonance: 0.9, filterEnvAmt: 2.6, filterAttack: 0.001, filterDecay: 0.7, filterSustain: 0.1, filterRelease: 0.2, keyTrack: 0.85, attack: 0.001, decay: 2.6, sustain: 0, release: 0.25, velocity: 0.85, modEnvAttack: 0.001, modEnvDecay: 0.04, modEnvSustain: 0, modEnvRelease: 0.04, mod1Src: 7, mod1Dst: 2, mod1Amt: 0.35, mod2Src: 6, mod2Dst: 10, mod2Amt: 0.5, mod3Src: 3, mod3Dst: 4, mod3Amt: 0.5, eqOn: 1, eqLow: 2, eqMid: 2.5, eqMidFreq: 600, eqHigh: -3, chorusOn: 0, delayOn: 0, reverbMix: 0.18, reverbSize: 1.2, reverbDamping: 0.65, volume: 0.8 },
+  // },
+  // {
+  //   // An old saloon piano, out of tune: the strings of each key are far apart, so every note wobbles. Play ragtime.
+  //   name: "Honky-Tonk",
+  //   category: "Keys",
+  //   color: [127, 90, 40],
+  //   knobs: ["osc2Detune", "cutoff", "filterEnvAmt", "filterDecay", "mod1Amt", "mod2Amt", "drive", "reverbMix"],
+  //   values: { osc1Wave: 2, osc2Wave: 2, osc2Semi: 0, osc2Detune: 16, oscMix: 0.5, cutoff: 800, resonance: 0.8, filterEnvAmt: 3, filterAttack: 0.001, filterDecay: 0.6, filterSustain: 0.15, filterRelease: 0.2, keyTrack: 0.8, attack: 0.001, decay: 2.2, sustain: 0, release: 0.25, velocity: 0.8, modEnvAttack: 0.001, modEnvDecay: 0.03, modEnvSustain: 0, modEnvRelease: 0.03, mod1Src: 7, mod1Dst: 2, mod1Amt: 0.3, mod2Src: 6, mod2Dst: 10, mod2Amt: 0.4, drive: 0.15, eqOn: 1, eqLow: -2, eqMid: 3, eqMidFreq: 1500, eqHigh: 1, chorusOn: 0, delayOn: 0, reverbMix: 0.15, reverbSize: 1.5, volume: 0.75 },
+  // },
+  {
+    // A piano with felt over the hammers, recorded close: soft and dark, a muffled thump at the start,
+    // and a long, quiet room. The sound of slow modern piano pieces. Play softly, with the keys held.
+    name: "Felt Piano",
+    category: "Keys",
+    color: [90, 70, 90],
+    knobs: ["cutoff", "filterEnvAmt", "mod2Amt", "osc2Detune", "release", "reverbMix", "reverbSize", "reverbDamping"],
+    values: { osc1Wave: 1, osc2Wave: 0, osc2Semi: 12, osc2Detune: 4, oscMix: 0.25, cutoff: 500, resonance: 0.7, filterEnvAmt: 1.5, filterAttack: 0.004, filterDecay: 0.8, filterSustain: 0.2, filterRelease: 0.4, keyTrack: 0.7, attack: 0.004, decay: 2.8, sustain: 0, release: 0.6, velocity: 0.7, modEnvAttack: 0.002, modEnvDecay: 0.05, modEnvSustain: 0, modEnvRelease: 0.05, mod1Src: 7, mod1Dst: 2, mod1Amt: 0.25, mod2Src: 6, mod2Dst: 10, mod2Amt: 0.25, mod3Src: 3, mod3Dst: 4, mod3Amt: 0.4, compressorOn: 1, compThreshold: -14, compRatio: 2, compAttack: 0.02, compRelease: 0.4, chorusOn: 0, delayOn: 0, reverbMix: 0.4, reverbSize: 3.5, reverbDamping: 0.7, volume: 0.9 },
+  },
+  // {
+  //   // Bright and pressed together, to cut through a band: the piano of pop and dance chords.
+  //   name: "Pop Piano",
+  //   category: "Keys",
+  //   color: [127, 110, 90],
+  //   knobs: ["cutoff", "filterEnvAmt", "filterDecay", "mod1Amt", "eqHigh", "chorus", "compThreshold", "reverbMix"],
+  //   values: { osc1Wave: 2, osc2Wave: 2, osc2Semi: 12, osc2Detune: 4, oscMix: 0.35, cutoff: 900, resonance: 0.8, filterEnvAmt: 3.2, filterAttack: 0.001, filterDecay: 0.9, filterSustain: 0.18, filterRelease: 0.3, keyTrack: 0.75, attack: 0.001, decay: 3, sustain: 0, release: 0.3, velocity: 0.75, modEnvAttack: 0.001, modEnvDecay: 0.025, modEnvSustain: 0, modEnvRelease: 0.025, mod1Src: 7, mod1Dst: 2, mod1Amt: 0.3, mod2Src: 6, mod2Dst: 10, mod2Amt: 0.3, mod3Src: 3, mod3Dst: 4, mod3Amt: 0.6, compressorOn: 1, compThreshold: -20, compRatio: 3, compAttack: 0.005, compRelease: 0.5, eqOn: 1, eqLow: -2, eqMid: 0, eqMidFreq: 1000, eqHigh: 4, chorus: 0.3, delayOn: 0, reverbMix: 0.2, reverbSize: 2, volume: 0.7 },
+  // },
   // ---------------------------------------------------------------- Drums
   // The pad kit's sounds (drums.ts) rebuilt as synth patches, so the knobs can reshape them. A drum is a
   // short sound that falls away: Sustain is 0, and Release matches Decay so a quick tap still rings out.
@@ -763,6 +816,7 @@ const TAGS: Record<string, string[]> = {
   "Bell Tower": ["bell", "metallic", "spacey", "pure"],
   "Combo Organ": ["organ", "retro", "chords", "buzzy"],
   "E-Piano": ["piano", "soft", "warm", "chords", "tremolo"],
+  "Felt Piano": ["piano", "acoustic", "soft", "dark", "spacey", "chords"],
   Mallets: ["percussive", "plucky", "soft", "short"],
   "FM Bell": ["bell", "metallic", "glassy", "fm"],
   "Digital Keys": ["wavetable", "digital", "plucky", "moving"],
