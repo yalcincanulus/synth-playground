@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { formatValue, LFO_TARGETS, PARAMS, toControl, type ParamId } from "../audio/params";
   import { FADERS } from "../presets/presets";
   import Fader from "./components/Fader.svelte";
@@ -26,6 +26,7 @@
   import SequencerPanel from "./sequencer/SequencerPanel.svelte";
   import PresetBrowser from "./presets/PresetBrowser.svelte";
   import Marquee from "./components/Marquee.svelte";
+  import { trackCss } from "./song/trackColor";
   import { narrow, touch } from "./media.svelte";
 
   const pg = new Playground();
@@ -91,6 +92,14 @@
   $effect(() => {
     if (pg.stepMode) rhythm = "drums";
   });
+  // "Edit in Play" from the Song view: the clip's editor comes up.
+  $effect(() => {
+    if (!pg.editClipId) return;
+    const kind = untrack(() => pg.editClip?.kind);
+    if (kind === "drums") rhythm = "drums";
+    else if (kind === "steps") rhythm = "seq";
+  });
+  let editTrack = $derived(pg.editClip ? pg.songTracks.find((t) => t.id === pg.editClip?.track) : undefined);
 
   onMount(() => {
     // Reconnect silently if MIDI was allowed before; otherwise wait for the button.
@@ -214,8 +223,8 @@
       <span class="break"></span>
       <button onclick={() => pg.dice()} title="Random patch{pg.hw(' (hold the encoder down)')}">🎲 Dice</button>
       <div class="undo" role="group" aria-label="Undo and redo">
-        <button disabled={!pg.canUndo} onclick={() => pg.undo()} aria-label="Undo" title={pg.undoLabel ? `Undo ${pg.undoLabel} (Ctrl+Z${pg.hw(" · Shift + pitch strip down")})` : "Nothing to undo"}>↶</button>
-        <button disabled={!pg.canRedo} onclick={() => pg.redo()} aria-label="Redo" title={pg.redoLabel ? `Redo ${pg.redoLabel} (Ctrl+Shift+Z${pg.hw(" · Shift + pitch strip up")})` : "Nothing to redo"}>↷</button>
+        <button disabled={!pg.canUndo} onclick={() => pg.undoSound()} aria-label="Undo" title={pg.undoLabel ? `Undo ${pg.undoLabel}${pg.view === "song" ? "" : ` (Ctrl+Z${pg.hw(" · Shift + pitch strip down")})`}` : "Nothing to undo"}>↶</button>
+        <button disabled={!pg.canRedo} onclick={() => pg.redoSound()} aria-label="Redo" title={pg.redoLabel ? `Redo ${pg.redoLabel}${pg.view === "song" ? "" : ` (Ctrl+Shift+Z${pg.hw(" · Shift + pitch strip up")})`}` : "Nothing to redo"}>↷</button>
       </div>
       {#if pg.browseId !== null}
         <span class="browse">Encoder: {pg.presets.find((p) => p.id === pg.browseId)?.name}, click to load</span>
@@ -342,7 +351,7 @@
       <div class="rhythm-bar">
         <div class="seg" role="tablist" aria-label="Rhythm">
           <button role="tab" aria-selected={rhythm === "seq"} class:active={rhythm === "seq"} onclick={() => (rhythm = "seq")}>
-            Step sequencer <i class="dot" class:on={pg.noteSeq.enabled}></i>
+            Step sequencer <i class="dot" class:on={pg.ownNoteSeq.enabled}></i>
           </button>
           <button role="tab" aria-selected={rhythm === "drums"} class:active={rhythm === "drums"} onclick={() => (rhythm = "drums")}>
             Drums <i class="dot" class:on={pg.drumsOn}></i>
@@ -351,7 +360,23 @@
         <span class="hint">Both play together with ▶, in time with each other.</span>
       </div>
 
+      {#if pg.editClip}
+        {@const c = pg.editClip}
+        <div class="clip-banner" style:--track={trackCss(editTrack?.color ?? 0)}>
+          <span class="clip-what">Editing clip <b>{c.name}</b>{editTrack ? ` on ${editTrack.name}` : ""}: what you change here is heard in the song.</span>
+          {#if c.kind === "drums" && c.bars > 1}
+            <span class="clip-bars" role="group" aria-label="Bar of the clip">
+              {#each Array.from({ length: c.bars }, (_, k) => k) as k (k)}
+                <button class:active={pg.editBar === k} onclick={() => pg.setEditBar(k)}>Bar {k + 1}</button>
+              {/each}
+            </span>
+          {/if}
+          <button class="clip-back" onclick={() => pg.endClipEdit()} title="The drum loop and the step sequencer edit their own patterns again">Back to my pattern</button>
+        </div>
+      {/if}
+
       {#if rhythm === "drums"}
+        {@const clip = pg.editClip?.kind === "drums" ? pg.editClip : null}
         <div class="drums">
           <div class="panel pads-panel">
             <div class="pads-head">
@@ -408,17 +433,22 @@
               {/each}
             </div>
           </div>
-          <div class="panel seq-panel" class:muted={!pg.drumsOn}>
+          <div class="panel seq-panel" class:muted={!clip && !pg.drumsOn}>
             <div class="title seq-title">
-              Drum loop {pg.recording ? "· recording pad hits" : ""}
-              <button class:active={pg.drumsOn} onclick={() => pg.setDrumsOn(!pg.drumsOn)} title="Mute the drum loop (the sequencer keeps playing)">
-                {pg.drumsOn ? "On" : "Off"}
-              </button>
-              <button class="clear" onclick={() => pg.clearPattern()} title="Clear the drum loop{pg.hw(' (Shift + ⟲)')}">Clear</button>
+              {#if clip}
+                Drum clip · {clip.name}{clip.bars > 1 ? ` · bar ${pg.editBar + 1}` : ""}
+              {:else}
+                Drum loop {pg.recording ? "· recording pad hits" : ""}
+                <button class:active={pg.drumsOn} onclick={() => pg.setDrumsOn(!pg.drumsOn)} title="Mute the drum loop (the sequencer keeps playing)">
+                  {pg.drumsOn ? "On" : "Off"}
+                </button>
+                <button class="send" onclick={() => pg.sendDrumsToSong()} title="Copy the drum loop into a new clip on the song's drum track">Send to song</button>
+              {/if}
+              <button class="clear" onclick={() => pg.clearPattern()} title="{clip ? 'Clear this bar of the clip' : 'Clear the drum loop'}{pg.hw(' (Shift + ⟲)')}">Clear</button>
             </div>
             <SeqGrid
               pattern={pg.pattern}
-              getStep={() => pg.seq.currentStep}
+              getStep={() => pg.gridStep()}
               levels={pg.padLevels}
               selected={pg.stepMode ? pg.stepTrack : null}
               ontoggle={(t, s) => pg.toggleStep(t, s)}
@@ -642,6 +672,18 @@
   .seq-title .active { border-color: var(--accent); color: var(--accent); }
   .seq-title .clear { margin-left: auto; }
   .seq-panel.muted :global(.seq) { opacity: 0.4; }
+
+  /* "Edit in Play": which clip the editors below work on, in its track's colour. */
+  .clip-banner {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+    padding: 6px 10px; border: 1px solid var(--track); border-radius: 6px;
+    background: color-mix(in srgb, var(--track) 12%, var(--panel)); font-size: 12px;
+  }
+  .clip-what { flex: 1 1 260px; }
+  .clip-bars { display: flex; gap: 2px; }
+  .clip-banner button { font-size: 12px; padding: 2px 10px; }
+  .clip-bars .active { border-color: var(--track); color: var(--track); }
+  .clip-back { margin-left: auto; }
   .pad-modes { display: flex; gap: 4px; flex: none; }
   .bank { text-transform: none; letter-spacing: 0; }
   .pad-modes button { font-size: 12px; padding: 2px 10px; }

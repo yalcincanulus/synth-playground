@@ -5,7 +5,7 @@ import type { Strip } from "../audio/fx";
 import type { NoteOwner } from "../audio/voice";
 import { EFFECT_ON, effectOrder, formatValue, fromControl, fxSlotId, EFFECTS, MOD_DESTS, MOD_SLOTS, MOD_SOURCES, PARAMS, slotIds, toControl, type Effect, type ParamId, type ParamValues } from "../audio/params";
 import { WorkerClock } from "../audio/clock";
-import { Sequencer, type Pattern, type SequencerTiming, basicBeat, emptyPattern } from "../audio/sequencer";
+import { Sequencer, type Pattern, type SequencerTiming, basicBeat } from "../audio/sequencer";
 import {
   defaultNoteSeq,
   DIRECTIONS,
@@ -85,6 +85,8 @@ import {
   TRACK_COLORS,
   type Track,
 } from "../song/song";
+import { barsForSteps, drumClip, duplicateClip, fitsTrack, stepClip, withBars, readClips, BEATS_PER_BAR, type Clip } from "../song/clips";
+import { ClipPlayer } from "../song/clipPlayer";
 
 export type MidiStatus = "idle" | "unsupported" | "denied" | "not-found" | "connected";
 export type VizMode = "scope" | "spectrum" | "spectrogram";
@@ -241,6 +243,16 @@ interface PartSnapshot {
   dirty: boolean;
 }
 
+/** The song at one moment, for its undo: the tracks, the clips, and the tracks' sounds (to bring back a removed track). */
+interface SongSnapshot {
+  tracks: Track[];
+  clips: Clip[];
+  sounds: Record<string, PartSnapshot>;
+}
+
+/** What a song track's change is called in its undo step. */
+const TRACK_CHANGE_LABELS: Record<string, string> = { name: "Rename", color: "Colour", volume: "Volume", pan: "Pan", mute: "Mute", solo: "Solo", voices: "Voices" };
+
 /** The drums' names on the keys (DRUM_NAMES, short enough for a black key). */
 const DRUM_KEY_LABELS = ["Kick", "Snare", "Clap", "Hat", "O.Hat", "Tom L", "Tom H", "Cow"];
 
@@ -267,6 +279,19 @@ export class Playground {
   drumsSelected = $state(false);
   /** The song synth track selected last, for its button beside Keys and Sequencer. */
   lastTrack = $state<PartId | null>(null);
+  /** The song's clips, each on one track. */
+  songClips = $state<Clip[]>([]);
+  /** Each track's clip as heard (the clip launcher), and the one waiting to start on the next bar. */
+  clipLaunch = $state<Record<string, { clip: string | null; next?: string | null }>>({});
+  /** The clip shown under the tracks, to rename, lengthen or edit. */
+  selectedClip = $state<string | null>(null);
+  /** "Edit in Play": the clip the Play view's drum loop or step sequencer edits instead of its own pattern. */
+  editClipId = $state<string | null>(null);
+  /** The bar of a drum clip the drum loop shows while it is edited. */
+  editBar = $state(0);
+  /** Undo and redo for the song (tracks and clips), apart from each part's sound. */
+  readonly songHistory = new History<SongSnapshot>();
+  readonly clipPlayer: ClipPlayer;
   private drumTrack: DrumTrack;
   /** Preset highlighted by the encoder but not loaded yet. */
   browseId = $state<string | null>(null);
@@ -283,7 +308,8 @@ export class Playground {
   playStep = $state(-1);
   /** Sequencer edit: knobs set step pitches, bank A pads switch steps, bank B pads set slides, faders set Length/Gate/Rate/Direction. */
   seqEdit = $state(false);
-  noteSeq = $state<NoteSeqSettings>(defaultNoteSeq());
+  /** The step sequencer's own settings (the toy's); `noteSeq` is what its panel edits. */
+  ownNoteSeq = $state<NoteSeqSettings>(defaultNoteSeq());
   /** Sequencer step under the playhead, as heard. -1 when stopped. */
   seqStep = $state(-1);
   /** Notes the sequencer is sounding right now, for the on-screen keyboard. */
@@ -374,7 +400,8 @@ export class Playground {
   drumsOn = $state(false);
   playing = $state(false);
   recording = $state(false);
-  pattern = $state<Pattern>(basicBeat());
+  /** The drum loop's own pattern (the toy's); `pattern` is what its grid edits. */
+  ownPattern = $state<Pattern>(basicBeat());
 
   private device: MiniLab | null = null;
   private midiAccess: MIDIAccess | null = null;
@@ -389,6 +416,7 @@ export class Playground {
   private heldStep: number | null = null;
   private heldStepKeyed = false;
   private auditionNote: number | null = null;
+  private auditionPart: PartId = "seq";
   /** Keys pressed with Shift to switch part: their release must not stop a note. */
   private partKeys = new Set<number>();
   /** Keys used to transpose: their release must not stop a note. */
@@ -409,7 +437,7 @@ export class Playground {
   readonly arpeggiator: Arpeggiator;
 
   constructor() {
-    this.seq.pattern = this.pattern;
+    this.seq.pattern = this.ownPattern;
     this.seq.onTrigger = (track, velocity, time) => {
       const delay = Math.max(0, (time - this.engine.ctx.currentTime) * 1000);
       setTimeout(() => this.flashPad(track, velocity), delay);
@@ -419,7 +447,7 @@ export class Playground {
       const delay = Math.max(0, (time - this.engine.ctx.currentTime) * 1000);
       setTimeout(() => this.movePlayhead(step), delay);
     };
-    this.noteSequencer = new NoteSequencer(this.noteSeq, {
+    this.noteSequencer = new NoteSequencer(this.ownNoteSeq, {
       noteOn: (note, velocity, time, slide) => {
         this.engine.noteOn(note, velocity, time, slide, "seq");
         this.atAudioTime(time, () => this.seqNotes.add(note));
@@ -439,7 +467,8 @@ export class Playground {
         this.atAudioTime(time, () => this.lightSeqBlur());
       },
     });
-    this.noteSequencer.onStep = (step, time) => this.atAudioTime(time, () => this.moveSeqHead(step));
+    // While a step clip is edited, the lamps follow the clip instead (see clipPlayer.onStep).
+    this.noteSequencer.onStep = (step, time) => this.atAudioTime(time, () => this.editClip?.kind !== "steps" && this.moveSeqHead(step));
     this.noteSequencer.pitch = (note) => snapToScale(note, this.scale);
     this.seq.notes = this.noteSequencer;
     this.seq.drumsOn = this.drumsOn;
@@ -456,6 +485,19 @@ export class Playground {
     this.engine.setParams(this.parts.keys.values, "keys");
     this.engine.setParams(this.parts.seq.values, "seq");
     this.drumTrack = this.engine.addDrumTrack();
+    this.clipPlayer = new ClipPlayer(
+      {
+        noteOn: (track, note, velocity, time, slide) => this.engine.noteOn(note, velocity, time, slide, track),
+        noteOff: (track, note, time) => this.engine.noteOff(note, time, track),
+        pitchTo: (track, from, to, time) => this.engine.pitchTo(from, to, time, track),
+        drum: (pad, velocity, time) => this.drumTrack.drums.trigger(pad, velocity, time),
+      },
+      (id) => this.songClips.find((c) => c.id === id),
+    );
+    this.clipPlayer.pitch = (note) => snapToScale(note, this.scale);
+    this.clipPlayer.onChange = (track, _clip, time) => this.atAudioTime(time, () => this.syncLaunch(track));
+    this.clipPlayer.onStep = (_track, clip, step, time) => this.atAudioTime(time, () => this.editClipId === clip && this.moveSeqHead(step));
+    this.seq.clips = this.clipPlayer;
     this.loadSong();
     window.addEventListener("pagehide", this.saveSongNow);
     document.addEventListener("visibilitychange", this.saveSongNow);
@@ -490,6 +532,18 @@ export class Playground {
       longestFreeze: this.freezes.longest(performance.now()),
       sequencer: this.playing ? this.seq.timing : null,
     };
+  }
+
+  /** The step settings the step sequencer's panel edits: a step clip's in "Edit in Play", its own otherwise. */
+  get noteSeq(): NoteSeqSettings {
+    const c = this.editClip;
+    return c?.kind === "steps" ? c.seq : this.ownNoteSeq;
+  }
+
+  /** The drum pattern the drum loop's grid and the pads edit: a bar of a drum clip in "Edit in Play", its own otherwise. */
+  get pattern(): Pattern {
+    const c = this.editClip;
+    return c?.kind === "drums" ? c.patterns[Math.min(this.editBar, c.bars - 1)] : this.ownPattern;
   }
 
   // The selected part's sound: everything below reads and writes these.
@@ -611,30 +665,45 @@ export class Playground {
   /** A new synth track at the end, on the first factory sound, selected. */
   addSongTrack() {
     if (!this.canAddSongTrack) return;
-    const t = newSynthTrack(this.songTracks);
-    this.addTrackPart(t.id, new PartState(FACTORY_PRESETS[0]));
-    this.songTracks = [...this.songTracks, t];
-    this.applyMix();
+    this.recordSong("Add track");
+    const t = this.newSongTrack();
     this.selectSongTrack(t.id);
     this.saveSong();
   }
 
-  /** Remove a synth track and its sound (the drum track stays). */
+  private newSongTrack(): Track {
+    const t = newSynthTrack(this.songTracks);
+    this.addTrackPart(t.id, new PartState(FACTORY_PRESETS[0]));
+    this.songTracks = [...this.songTracks, t];
+    this.applyMix();
+    return t;
+  }
+
+  /** Remove a synth track, its sound and its clips (the drum track stays). */
   removeSongTrack(id: string) {
     const t = this.songTracks.find((x) => x.id === id);
     if (!t || t.kind !== "synth") return;
+    this.recordSong(`Remove ${t.name}`);
+    this.dropTrackPart(id);
+    this.songTracks = this.songTracks.filter((x) => x !== t);
+    this.songClips = this.songClips.filter((c) => c.track !== id);
+    this.forgetMissingClips();
+    this.applyMix();
+    this.saveSong();
+  }
+
+  /** A synth track's part goes: the selection moves to the track above (or below, for the first), else Keys. */
+  private dropTrackPart(id: string) {
     if (this.part === id) {
-      // The track above it (or below, for the first), else the Keys part.
       const synth = this.songTracks.filter((x) => x.kind === "synth");
-      const i = synth.indexOf(t);
+      const i = synth.findIndex((x) => x.id === id);
       this.selectPart((synth[i - 1] ?? synth[i + 1])?.id ?? "keys");
     }
     if (this.lastTrack === id) this.lastTrack = null;
-    this.songTracks = this.songTracks.filter((x) => x !== t);
+    this.clipPlayer.removeTrack(id, this.engine.ctx.currentTime);
+    delete this.clipLaunch[id];
     delete this.parts[id];
     this.engine.removePart(id);
-    this.applyMix();
-    this.saveSong();
   }
 
   /** Change a track's name, colour or mix (volume, pan, mute, solo, voices). */
@@ -642,7 +711,11 @@ export class Playground {
     const name = change.name === undefined ? undefined : cleanName(change.name);
     if (name === "") delete change.name;
     else if (name !== undefined) change.name = name;
-    this.songTracks = this.songTracks.map((t) => (t.id === id ? { ...t, ...change } : t));
+    const t = this.songTracks.find((x) => x.id === id);
+    const keys = Object.keys(change) as (keyof typeof change)[];
+    if (!t || keys.every((k) => t[k] === change[k])) return;
+    this.recordSong(`${TRACK_CHANGE_LABELS[keys[0]] ?? "Change"} ${t.name}`, `${id}:${keys.join()}`);
+    this.songTracks = this.songTracks.map((x) => (x.id === id ? { ...x, ...change } : x));
     this.applyMix();
     this.saveSong();
   }
@@ -654,6 +727,9 @@ export class Playground {
   }
 
   moveSongTrack(id: string, delta: number) {
+    const t = this.songTracks.find((x) => x.id === id);
+    if (!t) return;
+    this.recordSong(`Move ${t.name}`);
     this.songTracks = moveTrack(this.songTracks, id, delta);
     this.saveSong();
   }
@@ -678,9 +754,314 @@ export class Playground {
     this.engine.addPart(id, state.values);
   }
 
-  /** The tracks and their sounds from the last visit (a new song's the first time). */
+  // ------------------------------------------------------------------ clips
+
+  /** A track's clips, in the order they were made. */
+  clipsOf(track: string): Clip[] {
+    return this.songClips.filter((c) => c.track === track);
+  }
+
+  get selectedClipData(): Clip | null {
+    return this.songClips.find((c) => c.id === this.selectedClip) ?? null;
+  }
+
+  selectClip(id: string | null) {
+    this.selectedClip = id;
+  }
+
+  /**
+   * The clip launcher: play a clip on its track, from the next bar while playing (stopped, the transport
+   * starts). The clip already playing stops its track at the next bar; one waiting to start stops waiting.
+   */
+  launchClip(id: string) {
+    const clip = this.songClips.find((c) => c.id === id);
+    if (!clip) return;
+    const st = this.clipPlayer.state(clip.track);
+    if (!this.playing) this.clipPlayer.launch(clip.track, id);
+    else if (st.next === id) this.clipPlayer.launch(clip.track, st.clip);
+    else if (st.next === undefined && st.clip === id) this.clipPlayer.launch(clip.track, null);
+    else this.clipPlayer.launch(clip.track, id);
+    this.syncLaunch(clip.track);
+    this.saveSong();
+    if (!this.playing) this.play();
+  }
+
+  /** Stop a track's clip (at the next bar while playing). */
+  stopTrackClip(track: string) {
+    this.clipPlayer.launch(track, null);
+    this.syncLaunch(track);
+    this.saveSong();
+  }
+
+  /** Show what the clip player has for a track (as heard: called at the audio time a change happens). */
+  private syncLaunch(track: string) {
+    this.clipLaunch[track] = this.clipPlayer.state(track);
+  }
+
+  /** Clips that no longer exist are no longer chosen, the clip panel and "Edit in Play" let go of them. */
+  private forgetMissingClips() {
+    const has = (id: string | null | undefined) => !!id && this.songClips.some((c) => c.id === id);
+    if (!has(this.selectedClip)) this.selectedClip = null;
+    if (this.editClipId && !has(this.editClipId)) this.closeClipEdit();
+    for (const t of this.songTracks) {
+      const st = this.clipPlayer.state(t.id);
+      // While playing, the player lets go of a deleted clip itself, at the time it reaches it.
+      if (!this.playing && st.clip && !has(st.clip)) this.clipPlayer.launch(t.id, null);
+      this.syncLaunch(t.id);
+    }
+  }
+
+  /** Beats into a clip at the moment heard, or -1 when it isn't playing. */
+  clipBeatNow(id: string): number {
+    const clip = this.songClips.find((c) => c.id === id);
+    if (!clip) return -1;
+    return this.clipPlayer.position(clip.track, id, this.seq.beatNow);
+  }
+
+  /** A new clip on a track: an empty drum clip on the drum track, a step clip (the step sequencer's start) on a synth track. */
+  addClip(track: string) {
+    const t = this.songTracks.find((x) => x.id === track);
+    if (!t) return;
+    this.recordSong("New clip");
+    const clip = t.kind === "drums" ? drumClip(this.songClips, t) : stepClip(this.songClips, t);
+    this.songClips = [...this.songClips, clip];
+    this.selectedClip = clip.id;
+    this.saveSong();
+  }
+
+  removeClip(id: string) {
+    const clip = this.songClips.find((c) => c.id === id);
+    if (!clip) return;
+    this.recordSong(`Delete ${clip.name}`);
+    this.songClips = this.songClips.filter((c) => c !== clip);
+    this.forgetMissingClips();
+    this.saveSong();
+  }
+
+  duplicateClip(id: string) {
+    const clip = this.songClips.find((c) => c.id === id);
+    const t = this.songTracks.find((x) => x.id === clip?.track);
+    if (!clip || !t) return;
+    this.recordSong(`Duplicate ${clip.name}`);
+    const copy = duplicateClip(this.songClips, $state.snapshot(clip) as Clip, t);
+    this.songClips = [...this.songClips, copy];
+    this.selectedClip = copy.id;
+    this.saveSong();
+  }
+
+  renameClip(id: string, name: string) {
+    const clip = this.songClips.find((c) => c.id === id);
+    const clean = cleanName(name);
+    if (!clip || !clean || clean === clip.name) return;
+    this.recordSong("Rename clip", `clip-name:${id}`);
+    clip.name = clean;
+    this.saveSong();
+  }
+
+  /** A clip's length in bars (a drum clip made longer repeats its bars). */
+  setClipBars(id: string, bars: number) {
+    const i = this.songClips.findIndex((c) => c.id === id);
+    if (i < 0 || this.songClips[i].bars === bars) return;
+    this.recordSong(`Length of ${this.songClips[i].name}`);
+    this.songClips[i] = withBars($state.snapshot(this.songClips[i]) as Clip, bars);
+    if (this.editClipId === id) this.editBar = Math.min(this.editBar, bars - 1);
+    this.saveSong();
+  }
+
+  /** The clip "Edit in Play" works on, if any. */
+  get editClip(): Clip | null {
+    return this.editClipId ? (this.songClips.find((c) => c.id === this.editClipId) ?? null) : null;
+  }
+
+  /** The song before the edits made in Play since they were last made an undo step (see flushClipEdit). */
+  private editStart: SongSnapshot | null = null;
+
+  /** "Edit in Play": the Play view's drum loop or step sequencer edits this clip (and the MiniLab's pads with them). */
+  editInPlay(id: string) {
+    const clip = this.songClips.find((c) => c.id === id);
+    if (!clip || clip.kind === "notes") return;
+    this.flushClipEdit();
+    this.endHeldStep();
+    this.editClipId = id;
+    this.editBar = 0;
+    this.editStart = this.songSnapshot();
+    this.moveSeqHead(-1);
+    this.setView("playground");
+    if (this.stepMode || this.seqEdit) this.syncPadLeds();
+    this.showMessage("Editing clip", clip.name);
+  }
+
+  /** Back to my pattern: the drum loop and the step sequencer edit their own again. */
+  endClipEdit() {
+    if (!this.editClipId) return;
+    this.flushClipEdit();
+    this.closeClipEdit();
+    this.showMessage("Play", "your own pattern");
+  }
+
+  private closeClipEdit() {
+    this.endHeldStep();
+    this.editClipId = null;
+    this.editStart = null;
+    this.moveSeqHead(-1);
+    if (this.stepMode || this.seqEdit) this.syncPadLeds();
+  }
+
+  setEditBar(bar: number) {
+    const c = this.editClip;
+    if (c?.kind !== "drums") return;
+    this.editBar = Math.max(0, Math.min(c.bars - 1, bar));
+    if (this.stepMode) this.syncPadLeds();
+  }
+
+  /** The step under the drum grid's playhead: the edited drum clip's (in the bar shown), else the drum loop's. */
+  gridStep(): number {
+    const c = this.editClip;
+    if (c?.kind !== "drums") return this.seq.currentStep;
+    const beat = this.clipBeatNow(c.id);
+    if (beat < 0 || Math.floor(beat / BEATS_PER_BAR) !== this.editBar) return -1;
+    return Math.floor((beat % BEATS_PER_BAR) * 4);
+  }
+
+  /** The part a step's note is heard on when set: the edited step clip's track, else the Sequencer part. */
+  private get stepPart(): PartId {
+    const c = this.editClip;
+    return c?.kind === "steps" && this.parts[c.track] ? c.track : "seq";
+  }
+
+  /** The kit a drum step is heard on when set: the song's in "Edit in Play", the drum loop's otherwise. */
+  private get stepDrums() {
+    return this.editClip?.kind === "drums" ? this.drumTrack.drums : this.engine.drums;
+  }
+
+  /** Send the drum loop to the song: a new drum clip with its pattern, on the drum track. */
+  sendDrumsToSong() {
+    const t = this.songTracks.find((x) => x.kind === "drums");
+    if (!t) return;
+    this.recordSong("Send the drum loop");
+    const clip = drumClip(this.songClips, t, [$state.snapshot(this.ownPattern)]);
+    this.songClips = [...this.songClips, clip];
+    this.selectedClip = clip.id;
+    this.saveSong();
+    this.showMessage("Sent to song", `${t.name}: ${clip.name}`);
+  }
+
+  /**
+   * Send the step sequencer to the song: a new step clip with its settings on a synth track (null: a new
+   * track), and the Sequencer part's sound goes to the track (an undo step of the track's sound too).
+   */
+  sendStepsToSong(track: string | null) {
+    let t = track === null ? null : this.songTracks.find((x) => x.id === track && x.kind === "synth");
+    if (track !== null && !t) return;
+    if (track === null && !this.canAddSongTrack) return;
+    this.recordSong("Send the step sequencer");
+    t ??= this.newSongTrack();
+    const target = this.parts[t.id];
+    const seq = this.parts.seq;
+    target.history.record(() => ({ preset: target.preset, values: $state.snapshot(target.values), dirty: target.dirty }), "Sound from Sequencer");
+    this.historyVersion++;
+    target.preset = seq.preset;
+    target.values = { ...$state.snapshot(seq.values) };
+    target.dirty = seq.dirty;
+    this.engine.setParams(target.values, t.id);
+    const clip = stepClip(this.songClips, t, $state.snapshot(this.ownNoteSeq), barsForSteps(this.ownNoteSeq));
+    this.songClips = [...this.songClips, clip];
+    this.selectedClip = clip.id;
+    this.saveSong();
+    this.showMessage("Sent to song", `${t.name}: ${clip.name}`);
+  }
+
+  // ------------------------------------------------------------------ song undo
+
+  private songSnapshot(): SongSnapshot {
+    const sounds: Record<string, PartSnapshot> = {};
+    for (const t of this.songTracks) {
+      const p = this.parts[t.id];
+      if (t.kind === "synth" && p) sounds[t.id] = { preset: p.preset, values: $state.snapshot(p.values), dirty: p.dirty };
+    }
+    return { tracks: $state.snapshot(this.songTracks), clips: $state.snapshot(this.songClips) as Clip[], sounds };
+  }
+
+  /** Keep the song as it is now, before a change. Changes with the same key close together are one step. */
+  private recordSong(label: string, key: string | null = null) {
+    this.flushClipEdit();
+    this.songHistory.record(() => this.songSnapshot(), label, key);
+    this.historyVersion++;
+  }
+
+  /**
+   * Edits made in Play to a clip become one undo step ("Edit Bass 2"), taken when anything else happens to the
+   * song, when undo is asked for, and when the editing ends. (The step sequencer's and drum loop's controls
+   * don't each make undo steps of their own.)
+   */
+  private flushClipEdit() {
+    const start = this.editStart;
+    const clip = this.editClip;
+    if (!start || !clip) return;
+    const before = start.clips.find((c) => c.id === clip.id);
+    const now = $state.snapshot(clip);
+    if (JSON.stringify(before) === JSON.stringify(now)) return;
+    this.songHistory.record(() => start, `Edit ${clip.name}`);
+    this.historyVersion++;
+    this.editStart = this.songSnapshot();
+    this.saveSong();
+  }
+
+  get canUndoSong() {
+    return this.historyVersion >= 0 && this.songHistory.canUndo;
+  }
+  get canRedoSong() {
+    return this.historyVersion >= 0 && this.songHistory.canRedo;
+  }
+  get songUndoLabel() {
+    return this.historyVersion >= 0 ? this.songHistory.undoLabel : null;
+  }
+  get songRedoLabel() {
+    return this.historyVersion >= 0 ? this.songHistory.redoLabel : null;
+  }
+
+  undoSong() {
+    this.songStep("undo");
+  }
+  redoSong() {
+    this.songStep("redo");
+  }
+
+  private songStep(way: "undo" | "redo") {
+    this.flushClipEdit();
+    const step = way === "undo" ? this.songHistory.undo(this.songSnapshot()) : this.songHistory.redo(this.songSnapshot());
+    this.historyVersion++;
+    const what = way === "undo" ? "Undo" : "Redo";
+    if (!step) return this.showMessage(what, "nothing to do");
+    this.restoreSong(step.state);
+    if (this.editStart) this.editStart = this.songSnapshot();
+    this.showMessage(what, step.label);
+  }
+
+  /** Put the song back as it was: removed tracks come back with their sounds, added ones go. Sounds of tracks kept stay as they are (they have their own undo). */
+  private restoreSong(s: SongSnapshot) {
+    const keep = new Set(s.tracks.map((t) => t.id));
+    for (const t of this.songTracks) if (t.kind === "synth" && !keep.has(t.id)) this.dropTrackPart(t.id);
+    for (const t of s.tracks) {
+      const sound = s.sounds[t.id];
+      if (t.kind !== "synth" || this.parts[t.id] || !sound) continue;
+      const state = new PartState(this.presets.find((p) => p.id === sound.preset.id) ?? sound.preset);
+      state.values = { ...sound.values };
+      state.dirty = sound.dirty;
+      this.addTrackPart(t.id, state);
+    }
+    this.songTracks = structuredClone(s.tracks);
+    this.songClips = structuredClone(s.clips);
+    this.forgetMissingClips();
+    this.applyMix();
+    this.saveSong();
+  }
+
+  // ------------------------------------------------------------------ keeping the song
+
+  /** The tracks, their sounds and clips from the last visit (a new song's the first time). */
   private loadSong() {
-    let saved: { tracks?: unknown; sounds?: Record<string, { preset?: unknown; values?: unknown; dirty?: unknown }> } | null = null;
+    let saved: { tracks?: unknown; sounds?: Record<string, { preset?: unknown; values?: unknown; dirty?: unknown }>; clips?: unknown; chosen?: Record<string, unknown> } | null = null;
     try {
       saved = JSON.parse(localStorage.getItem(SONG_KEY) ?? "null");
     } catch {
@@ -692,6 +1073,13 @@ export class Playground {
       this.addTrackPart(t.id, this.readSound(saved?.sounds?.[t.id], DEFAULT_TRACK_PRESETS[t.id]));
     }
     this.songTracks = tracks;
+    this.songClips = readClips(saved?.clips, tracks);
+    for (const t of tracks) {
+      const id = saved?.chosen?.[t.id];
+      const clip = this.songClips.find((c) => c.id === id);
+      if (clip && fitsTrack(clip.kind, t) && clip.track === t.id) this.clipPlayer.launch(t.id, clip.id);
+      this.syncLaunch(t.id);
+    }
     this.applyMix();
   }
 
@@ -720,7 +1108,7 @@ export class Playground {
   }
 
   private songTimer = 0;
-  /** Keep the tracks and their sounds soon (a burst of changes is saved once). */
+  /** Keep the tracks, their sounds and clips soon (a burst of changes is saved once). */
   private saveSong() {
     clearTimeout(this.songTimer);
     this.songTimer = window.setTimeout(this.saveSongNow, 300);
@@ -735,7 +1123,8 @@ export class Playground {
       }),
     );
     try {
-      localStorage.setItem(SONG_KEY, JSON.stringify({ tracks: $state.snapshot(this.songTracks), sounds }));
+      const song = { tracks: $state.snapshot(this.songTracks), sounds, clips: $state.snapshot(this.songClips), chosen: this.clipPlayer.chosen };
+      localStorage.setItem(SONG_KEY, JSON.stringify(song));
     } catch {
       // Not saved (private window, or full): the tracks last until the page closes.
     }
@@ -950,10 +1339,20 @@ export class Playground {
     return this.historyVersion >= 0 ? this.parts[this.part].history.redoLabel : null;
   }
 
+  /** Undo on the keyboard and the MiniLab acts on the view you are in: the song in the Song view, the sound elsewhere. */
   undo() {
-    this.step("undo");
+    if (this.view === "song") this.songStep("undo");
+    else this.step("undo");
   }
   redo() {
+    if (this.view === "song") this.songStep("redo");
+    else this.step("redo");
+  }
+  /** The sound bar's undo buttons: always the selected part's sound. */
+  undoSound() {
+    this.step("undo");
+  }
+  redoSound() {
     this.step("redo");
   }
 
@@ -1281,7 +1680,7 @@ export class Playground {
   private tapStep(step: number, velocity: number) {
     const row = this.pattern[this.stepTrack];
     row[step] = row[step] ? 0 : Math.max(60, velocity);
-    if (row[step]) this.engine.drums.trigger(this.stepTrack, row[step]);
+    if (row[step]) this.stepDrums.trigger(this.stepTrack, row[step]);
     this.paintStep(step);
   }
 
@@ -1384,8 +1783,8 @@ export class Playground {
     if (audition && !this.playing) {
       const n = snapToScale(step.note + this.noteSeq.transpose, this.scale);
       const now = this.engine.ctx.currentTime;
-      this.engine.noteOn(n, 100, now, false, "seq");
-      this.engine.noteOff(n, now + AUDITION_S, "seq");
+      this.engine.noteOn(n, 100, now, false, this.stepPart);
+      this.engine.noteOff(n, now + AUDITION_S, this.stepPart);
     }
     if (realign && this.seqEdit) this.device?.send(knobValueMessage(i, Math.round(this.stepKnobPosition(i) * 127)), `knob-${i}`);
     if (!audition || on) this.showMessage(`Step ${i + 1}`, this.noteName(step.note));
@@ -1500,7 +1899,8 @@ export class Playground {
     if (!this.playing) {
       // Stopped: hear the step's note while the pad is held.
       this.auditionNote = snapToScale(this.noteSeq.steps[i].note + this.noteSeq.transpose, this.scale);
-      this.engine.noteOn(this.auditionNote, 100, undefined, false, "seq");
+      this.auditionPart = this.stepPart;
+      this.engine.noteOn(this.auditionNote, 100, undefined, false, this.auditionPart);
     }
     this.showMessage(`Step ${i + 1}`, `${this.noteName(this.stepNote(i))}: press a key`);
   }
@@ -1519,7 +1919,7 @@ export class Playground {
   }
 
   private stopAudition() {
-    if (this.auditionNote !== null) this.engine.noteOff(this.auditionNote, undefined, "seq");
+    if (this.auditionNote !== null) this.engine.noteOff(this.auditionNote, undefined, this.auditionPart);
     this.auditionNote = null;
   }
 
@@ -1656,8 +2056,7 @@ export class Playground {
   }
 
   clearPattern() {
-    this.pattern = emptyPattern();
-    this.seq.pattern = this.pattern;
+    for (const row of this.pattern) row.fill(0);
     this.showMessage("Pattern", "cleared");
     if (this.stepMode) this.syncPadLeds();
   }
@@ -1995,6 +2394,7 @@ export class Playground {
 
   setView(view: View) {
     if (this.view === view) return;
+    this.flushClipEdit();
     const wasCourse = this.view === "course";
     if (wasCourse) this.leaveCourse();
     if (view === "course") this.prepareCourse();

@@ -10,6 +10,15 @@
   let { pg }: Props = $props();
 
   let s = $derived(pg.noteSeq);
+  /** "Edit in Play": the panel edits a step clip, which always plays (it has no On button of its own). */
+  let clip = $derived(pg.editClip?.kind === "steps" ? pg.editClip : null);
+  let synthTracks = $derived(pg.songTracks.filter((t) => t.kind === "synth"));
+
+  function send(select: HTMLSelectElement) {
+    const v = select.value;
+    select.value = "";
+    if (v) pg.sendStepsToSong(v === "new" ? null : v);
+  }
   const KEYS_HELP = {
     Play: "Keys play notes and chords over the sequence",
     Transpose: "A key moves the whole sequence up or down (C4 = no change)",
@@ -21,7 +30,16 @@
 
 <section class="panel seq" class:off={!s.enabled}>
   <div class="head">
-    <button class:active={s.enabled} onclick={() => pg.setSeqEnabled(!s.enabled)}>{s.enabled ? "On" : "Off"}</button>
+    {#if clip}
+      <span class="clip">Step clip · {clip.name}</span>
+    {:else}
+      <button class:active={s.enabled} onclick={() => pg.setSeqEnabled(!s.enabled)}>{s.enabled ? "On" : "Off"}</button>
+      <select class="send" value="" onchange={(e) => send(e.currentTarget)} aria-label="Send to song" title="Copy the step sequence into a new clip on a song track (the Sequencer part's sound goes with it)">
+        <option value="" disabled hidden>Send to song…</option>
+        {#each synthTracks as t (t.id)}<option value={t.id}>To {t.name}</option>{/each}
+        {#if pg.canAddSongTrack}<option value="new">To a new track</option>{/if}
+      </select>
+    {/if}
     {#if pg.hasDevice}
       <button class:active={pg.seqEdit} onclick={() => pg.setSeqEdit(!pg.seqEdit)} title="Shift + encoder click (twice: drum steps, then sequencer)">
         Edit on MiniLab
@@ -113,6 +131,8 @@
   .keys span { margin-right: 4px; }
   .transpose { font: 12px var(--mono); color: var(--dim); display: flex; align-items: center; gap: 6px; }
   .small { font-size: 11px !important; padding: 0 6px !important; }
+  .send { font-size: 12px; padding: 2px 6px; }
+  .clip { font-size: 12px; font-weight: 600; }
   .hint { font-size: 12px; }
   .shifted { color: var(--accent); }
   .explain { margin: 0; font-size: 12px; color: #a9b6ba; line-height: 1.4; }

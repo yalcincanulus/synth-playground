@@ -2,6 +2,16 @@ import type { Arpeggiator } from "./arpeggiator";
 import type { Ticker } from "./clock";
 import type { NoteSequencer } from "./stepSequencer";
 
+/** Something else planned on the same clock while the transport plays (the song's clips). */
+export interface BeatPlanner {
+  /** Play: start from beat 0. */
+  reset(): void;
+  /** Plan [fromBeat, toBeat), like NoteSequencer.schedule. */
+  schedule(fromBeat: number, toBeat: number, timeAt: (beat: number) => number, secPerBeat: number, skip: boolean): void;
+  /** Stop: end every note at `time`. */
+  stop(time: number): void;
+}
+
 export const STEPS = 16;
 export const TRACKS = 8;
 
@@ -55,6 +65,8 @@ export class Sequencer {
   notes: NoteSequencer | null = null;
   /** The arpeggiator, played on the same clock; it also plays while the transport is stopped (see `setFree`). */
   arp: Arpeggiator | null = null;
+  /** The song's clips, played on the same clock while the transport plays. */
+  clips: BeatPlanner | null = null;
   playing = false;
   recording = false;
   /** When off, the clock keeps running (for the note sequencer) but the drum loop is silent. */
@@ -94,6 +106,7 @@ export class Sequencer {
     this.nextStep = 0;
     this.nextBeat = 0;
     this.notes?.reset();
+    this.clips?.reset();
     this.stats = { lateSteps: 0, closest: null };
     // Already ticking for the arpeggiator: the loop starts where that has planned up to, so no note plays twice.
     if (this.running) this.arp?.restart();
@@ -104,6 +117,7 @@ export class Sequencer {
     this.playing = false;
     this.recording = false;
     this.notes?.release(this.engine.ctx.currentTime);
+    this.clips?.stop(this.engine.ctx.currentTime);
     if (!this.free) this.halt();
   }
 
@@ -132,6 +146,12 @@ export class Sequencer {
     if (!this.running) return;
     this.running = false;
     this.clock.stop();
+  }
+
+  /** Beats since Play at the audio clock's time now (as heard), or -1 when stopped. */
+  get beatNow(): number {
+    if (!this.playing) return -1;
+    return Math.max(0, this.nextBeat - (this.nextTime - this.engine.ctx.currentTime) / (60 / this.engine.bpm));
   }
 
   /** Step under the playhead right now, or -1 when stopped. */
@@ -185,6 +205,7 @@ export class Sequencer {
           }
         }
         this.notes?.schedule(this.nextBeat, this.nextBeat + 0.25, timeAt, secPerBeat, late);
+        this.clips?.schedule(this.nextBeat, this.nextBeat + 0.25, timeAt, secPerBeat, late);
       }
       this.arp?.schedule(this.nextBeat, this.nextBeat + 0.25, timeAt, secPerBeat, late);
       this.nextTime += this.stepDuration;
